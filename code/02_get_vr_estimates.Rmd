@@ -1,0 +1,979 @@
+---
+title: "Calculate death rates from VR data"
+output: html_notebook
+---
+
+This file calculates death rates for each city based on the vital registration data.
+
+All output gets saved to `data/vr_prepped`.
+
+```{r}
+library(tidyverse)
+library(here)
+
+#devtools::install_github("tbrugz/ribge")
+library(ribge)
+```
+
+```{r}
+data_dir <- here("data")
+
+popn_data_dir <- file.path(data_dir, "vr", "popn")
+death_data_dir <- file.path(data_dir, "vr", "deaths")
+
+out_dir <- here("out")
+data_out_dir <- file.path(data_dir, "vr_prepped")
+```
+
+# Denominator: city populations
+
+Grabbed tabwin files in popn/tabwin from this site:
+
+http://tabnet.datasus.gov.br/cgi/deftohtm.exe?ibge/cnv/popbr.def
+
+
+Using web interface to get data for 2012, I selected
+* Linha - 'Municipio'; Colunha - 'Faixa Etaria detalhada'; Sexo - 'Masculino'
+  -> it displays a table and, at the bottom, I picked 'save as .csv' -> saved as 'raw_popn_municipio_m.csv'
+* I did the same for Sexo - 'Feminino' and for Sexo - 'Todas as categorias'
+
+* editing raw files to remove header and footer info; notes at bottom of page say source is "2011-2012: IBGE - Estimativas populacionais enviadas para o TCU, estratificadas por idade e sexo pelo MS/SGEP/Datasus."
+
+* municipio_popn_m.csv - results for males
+* municipio_popn_f.csv - results for females
+* municipio_popn_both.csv - results for all sexes
+* note that the tool lets you query for un-specified sex ('ignorado'), but when I did that search, it said 'no records found'; we can double-check that there are no missing sex people by verifying that the number male + number female = number both
+
+the legend at the bottom of the results page says:
+
+    Para alguns anos, os dados aqui apresentados não são comparáveis com as estimativas populacionais fornecidas ao TCU, devido a diferenças metodológicas para estimar e projetar os contingentes populacionais. Veja a nota técnica para detalhes da metodologia.
+    Legenda:
+
+    -   - Dado numérico igual a 0 não resultante de arredondamento.
+    0; 0,0      - Dado numérico igual a 0 resultante de arredondamento de um dado originalmente positivo.
+
+I believe that means that '-' is an actual 0, while 0 or 0,0 are 0s that result from rounding
+
+
+
+
+First get info on the cities in our sample
+
+```{r}
+city.dat <- read_csv(file.path(data_dir, "cities.csv"))
+```
+
+
+These will be helpful when recoding age groups, below
+
+```{r}
+under20_agenames <- paste(2:19, 'anos')
+recode_under20 <- setNames(c(rep('[0,18)', 18),
+                             '[18,25)', '[18,25)'),
+                           c('Menor 1 ano', '1 ano', under20_agenames))
+
+older_agenames <- c(paste(c('20 a 24', 
+                            '25 a 29', '30 a 34', 
+                            '35 a 39', '40 a 44',
+                            '45 a 49', '50 a 54',
+                            '55 a 59', '60 a 64',
+                            '65 a 69', '70 a 74',
+                            '75 a 79'),
+                          'anos'),
+                    '80 anos e mais')
+recode_over20 <- setNames(c('[18,25)', 
+                            '[25,35)', '[25,35)', 
+                            '[35,45)', '[35,45)',
+                            '[45,55)', '[45,55)',
+                            '[55,65)', '[55,65)',
+                            '[65,Inf)', '[65,Inf)',
+                            '[65,Inf)',
+                            '[65,Inf)'),
+                          older_agenames)
+```
+
+Now load data from tabwin: first females
+
+```{r}
+munipop12_f <- read_delim(file.path(popn_data_dir, "municipio_popn_f.csv"),
+                          delim=";",
+                          locale=locale(encoding='latin1'))
+munipop12_f <- munipop12_f %>%
+  pivot_longer(-1, names_to='age', values_to='popn') %>%
+  mutate(municipio_code = str_sub(Município, 1, 6),
+         municipio_name = str_sub(Município, 8, -1)) %>%
+  select(-Município) %>%
+  mutate(agegp = dplyr::recode(age,
+                               !!!recode_under20,
+                               !!!recode_over20)) %>%
+  group_by(municipio_name, municipio_code, agegp) %>%
+  summarize(popn = sum(popn)) %>%
+  mutate(sex='f')
+
+munipop12_f
+```
+
+... then males
+
+```{r}
+munipop12_m <- read_delim(file.path(popn_data_dir, "municipio_popn_m.csv"),
+                          delim=";",
+                          locale=locale(encoding='latin1'))
+munipop12_m <- munipop12_m %>%
+  pivot_longer(-1, names_to='age', values_to='popn') %>%
+  mutate(municipio_code = str_sub(Município, 1, 6),
+         municipio_name = str_sub(Município, 8, -1)) %>%
+  select(-Município) %>%
+  mutate(agegp = dplyr::recode(age,
+                               !!!recode_under20,
+                               !!!recode_over20)) %>%
+  group_by(municipio_name, municipio_code, agegp) %>%
+  summarize(popn = sum(popn)) %>%
+  mutate(sex='m')
+
+munipop12_m
+```
+
+
+... and finally both
+
+```{r}
+munipop12_b <- read_delim(file.path(popn_data_dir, "municipio_popn_both.csv"),
+                          delim=";",
+                          locale=locale(encoding='latin1'))
+munipop12_b <- munipop12_b %>%
+  pivot_longer(-1, names_to='age', values_to='popn') %>%
+  mutate(municipio_code = str_sub(Município, 1, 6),
+         municipio_name = str_sub(Município, 8, -1)) %>%
+  select(-Município) %>%
+  mutate(agegp = dplyr::recode(age,
+                               !!!recode_under20,
+                               !!!recode_over20)) %>%
+  group_by(municipio_name, municipio_code, agegp) %>%
+  summarize(popn = sum(popn)) %>%
+  mutate(sex='b')
+
+munipop12_b
+```
+
+Next:
+
+* filter to municipios we care about
+* check that m+f=b
+
+```{r}
+munipop12 <- bind_rows(munipop12_f, munipop12_m, munipop12_b) %>%
+  filter(municipio_code %in% city.dat$municipio_code)
+
+munipop12
+```
+
+```{r}
+munipop12_check <- munipop12 %>%
+  pivot_wider(id_cols = c('municipio_name', 'municipio_code', 'agegp'),
+              names_from='sex',
+              values_from='popn')
+
+munipop12_check
+```
+
+Looks good:
+
+```{r}
+all(munipop12_check$f + munipop12_check$m == munipop12_check$b)
+```
+
+```{r save-city-popns}
+munipop12_tosave <- munipop12 %>% filter(sex %in% c('f', 'm'),
+                                         ! agegp %in% c('[65,Inf)', '[0,18)', 'Total'))
+
+#write_csv(munipop12_tosave, path=file.path(data_out_dir, 'dr_denom.csv'))
+
+munipop12_tosave
+```
+
+
+### check municipio totals using ribge package {-}
+
+[ribge github page](https://github.com/tbrugz/ribge)
+
+
+```{r}
+ribge_pop2012 <- ribge::populacao_municipios(2012, dir=data_out_dir)
+```
+
+```{r}
+check_ribge <- munipop12_b %>% 
+  ungroup() %>%
+  filter(municipio_code != 'Total') %>%
+  filter(agegp == 'Total') %>%
+  left_join(ribge_pop2012 %>%
+              mutate(municipio_code = paste(cod_munic6),
+                     ribge_popn = populacao) %>%
+              select(municipio_code, ribge_popn), 
+            by='municipio_code')
+
+check_ribge
+```
+
+```{r}
+all(check_ribge$popn == check_ribge$ribge_popn)
+```
+
+```{r}
+check_ribge %>% filter(popn != ribge_popn)
+```
+
+These only differ in two municipalities, and we don't care about these. So we're good.
+
+# Numerator: city resident deaths
+
+I went to [this page](http://www2.datasus.gov.br/DATASUS/index.php?area=0901) and selected 'SIM'.
+Then I picked 'Dados'.
+... and then "DO - Declaracoes de obitos - 1979 a 2018"
+... I picked years 2011 - 2013
+... and I selected all of the states
+... and pushed go
+I got a list of files, and I checked "Marcar Todos"
+... this was ~235 MB. I said "download"
+... and I downloaded them to Arq_333368978.zip
+
+```{r}
+# this has 2012 only
+#death_archive_fn <- 'Arq_984437380'
+
+# this has 2011-2013
+death_archive_fn <- 'Arq_333368978'
+
+raw_ddata_dir <- file.path(death_data_dir, death_archive_fn)
+out_ddata_dir <- file.path(data_out_dir, "processed")
+```
+
+```{r}
+cur_state <- 'AC'
+cur_year <- '2012'
+
+cur_dat <- read.dbc::read.dbc(file.path(raw_ddata_dir, 
+                                        paste0('DO', cur_state, cur_year, '.DBC')))
+
+glimpse(cur_dat)
+```
+
+```{r}
+##################################################
+## helper fns for some of the recodes...
+## returns age in years (possibly fractional)
+recode.age <- function(raw.age, max.age) {
+  age <- rep(NA, length(raw.age))
+  
+  unit_field <- as.numeric(str_sub(raw.age, 1, 1))
+  info_field <- as.numeric(str_sub(raw.age, 2, 4))
+  
+  ## unit_field == 0 -- 0 hours or info_field has age in minutes
+  uf0 <- which(unit_field == 0)
+  uf0and0 <- which(info_field == 0 & info_field == 0)
+  
+  # any age coded in minutes is 0 years for our purposes
+  age[uf0] <- 0  
+  # exception: 000 means 'idage ignorada'
+  age[uf0and0] <- NA
+  
+  ## unit_field == 1 -- info_field has age in hours
+  uf1 <- which(unit_field == 1)
+  # any age coded in hours is 0 years for our purposes
+  age[uf1] <- 0
+  
+  ## unit_field == 2 -- info_field has age in days
+  uf2 <- which(unit_field == 2)
+  # any age coded in days is 0 years for our purposes
+  age[uf2] <- 0
+  
+  ## unit_field == 3 -- info_field has age in months
+  uf3 <- which(unit_field == 3)
+  # any age coded in months is 0 years for our purposes
+  age[uf3] <- 0
+  
+  ## unit_field == 4 -- info_field has age in years
+  uf4 <- which(unit_field == 4)
+  age[uf4] <- info_field[uf4]
+  
+  ## unit_field == 5 -- info_field has age in years - 100
+  uf5 <- which(unit_field == 5)
+  age[uf5] <- info_field[uf5] + 100
+  
+  ## NOT COVERED IN CODE BOOK, but there are 999 values in the data
+  ## by ignoring these, we assume they are missing (which seems appropriate)
+  
+  ## recode ages greater than max to max
+  age[(! is.na(age)) & (age > max.age)] <- max.age
+  
+  return(age)
+}
+
+## 1 is male, 2 is female, and 0 is DK
+recode.sex <- function(raw.sex) {
+  sex <- rep('unknown', length(raw.sex))
+  sex[ raw.sex == 1 ] <- "m"
+  sex[ raw.sex == 2 ] <- "f"
+
+  return(sex)
+}
+```
+
+```{r}
+years <- 2011:2013
+#years <- 1996:2010
+max.age <- 100
+
+## age categories
+## (these are the age categories available in the popn data...)
+#age.breaks <- c(seq(from=0,to=80,by=5),max.age)
+age.breaks <- c(0, 18, 25, seq(from=35,to=80,by=10), max.age)
+# check age breaks
+tmp <- cut(1, breaks=age.breaks, right=FALSE, ordered_result=TRUE)
+
+agg.longres <- c()
+agg.longocc <- c()
+
+cityyr_todo <- expand.grid(this.yr=years,
+                           state.idx=city.dat$state_abbrev)
+
+##################################################
+## now we want to open up each dbf file
+## and get tallies of the deaths by
+## age and sex (including unknown...)
+agg_deaths <- pmap_dfr(cityyr_todo,
+                       function(this.yr, state.idx) {
+  
+        this.state <- city.dat$state_abbrev[state.idx]
+
+        this.capital <- city.dat$municipio_code[state.idx]
+
+        cat(".......", this.state, "\n")
+
+        # 2013 has lowercase extension (".dbc") while other years
+        # have uppercase extension (".DBC")
+        if (this.yr == 2013) {
+          this.file <- path.expand(file.path(raw_ddata_dir,
+                                             paste0("DO",
+                                                    this.state,
+                                                    this.yr,
+                                                    ".dbc")))
+        } else {
+          this.file <- path.expand(file.path(raw_ddata_dir,
+                                             paste0("DO",
+                                                    this.state,
+                                                    this.yr,
+                                                    ".DBC")))
+        }
+
+        this.dbf <- read.dbc::read.dbc(this.file)
+
+        if (any(is.na(this.dbf$CODMUNRES))) {
+          warning("WARNING: ", sum(is.na(this.dbf$CODMUNRES)), " of ",
+                  nrow(this.dbf), " rows in ", this.state, " have missing ",
+                  "place of residence!\n")          
+        }
+
+        this.dbf$age <- recode.age(this.dbf$IDADE, max.age=max.age-1)
+        this.dbf$sex <- recode.sex(this.dbf$SEXO)
+
+        this.dbf$agecat <- paste(forcats::fct_explicit_na(cut(this.dbf$age,
+                                                              breaks=age.breaks,
+                                                              right=FALSE,
+                                                              ordered_result=TRUE),
+                                                          na_level='unknown'))
+
+        ## DATSUS files appear to use the 7 digit municipio codes
+        this.dbf$place.residence <- this.dbf$CODMUNRES
+        this.dbf$place.death <- this.dbf$CODMUNOCOR
+
+        this.dbf$death.day <- str_sub(this.dbf$DTOBITO,
+                                      1, 2)
+        this.dbf$death.month <- str_sub(this.dbf$DTOBITO,
+                                        3,4)
+        this.dbf$death.year <- str_sub(this.dbf$DTOBITO,
+                                       5,8)
+        
+        deaths.capres <- subset(this.dbf,
+                                place.residence == paste(this.capital))
+        deaths.capocc <- subset(this.dbf,
+                                place.death == paste(this.capital))        
+        
+        this.dbf.agg.res <- deaths.capres %>%
+          group_by(sex, agecat, death.year) %>%
+          summarize(num_deaths = n(), .groups='drop') %>%
+          mutate(city = paste(this.capital),
+                 year = this.yr) %>%
+          ungroup()
+
+        this.dbf.agg.occ <- deaths.capocc %>%
+          group_by(sex, agecat, death.year) %>%
+          summarize(num_deaths = n(), .groups='drop') %>%
+          mutate(city = paste(this.capital),
+                 year = this.yr) %>%
+          ungroup()
+        
+        return(tibble(city = paste(this.capital),
+                      year = this.yr,
+                      deaths_by_residence  = list(this.dbf.agg.res),
+                      deaths_by_occurrence = list(this.dbf.agg.occ)))
+        
+        })
+```
+
+
+```{r}
+agg_deaths_by_residence <- map_dfr(agg_deaths %>% pull(deaths_by_residence), identity) %>%
+  mutate(municipio_code=as.numeric(city)) %>%
+  left_join(city.dat %>% select(municipio_code, state_abbrev))
+
+#write.csv(agg_deaths_by_residence,
+#          file=file.path(data_out_dir, "deaths_by_residence_raw.csv"))
+
+agg_deaths_by_residence
+```
+
+How many deaths are missing age?
+
+```{r}
+pct_miss_age_res <- agg_deaths_by_residence %>%
+  mutate(is_unk = as.numeric(agecat=='unknown')) %>%
+  group_by(state_abbrev, year) %>%
+  summarize(tot_deaths = sum(num_deaths),
+            num_unk = sum(num_deaths * is_unk)) %>%
+  mutate(pct_unk = 100 * (num_unk / tot_deaths)) %>%
+  pivot_wider(id_cols = c('state_abbrev'),
+              names_from='year',
+              values_from='pct_unk',
+              names_prefix='pct_unk_age_')
+
+pct_miss_age_res
+```
+
+How many deaths are missing sex?
+
+```{r}
+agg_deaths_by_residence %>%
+  #mutate(is_unk = as.numeric(is.na(sex))) %>%
+  mutate(is_unk = as.numeric(sex=='unknown')) %>%
+  group_by(state_abbrev, year) %>%
+  summarize(tot_deaths = sum(num_deaths),
+            num_unk = sum(num_deaths * is_unk)) %>%
+  mutate(pct_unk = 100 * (num_unk / tot_deaths)) %>%
+  pivot_wider(id_cols = c('state_abbrev'),
+              names_from='year',
+              values_from='pct_unk',
+              names_prefix='pct_unk_sex_')
+```
+
+### Redistribute missing deaths
+
+```{r}
+ad2012 <-
+  agg_deaths_by_residence %>%
+  filter(death.year == '2012') %>%
+  select(state_abbrev, sex, agecat, num_deaths_raw=num_deaths) %>%
+  mutate(unk_age = as.numeric(agecat == 'unknown'),
+         unk_sex = as.numeric(sex == 'unknown'),
+         obs = as.numeric(agecat != 'unknown' & sex != 'unknown'))
+
+ad2012_total_deaths <- ad2012 %>%
+  group_by(state_abbrev) %>%
+  summarize(tot_deaths = sum(num_deaths_raw),
+            num_miss_agesex = sum(unk_age*unk_sex*num_deaths_raw))
+
+ad2012 %>%
+  group_by(state_abbrev,sex) %>%
+  summarize(num_unk_age = sum(unk_age * num_deaths_raw))
+
+ad2012 %>%
+  group_by(state_abbrev,agecat) %>%
+  summarize(num_unk_sex = sum(unk_sex * num_deaths_raw))
+
+ad2012 %>%
+  group_by(state_abbrev) %>%
+  summarize(num_unk_both = sum(unk_sex * unk_age *num_deaths_raw))
+```
+
+Idea: redistribute in situations where we have the most specific information first
+
+We will use some notation to describe what's going on here. In a given city, say
+
+* $d^0_{a,m}$ - raw deaths to age $a$ among males
+* $d^0_{a,f}$ - raw deaths to age $a$ among females
+* $d^0_{a,u}$ - raw deaths to age $a$ among unknown
+* $d^0_{u,m}$ - raw deaths among males of unknown age
+* $d^0_{u,f}$ - raw deaths among females of unknown age
+* $d^0_{u,u}$ - raw deaths among people of unknown gender and unknown age
+
+**Step 1: redistribute deaths that have age but no sex equally across sexes within each age group**
+
+Within each city and age group $a$, we calculate a weight factor for step 1, $w^0_a$:
+
+$$
+w^0_a = \frac{(d^0_{a,m} + d^0_{a,f} + d^0_{a,u})}{(d^0_{a,m} + d^0_{a,f})}.
+$$
+
+Then we'll set $d^1_{a,m} = w^0_{a} d^0_{a,m}$ and $d^1_{a,f} = w^0_a d^0_{a,f}$.
+We do not change $d^0_{u,u}$, $d^0_{u,m}$ or $d^0_{u,f}$.
+
+```{r}
+# redistribute a vector proportionally, assuming that
+# the last entry is the missing values
+redistribute <- function(vec, labels, miss_val = 'unknown') {
+  
+  missidx <- which(labels == miss_val)
+  
+  if (length(missidx) == 0) {
+    return(vec)
+  } 
+  
+  w <- sum(vec) / sum(vec[-missidx])
+  
+  res <- vec
+  res[-missidx] <- vec[-missidx]*w
+  res[missidx] <- NA
+  
+  return(res)
+}
+
+```
+
+```{r}
+ad2012_step1 <- 
+  ad2012 %>%
+  # we won't handle deaths missing both age and sex yet
+  filter(! (unk_age*unk_sex)) %>%
+  group_by(state_abbrev, agecat) %>%
+  mutate(num_deaths_step1 = redistribute(num_deaths_raw, sex)) %>%
+  ungroup() 
+  
+ad2012_step1 %>%
+  arrange(state_abbrev, agecat, sex)
+```
+
+
+**Step 2: redistribute deaths that have sex but no age equally across all age groups**
+
+Within each city and age group $a$, we calculate a weight factor for step 1, $w^0_a$:
+
+$$
+w^0_a = \frac{(d^0_{a,m} + d^0_{a,f} + d^0_{a,u})}{(d^0_{a,m} + d^0_{a,f})}.
+$$
+
+Then we'll set $d^1_{a,m} = w^0_{a} d^0_{a,m}$ and $d^1_{a,f} = w^0_a d^0_{a,f}$.
+We do not change $d^0_{u,u}$, $d^0_{u,m}$ or $d^0_{u,f}$.
+
+
+```{r}
+ad2012_step2 <-
+  ad2012_step1 %>%
+  filter(! is.na(num_deaths_step1)) %>%
+  group_by(state_abbrev, sex) %>%
+  mutate(num_deaths_step2 = redistribute(num_deaths_step1, agecat)) %>%
+  ungroup() 
+
+ad2012_step2
+```
+
+**Step 3: redistribute deaths that have no age or sex equally across all age sex groups**
+
+```{r}
+ad2012_redist_fact <-
+  ad2012_step2 %>%
+  filter(! is.na(num_deaths_step2)) %>%
+  group_by(state_abbrev) %>%
+  summarize(tot_deaths_step2 = sum(num_deaths_step2)) %>%
+  left_join(ad2012_total_deaths, by='state_abbrev') %>%
+  mutate(wboth = (tot_deaths_step2 + num_miss_agesex)/tot_deaths_step2)
+
+# this checks out
+#with(ad2012_redist_fact, all(tot_deaths_step2 + num_miss_agesex == tot_deaths))
+#with(ad2012_redist_fact, which(tot_deaths_step2 + num_miss_agesex != tot_deaths))
+#with(ad2012_redist_fact, tot_deaths_step2 + num_miss_agesex - tot_deaths)
+
+ad2012_redist_fact
+```
+
+```{r}
+ad2012_redist <- ad2012_step2 %>%
+  filter(! is.na(num_deaths_step2)) %>%
+  left_join(ad2012_redist_fact %>% select(state_abbrev, wboth)) %>%
+  mutate(num_deaths = num_deaths_step2 * wboth)
+
+ad2012_redist
+```
+
+Confirm no more missing levels
+
+```{r}
+with(ad2012_redist, table(sex, useNA='ifany'))
+with(ad2012_redist, table(agecat, useNA='ifany'))
+```
+
+
+```{r}
+chk <- ad2012_redist %>%
+  group_by(state_abbrev) %>%
+  summarize(tot_deaths_chk = sum(num_deaths)) %>%
+  left_join(ad2012_total_deaths %>% select(state_abbrev, tot_deaths))
+
+# these are all the same (they don't pass the 'all equal' test because of a very tiny floating point value that must be rounding error)
+with(chk, max(abs(tot_deaths_chk - tot_deaths)))
+
+chk
+```
+
+```{r}
+ad2012_fornum <- ad2012_redist %>% select(state_abbrev, sex, agecat, num_deaths)
+ad2012_fornum
+```
+
+## City death rates
+
+```{r}
+city.asdr <- munipop12_tosave %>%
+  mutate(municipio_code = paste(municipio_code)) %>%
+  left_join(city.dat %>% 
+              mutate(municipio_code = paste(municipio_code)) %>%
+              select(municipio_code, state_abbrev, region)) %>%
+  left_join(ad2012_fornum %>% 
+              filter(! agecat %in% c('[0,18)', '[65,75)', '[75,100]')) %>%
+              rename(agegp=agecat), 
+            by=c('state_abbrev', 'sex', 'agegp')) %>%
+  mutate(asdr = num_deaths / popn,
+         sex = case_when(sex == 'f' ~ 'Female',
+                         sex == 'm' ~ 'Male')) %>%
+  rename(agegp10=agegp)
+
+city.asdr
+```
+
+```{r}
+ggplot(city.asdr) +
+  geom_line(aes(x=agegp10, y=asdr, color=state_abbrev,
+                group=interaction(state_abbrev, sex))) +
+  facet_grid(~ sex) +
+  theme_minimal()
+```
+
+
+```{r calculate-ffqf}
+city.47q18 <- city.asdr %>%
+  filter(agegp10 %in% c('[18,25)', '[25,35)', '[35,45)', '[45,55)', '[55,65)')) %>%
+  mutate(width = ifelse(agegp10 == '[18,25)',
+                        7,
+                        10)) %>%
+  mutate(const.mx.p = exp(-width*asdr),
+         v2.mx.p = 1 - (width*asdr)/(1 + (width/2)*asdr)) %>%
+  group_by(state_abbrev, sex) %>%
+  summarize(q.47.18 = 1 - prod(const.mx.p),
+            q.47.18.alt = 1 - prod(v2.mx.p))
+
+city.47q18
+```
+
+
+Double-check that it does not make a big difference how we calculate prob
+(Doesn't look like it does: mean relative difference is around 0.06%)
+
+```{r check-ffqf-assumptions}
+city.47q18.check <- city.47q18 %>%
+  group_by(state_abbrev, sex) %>%
+  mutate(rel_diff = (q.47.18.alt - q.47.18) / q.47.18)
+
+summary(city.47q18.check$rel_diff)
+```
+
+## Regional death rates
+
+
+```{r}
+region.asdr <-
+  city.asdr %>%
+  group_by(region, agegp10, sex) %>%
+  summarize(tot_deaths = sum(num_deaths),
+            tot_popn = sum(popn)) %>%
+  ungroup() %>%
+  mutate(asdr = tot_deaths / tot_popn)
+
+region.asdr
+```
+
+```{r}
+ggplot(region.asdr) +
+  geom_line(aes(x=agegp10, y=asdr, color=region,
+                group=interaction(region, sex))) +
+  facet_grid(~ sex) +
+  theme_minimal()
+```
+
+
+```{r calculate-ffqf-region}
+region.47q18 <- region.asdr %>%
+  filter(agegp10 %in% c('[18,25)', '[25,35)', '[35,45)', '[45,55)', '[55,65)')) %>%
+  mutate(width = ifelse(agegp10 == '[18,25)',
+                        7,
+                        10)) %>%
+  mutate(const.mx.p = exp(-width*asdr),
+         v2.mx.p = 1 - (width*asdr)/(1 + (width/2)*asdr)) %>%
+  group_by(region, sex) %>%
+  summarize(q.47.18 = 1 - prod(const.mx.p),
+            q.47.18.alt = 1 - prod(v2.mx.p))
+
+region.47q18
+```
+
+
+## National death rates
+
+
+```{r}
+national.asdr <-
+  city.asdr %>%
+  group_by(agegp10, sex) %>%
+  summarize(tot_deaths = sum(num_deaths),
+            tot_popn = sum(popn)) %>%
+  ungroup() %>%
+  mutate(asdr = tot_deaths / tot_popn)
+
+national.asdr
+```
+
+```{r}
+ggplot(national.asdr) +
+  geom_line(aes(x=agegp10, y=asdr,
+                group=sex)) +
+  facet_grid(~ sex) +
+  theme_minimal()
+```
+
+
+```{r calculate-ffqf-national}
+national.47q18 <- national.asdr %>%
+  filter(agegp10 %in% c('[18,25)', '[25,35)', '[35,45)', '[45,55)', '[55,65)')) %>%
+  mutate(width = ifelse(agegp10 == '[18,25)',
+                        7,
+                        10)) %>%
+  mutate(const.mx.p = exp(-width*asdr),
+         v2.mx.p = 1 - (width*asdr)/(1 + (width/2)*asdr)) %>%
+  group_by(sex) %>%
+  summarize(q.47.18 = 1 - prod(const.mx.p),
+            q.47.18.alt = 1 - prod(v2.mx.p))
+
+national.47q18
+```
+
+# Save reference values
+
+```{r save-ref-vals}
+write_csv(city.asdr %>% ungroup() %>% select(state_abbrev, sex, agegp10, asdr),
+          file.path(data_out_dir, "vr_asdrs.csv"))
+
+write_csv(region.asdr %>% ungroup() %>% select(region, sex, agegp10, asdr),
+          file.path(data_out_dir, "vr_region_asdrs.csv"))
+
+write_csv(national.asdr %>% ungroup() %>% select(sex, agegp10, asdr),
+          file.path(data_out_dir, "vr_national_asdrs.csv"))
+
+write_csv(city.47q18 %>% ungroup() %>% select(state_abbrev, sex, q.47.18),
+          file.path(data_out_dir, "vr_47q18.csv"))
+
+write_csv(region.47q18 %>% ungroup() %>% select(region, sex, q.47.18),
+          file.path(data_out_dir, "vr_region_47q18.csv"))
+
+write_csv(national.47q18 %>% ungroup() %>% select(sex, q.47.18),
+          file.path(data_out_dir, "vr_national_47q18.csv"))
+```
+
+# Sensitivity results
+
+Open up IBGE estimated VR completeness
+
+```{r}
+ibge_completeness <- read_csv(file.path(out_dir, "vr_completeness_estimates.csv")) %>%
+  mutate(sim_cov = mean_sim_cov_pct / 100)
+ibge_completeness
+```
+
+
+```{r}
+city.asdr.adj <- city.asdr %>%
+  left_join(ibge_completeness %>%
+              select(state_abbrev, sim_cov)) %>%
+  mutate(vr_asdr = asdr,
+         asdr = vr_asdr / sim_cov)
+
+city.asdr.adj
+```
+
+Double-check
+
+```{r}
+ggplot(city.asdr.adj) +
+  geom_point(aes(x=vr_asdr, y=asdr, color=state_abbrev)) +
+  geom_abline(intercept=0, slope=1) +
+  theme_minimal()
+```
+
+
+```{r calculate-ffqf-adj}
+city.47q18.adj <- city.asdr.adj %>%
+  filter(agegp10 %in% c('[18,25)', '[25,35)', '[35,45)', '[45,55)', '[55,65)')) %>%
+  mutate(width = ifelse(agegp10 == '[18,25)',
+                        7,
+                        10)) %>%
+  mutate(const.mx.p = exp(-width*asdr),
+         v2.mx.p = 1 - (width*asdr)/(1 + (width/2)*asdr)) %>%
+  group_by(state_abbrev, sex) %>%
+  summarize(q.47.18 = 1 - prod(const.mx.p),
+            q.47.18.alt = 1 - prod(v2.mx.p))
+
+city.47q18.adj
+```
+
+Adjusted regional death rates
+
+
+```{r}
+region.asdr.adj <-
+  city.asdr.adj %>%
+  ungroup() %>%
+  mutate(raw_deaths = num_deaths,
+         num_deaths = num_deaths / sim_cov) %>%
+  group_by(region, agegp10, sex) %>%
+  summarize(tot_raw_deaths = sum(raw_deaths),
+            tot_deaths = sum(num_deaths),
+            tot_popn = sum(popn)) %>%
+  ungroup() %>%
+  mutate(asdr = tot_deaths / tot_popn,
+         vr_asdr = tot_raw_deaths / tot_popn)
+
+region.asdr.adj
+```
+
+Double-check
+
+```{r}
+ggplot(region.asdr.adj) +
+  geom_point(aes(x=vr_asdr, y=asdr, color=region)) +
+  geom_abline(intercept=0, slope=1) +
+  theme_minimal()
+```
+
+
+
+```{r calculate-ffqf-region-adj}
+region.47q18.adj <- region.asdr.adj %>%
+  filter(agegp10 %in% c('[18,25)', '[25,35)', '[35,45)', '[45,55)', '[55,65)')) %>%
+  mutate(width = ifelse(agegp10 == '[18,25)',
+                        7,
+                        10)) %>%
+  mutate(const.mx.p = exp(-width*asdr),
+         v2.mx.p = 1 - (width*asdr)/(1 + (width/2)*asdr)) %>%
+  group_by(region, sex) %>%
+  summarize(q.47.18 = 1 - prod(const.mx.p),
+            q.47.18.alt = 1 - prod(v2.mx.p))
+
+region.47q18.adj
+```
+
+Double check
+
+```{r}
+chk_region_47q18 <- region.47q18.adj %>%
+  left_join(region.47q18 %>% select(region, sex, q.47.18.vr = q.47.18)) 
+
+chk_region_47q18 %>%
+  ggplot(.) +
+  geom_point(aes(x=q.47.18.vr, y=q.47.18, color=region)) +
+  geom_abline(intercept=0, slope=1) +
+  theme_minimal()
+```
+
+
+Adjusted national death rates
+
+
+```{r}
+national.asdr.adj <-
+  city.asdr.adj %>%
+  ungroup() %>%
+  mutate(raw_deaths = num_deaths,
+         num_deaths = num_deaths / sim_cov) %>%
+  group_by(agegp10, sex) %>%
+  summarize(tot_raw_deaths = sum(raw_deaths),
+            tot_deaths = sum(num_deaths),
+            tot_popn = sum(popn)) %>%
+  ungroup() %>%
+  mutate(asdr = tot_deaths / tot_popn,
+         vr_asdr = tot_raw_deaths / tot_popn)
+
+national.asdr.adj
+```
+
+Double-check
+
+```{r}
+ggplot(national.asdr.adj) +
+  geom_point(aes(x=vr_asdr, y=asdr)) +
+  geom_abline(intercept=0, slope=1) +
+  theme_minimal()
+```
+
+
+
+```{r calculate-ffqf-national-adj}
+national.47q18.adj <- national.asdr.adj %>%
+  filter(agegp10 %in% c('[18,25)', '[25,35)', '[35,45)', '[45,55)', '[55,65)')) %>%
+  mutate(width = ifelse(agegp10 == '[18,25)',
+                        7,
+                        10)) %>%
+  mutate(const.mx.p = exp(-width*asdr),
+         v2.mx.p = 1 - (width*asdr)/(1 + (width/2)*asdr)) %>%
+  group_by(sex) %>%
+  summarize(q.47.18 = 1 - prod(const.mx.p),
+            q.47.18.alt = 1 - prod(v2.mx.p))
+
+national.47q18.adj
+```
+
+Double check
+
+```{r}
+chk_national_47q18 <- national.47q18.adj %>%
+  left_join(national.47q18 %>% select(sex, q.47.18.vr = q.47.18)) 
+
+chk_national_47q18 %>%
+  ggplot(.) +
+  geom_point(aes(x=q.47.18.vr, y=q.47.18)) +
+  geom_abline(intercept=0, slope=1) +
+  theme_minimal()
+```
+
+
+
+# Save adjusted reference values
+
+```{r save-ref-vals-adj}
+write_csv(city.asdr.adj %>% ungroup() %>% select(state_abbrev, sex, agegp10, asdr),
+          file.path(data_out_dir, "vr_asdrs_adj.csv"))
+
+write_csv(region.asdr.adj %>% ungroup() %>% select(region, sex, agegp10, asdr),
+          file.path(data_out_dir, "vr_region_asdrs_adj.csv"))
+
+write_csv(national.asdr.adj %>% ungroup() %>% select(sex, agegp10, asdr),
+          file.path(data_out_dir, "vr_national_asdrs_adj.csv"))
+
+write_csv(city.47q18.adj %>% ungroup() %>% select(state_abbrev, sex, q.47.18),
+          file.path(data_out_dir, "vr_47q18_adj.csv"))
+
+write_csv(region.47q18.adj %>% ungroup() %>% select(region, sex, q.47.18),
+          file.path(data_out_dir, "vr_region_47q18_adj.csv"))
+
+write_csv(national.47q18.adj %>% ungroup() %>% select(sex, q.47.18),
+          file.path(data_out_dir, "vr_national_47q18_adj.csv"))
+```
+
+

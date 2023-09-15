@@ -1,0 +1,98 @@
+---
+title: "Compare survey estimates to vital registration death rates"
+output: html_notebook
+---
+
+```{r}
+library(here)
+library(rmarkdown)
+library(tictoc)
+```
+
+```{r}
+code_dir <- here('code')
+
+comparison_script_fn <- file.path(code_dir, "99_vr_comparison.Rmd")
+```
+
+NB: it takes about 25 minutes to run all 4 comparisons on Dennis's computer.
+
+```{r}
+tic("Running all 4 comparison scripts")
+```
+
+## Compare to VR
+
+Compare to vital registration at the city level
+
+```{r}
+rmarkdown::render(comparison_script_fn,
+                  output_file = "comparison_city_vr",
+                  params=list(
+                    comparison_name = 'vr_comparison',
+                    geo_name = 'city'
+                  ))
+```
+
+Compare to vital registration at the regional level
+
+```{r}
+rmarkdown::render(comparison_script_fn,
+                  output_file = "comparison_region_vr",
+                  params=list(
+                    comparison_name = 'vr_comparison',
+                    geo_name = 'region'
+                  ))
+```
+
+Compare to vital registration at the national level
+
+```{r}
+rmarkdown::render(comparison_script_fn,
+                  output_file = "comparison_national_vr",
+                  params=list(
+                    comparison_name = 'vr_comparison',
+                    geo_name = 'national'
+                  ))
+```
+
+## Compare to adjusted VR
+
+Compare to adjusted vital registration at the city level
+
+```{r}
+rmarkdown::render(comparison_script_fn,
+                  output_file = "comparison_city_adj_vr",
+                  params=list(
+                    comparison_name = 'vr_adj_comparison',
+                    geo_name = 'city'
+                  ))
+```
+
+Compare to adjusted vital registration at the regional level
+
+```{r}
+rmarkdown::render(comparison_script_fn,
+                  output_file = "comparison_region_adj_vr",
+                  params=list(
+                    comparison_name = 'vr_adj_comparison',
+                    geo_name = 'region'
+                  ))
+```
+
+Compare to adjusted vital registration at the national level
+
+```{r}
+rmarkdown::render(comparison_script_fn,
+                  output_file = "comparison_national_adj_vr",
+                  params=list(
+                    comparison_name = 'vr_adj_comparison',
+                    geo_name = 'national'
+                  ))
+```
+
+
+```{r}
+toc()
+```
+

@@ -1,0 +1,120 @@
+---
+title: "VR completeness"
+output:
+  html_document:
+    df_print: paged
+---
+
+This file summarizes the estimated vital registration completeness by city.
+It saves its results to `out/`
+
+```{r}
+library(tidyverse)
+library(here)
+library(janitor)
+library(readxl)
+```
+
+```{r}
+out_dir <- here("out") 
+data_dir <- here("data") 
+cap_recap_dir <- file.path(data_dir, "ibge-capture-recapture")
+```
+
+```{r}
+capital.coords <- read_csv(file.path(data_dir, "cities.csv"))
+
+capital.coords
+```
+
+Read in the files w/ the results of the capture-recapture studies
+
+```{r}
+
+cr_res <- map_dfr(2015:2017,
+                  function(year) {
+                    res <- read_xlsx(file.path(cap_recap_dir, paste(year), '02obitos', 'Tabela 2.2.xlsx'),
+                                        skip=1) %>%
+                      janitor::clean_names()
+                    
+                    res <- res %>%
+                      filter(codigo_municipio %in% capital.coords$municipio_code) %>%
+                      mutate(year = year)
+                    
+                    return(res)
+                  })
+
+
+cr_res
+```
+
+
+```{r}
+cr_res_avg <- cr_res %>%
+  mutate(municipio_code = codigo_municipio,
+         state_name = nome_uf_2,
+         city_name = nome_uf_4) %>%
+  group_by(municipio_code, city_name, state_name) %>%
+  dplyr::summarize(mean_sim_underest_pct = mean(sub_notificacao_ms_percent),
+            mean_ibge_underest_pct = mean(sub_registro_ibge_1_percent)) %>%
+  ungroup() %>%
+  mutate(mean_sim_cov_pct = 100 - mean_sim_underest_pct)
+
+cr_res_avg %>% 
+  select(municipio_code, city_name, state_name, 
+         mean_sim_underest_pct, mean_sim_cov_pct, everything()) %>%
+  arrange(desc(mean_sim_underest_pct))
+```
+
+Three cities have an average estimated undercount (from 2015, 2016, 2017) of more
+than four percent:
+
+San Luis, Maranhao (94\% coverage, MA in NE);
+Salvador, Bahia (95\% coverage BA in NE);
+and Macapa, Amapa (96\% coverage, AP in NO)
+
+Save the results to a table that we can include in the pre-registration document
+
+```{r}
+cr_res_tbl <- cr_res_avg %>%
+    left_join(capital.coords %>% select(municipio_code, state_abbrev, region)) %>%
+    select(region, state_abbrev, state_name, city_name,  mean_sim_cov_pct) %>%
+    #mutate(mean_sim_cov_pct = round(mean_sim_cov_pct, 1)) %>%
+    arrange(desc(mean_sim_cov_pct))
+
+write_csv(cr_res_tbl,
+          path=file.path(out_dir, 'vr_completeness_estimates.csv'))
+```
+
+```{r}
+vr.table.rendered <- pander::pandoc.table.return(cr_res_tbl,
+               col.names = c('Region', 'State\ncode', 'State\nname', 'City', 'Estimated\ncompleteness of\ndeath registration\n(%)'),
+               big.mark=',',
+               round=2,
+               keep.trailing.zeros=TRUE,
+               split.cells=c(1, 1, 25, 25, 15),
+               split.table=Inf,
+               justify=c('center', 'center', 'left', 'left', 'right'),
+               caption="(\\#tab:vrcompleteness) Estimated completeness of death registration at all ages and for both sexes in each of the 27 cities in our sample.")
+
+cat(vr.table.rendered,
+    file=file.path(out_dir, 'vr_completeness_estimates.md'))
+cat(vr.table.rendered)
+```
+
+NB: this is the same conclusion we'd reach by just looking at the 2015 data
+
+```{r}
+cr_res_2015 <- cr_res %>%
+  filter(year==2015) %>%
+  select(year,
+         municipio_code = codigo_municipio,
+         city_name = nome_uf_4,
+         state_name = nome_uf_2,
+         sim_underest_pct = sub_notificacao_ms_percent,
+         ibge_underest_pct = sub_registro_ibge_1_percent)
+
+cr_res_2015 %>% arrange(desc(sim_underest_pct))
+```
+
+

@@ -1,0 +1,451 @@
+---
+title: "Design-based network estimates"
+output: html_notebook
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+```{r load-packages}
+library(networkreporting)
+library(tidyverse)
+library(here)
+library(tictoc)
+```
+
+
+```{r setup-directories}
+data_dir <- here('data')
+survey_data_dir <- file.path(data_dir, 'survey')
+out_dir <- here('out')
+```
+
+# Load the data
+
+```{r load-data}
+# load individual data
+ego.dat <- read_csv(file.path(survey_data_dir, "individual.csv"))
+
+# load network death data
+nr.deaths.dat <- read_csv(file.path(survey_data_dir, "network_reports.csv"))
+
+# load bootstrap weights
+boot.weights <- read_csv(file.path(survey_data_dir, "bootstrap_weights_1k.csv"))
+
+# load frame population sizes
+state.dat <- read_csv(file.path(data_dir, "cities.csv"))
+
+all.states <- state.dat %>% pull(state_abbrev)
+```
+
+For this analysis, we'll only use reported deaths between the ages of 18 and 65.
+We'll filter out people under 18. However, it's a little easier to run the code if we
+keep reported deaths who are over 65 for the time being.
+
+```{r drop-unused-deaths}
+nr.deaths.dat <- nr.deaths.dat %>%
+  filter(agegp10 != '[0,18)')
+```
+
+
+It will be convenient to have a list w/ dataset for each state. We'll do this for
+the ego data, the network reports, the known population sizes, and the bootstrap resamples
+
+```{r make-city-data-lists}
+# ego data
+state.svy <- setNames(map(all.states,
+                              function(state) {
+                                res <- ego.dat %>% filter(state_abbrev==state)
+                                return(res)
+                              }),
+                      all.states)
+
+# detailed reports about deaths
+state.alter.deaths.dat <- setNames(map(all.states,
+                                       function(state) {
+                                         res <- nr.deaths.dat %>% filter(state_abbrev==state)
+                                         return(res)
+                                       }),
+                                   all.states)
+
+# total size of the known populations in each state
+state.kp.tot <- setNames(map(all.states,
+                             ~ state.dat %>% 
+                               filter(state_abbrev==.x) %>% 
+                               pull(total_kp_size)),
+                             all.states)
+
+# bootstrap weights
+state.bootweights <- setNames(map(all.states,
+                               function(state) {
+                                 
+                                 res <- boot.weights %>% 
+                                   filter(state_abbrev==state) %>% 
+                                   select(-state_abbrev)
+                                 
+                                 return(res)
+                               }),
+                               all.states)
+```
+
+## Calculate deaths per interview
+
+Calculate the unweighted number of adult deaths reported per interview
+First, calculate the raw (unweighted) number of adult deaths reported; this is useful for
+comparing to the sibling method
+
+```{r calculate-deaths-per-interview}
+n.net <- ego.dat %>%
+  group_by(state_abbrev) %>%
+  summarize(num_interviews = n())
+
+dpi.net <- nr.deaths.dat %>%
+  # only count reported deaths in our age range of interest (18-64)
+  filter(! agegp10 %in% c('[65,75)', '[75,Inf]', NA)) %>%
+  group_by(state_abbrev) %>%
+  summarize(num_reported_deaths = n()) %>%
+  mutate(method='network')
+```
+
+```{r save-deaths-per-interview}
+write_csv(n.net,
+          path=file.path(out_dir, 'num_interviews.csv'))
+write_csv(dpi.net,
+          path=file.path(out_dir, 'num_deaths_unweighted_network.csv'))
+```
+
+
+## Get reported deaths by respondent age (who reports whom)
+
+Note that this is unweighted -- it's just the number of deaths
+
+```{r}
+nr_wrw <- nr.deaths.dat %>%
+  rename(death_sex = sex,
+         death_agegp10 = agegp10) %>%
+  left_join(ego.dat %>% select(ego.id = id, ego_sex = sex, ego_agegp10 = agegp10),
+            by='ego.id')
+
+write_csv(nr_wrw,
+          path=file.path(out_dir, 'who_reports_who_network.csv'))
+
+nr_wrw
+```
+
+## Calculate network survival estimates from bootstrap resamples
+
+
+NB: 1000 bootstrap reps takes about 75 minutes on a 2020 Macbook Pro
+
+NOTE: this code produces some warnings that look like 
+"Bootstrapped degree estimates have 9 out of 14000 values missing. These have been removed in the summary statistics"
+These warnings come from older ages, which we don't use in this analysis.
+
+```{r network-survival-estimates-bootstrap}
+tic('network survival estimates (with bootstrap)')
+#netsurv.asdr <- future_map_dfr(all.states,
+netsurv.asdr <- map_dfr(all.states,
+                             function(state) {
+                               cat(glue::glue("Starting {state}...\n\n"))
+                                    
+                               
+                               cur.dat <- state.svy[[state]]
+                               cur.deaths.dat <- state.alter.deaths.dat[[state]]
+                               cur.bw <- state.bootweights[[state]] 
+                               cur.kp.tot <- state.kp.tot[[state]]
+                               
+                               cur.ns <- network.survival.estimator_(resp.data = cur.dat,
+                                                attribute.data = cur.deaths.dat,
+                                                attribute.names = c('sex', 'agegp10'),
+                                                known.populations = 'num_connections_to_kp',
+                                                total.kp.size = cur.kp.tot,   
+                                                weights = 'weight',
+                                                attribute.weights = 'ego.weight',
+                                                boot.weights=cur.bw,
+                                                within.alter.weights='w.factor.alter',
+                                                ego.id=c('id'='ego.id'), 
+                                                dropmiss=TRUE,
+                                                return.boot=TRUE,
+                                                verbose=FALSE)$boot.estimates
+                               cur.ns$state_abbrev <- state
+                               
+                               return(cur.ns)
+                             })
+                             #,
+                             #.progress=TRUE)
+cat("\n\n")
+toc()
+```
+
+Missingness comes from cases where bootstrap-resamples produce an estimate of 0 connections
+to groups of known size. These all happen at ages 65+, which we don't produce estimates for anyway:
+
+```{r summarize-missingness}
+glue::glue("
+           In {zerokp} cases out of {total} ({round(100*(zerokp/total),2)} percent), bootstrapped estimate of degree for a given age group is 0, leading to undefined estimated death rates.\n\n
+           This table shows whether or not this affects any age groups used in the analysis below:\n
+           ", 
+           zerokp = sum(! is.finite(netsurv.asdr$asdr.hat)), 
+           total=nrow(netsurv.asdr))
+
+with(netsurv.asdr %>% filter(! is.finite(asdr.hat)), table(agegp10, useNA='ifany'))
+```
+
+Calculate 47q18, ie cond prob of death between 18 and 65 
+
+```{r calculate-ffqf}
+net.47q18 <- netsurv.asdr %>%
+  filter(agegp10 %in% c('[18,25)', '[25,35)', '[35,45)', '[45,55)', '[55,65)')) %>%
+  mutate(width = ifelse(agegp10 == '[18,25)',
+                        7,
+                        10),
+         asdr = asdr.hat) %>%
+  mutate(const.mx.p = exp(-width*asdr),
+         v2.mx.p = 1 - (width*asdr)/(1 + (width/2)*asdr)) %>%
+  group_by(state_abbrev, sex, boot_idx) %>%
+  summarize(q.47.18 = 1 - prod(const.mx.p),
+            q.47.18.alt = 1 - prod(v2.mx.p))
+
+net.47q18.summ <- net.47q18 %>%
+  group_by(state_abbrev, sex) %>%
+  summarize(q.47.18.mean = mean(q.47.18),
+            q.47.18.sd = sd(q.47.18), 
+            q.47.18.ci.low = quantile(q.47.18, .025),
+            q.47.18.ci.high = quantile(q.47.18, .975))
+```
+
+Double-check that it does not make a big difference how we calculate prob
+(Doesn't look like it does: mean relative difference is around 0.07%)
+
+```{r check-ffqf-assumptions}
+net.47q18.check <- net.47q18 %>%
+  group_by(state_abbrev, sex) %>%
+  summarize(q.47.18.mean = mean(q.47.18),
+            q.47.18.alt.mean = mean(q.47.18.alt)) %>%
+  mutate(rel_diff = (q.47.18.alt.mean - q.47.18.mean) / q.47.18.mean)
+
+summary(net.47q18.check$rel_diff)
+```
+
+Save asdrs and probs 
+
+```{r save-asdrs}
+# save point estimates and CI for ASDRs
+netsurv.asdr.agg <- netsurv.asdr %>%
+  ungroup() %>%
+  filter(! agegp10 %in% c('[65,75)', '[75,Inf]', 'NA'))  %>%
+  group_by(state_abbrev, sex, agegp10) %>%
+  summarize(post_ci_high_asdr = quantile(asdr.hat, .975),
+            post_ci_low_asdr = quantile(asdr.hat, .025),
+            post_sd_asdr = sd(asdr.hat),
+            post_mean_asdr = mean(asdr.hat)) %>%
+  mutate(method = 'net_design')
+write_csv(netsurv.asdr.agg, 
+          file.path(out_dir, 'net_design_asdrs.csv'))
+
+# save all bootstrap reps for ASDRs
+netsurv.asdr.boot <- netsurv.asdr %>%
+  ungroup() %>%
+  filter(! agegp10 %in% c('[65,75)', '[75,Inf]', 'NA'))  %>%
+  select(state_abbrev, sex, agegp10, boot_idx, post_mean_asdr = asdr.hat) %>%
+  mutate(method = 'net_design')
+write_csv(netsurv.asdr.boot, 
+          file.path(out_dir, 'net_design_asdrs_boot.csv'))
+
+# save point estimates for probabilities and CI
+netsurv.47q18.agg <- net.47q18.summ %>%
+  dplyr::rename(post_mean_q = q.47.18.mean,
+                post_sd_q = q.47.18.sd,
+                post_ci_low_q = q.47.18.ci.low,
+                post_ci_high_q = q.47.18.ci.high) %>%
+  mutate(method = 'net_design')
+write_csv(netsurv.47q18.agg, 
+          file.path(out_dir, 'net_design_probs.csv'))
+
+# save all bootstrap reps for probabilities and CI
+netsurv.47q18.boot <- net.47q18 %>%
+  select(state_abbrev, sex, boot_idx, q.47.18.mean = q.47.18) %>%
+  mutate(method = 'net_design')
+write_csv(netsurv.47q18.boot, 
+          file.path(out_dir, 'net_design_probs_boot.csv'))
+```
+
+## Aggregate death rate estimates up to region level 
+
+```{r aggregate-asdrs-to-region}
+net.region.asdr <- netsurv.asdr %>%
+  mutate(ybar.F.Dcell.hat = y.F.Dcell.hat / N.F.hat,
+         ybar.Fcell.kp.hat = y.Fcell.kp.hat / N.Fcell.hat) %>%
+  filter(! agegp10 %in% c('[65,75)', '[75,Inf]', 'NA')) %>%
+  left_join(state.dat %>% select(state_abbrev, region), by='state_abbrev')
+
+net.region.asdr <- net.region.asdr %>%
+  group_by(region, sex, agegp10, boot_idx) %>%
+  summarize(y.F.Dcell.hat = sum(y.F.Dcell.hat),
+            y.Fcell.kp.hat = sum(y.Fcell.kp.hat),
+            N.F.hat = sum(N.F.hat),
+            N.Fcell.hat = sum(N.Fcell.hat),
+            total.kp.size = sum(total.kp.size)) %>%
+  mutate(ybar.F.Dcell.hat = y.F.Dcell.hat / N.F.hat,
+         ybar.Fcell.kp.hat = y.Fcell.kp.hat / N.Fcell.hat,
+         asdr.hat = (ybar.F.Dcell.hat/ybar.Fcell.kp.hat)*(total.kp.size/N.Fcell.hat))
+
+net.region.asdr.boot <- net.region.asdr %>%
+  select(region, sex, agegp10, boot_idx, post_mean_asdr = asdr.hat)
+  
+net.region.asdr.agg <- net.region.asdr %>%
+  group_by(region, sex, agegp10) %>%  
+  summarize(post_mean_asdr = mean(asdr.hat),
+            post_ci_low_asdr = quantile(asdr.hat, .025),
+            post_ci_high_asdr = quantile(asdr.hat, .975),
+            post_sd_asdr = sd(asdr.hat)) %>%
+  mutate(method = 'net_design')
+```
+
+Calculate probabilities for regional death rate estimates
+
+```{r ffqf-for-regions}
+net.region.47q18 <- net.region.asdr %>%
+  filter(agegp10 %in% c('[18,25)', '[25,35)', '[35,45)', '[45,55)', '[55,65)')) %>%
+  mutate(width = ifelse(agegp10 == '[18,25)',
+                        7,
+                        10),
+         asdr = asdr.hat) %>%
+  mutate(const.mx.p = exp(-width*asdr),
+         v2.mx.p = 1 - (width*asdr)/(1 + (width/2)*asdr)) %>%
+  group_by(region, sex, boot_idx) %>%
+  summarize(q.47.18 = 1 - prod(const.mx.p),
+            q.47.18.alt = 1 - prod(v2.mx.p))
+
+net.47q18.region.summ <- net.region.47q18 %>%
+  group_by(region, sex) %>%
+  summarize(post_mean_q = mean(q.47.18),
+            post_sd_q = sd(q.47.18), 
+            post_ci_low_q = quantile(q.47.18, .025),
+            post_ci_high_q = quantile(q.47.18, .975)) %>%
+  mutate(method = 'net_design')
+
+net.47q18.region.boot <- net.region.47q18 %>%
+   mutate(method = 'net_design') %>%
+   select(region, sex, boot_idx, q.47.18.mean = q.47.18)
+```
+
+Double-check that it does not make a big difference how we calculate prob
+(Doesn't look like it does: mean relative difference is around 0.3%)
+
+```{r check-region-ffqf-assumption}
+net.region.47q18.check <- net.region.47q18 %>%
+  group_by(region, sex) %>%
+  summarize(q.47.18.mean = mean(q.47.18),
+            q.47.18.alt.mean = mean(q.47.18.alt)) %>%
+  mutate(rel_diff = (q.47.18.alt.mean - q.47.18.mean) / q.47.18.mean)
+
+summary(net.region.47q18.check$rel_diff)
+```
+
+Save regional results
+
+```{r save-region-results}
+write_csv(net.region.asdr.agg, 
+          file.path(out_dir, 'net_design_asdrs_region.csv'))
+write_csv(net.region.asdr.boot, 
+          file.path(out_dir, 'net_design_asdrs_region_boot.csv'))
+write_csv(net.47q18.region.summ, 
+          file.path(out_dir, 'net_design_probs_region.csv'))  
+write_csv(net.47q18.region.boot, 
+          file.path(out_dir, 'net_design_probs_region_boot.csv'))  
+```
+
+
+## Aggregate death rate estimates up to national level 
+
+```{r aggregate-asdrs-to-national}
+net.national.asdr <- netsurv.asdr %>%
+  mutate(ybar.F.Dcell.hat = y.F.Dcell.hat / N.F.hat,
+         ybar.Fcell.kp.hat = y.Fcell.kp.hat / N.Fcell.hat) %>%
+  filter(! agegp10 %in% c('[65,75)', '[75,Inf]', 'NA')) %>%
+  left_join(state.dat %>% select(state_abbrev, region), by='state_abbrev')
+
+net.national.asdr <- net.national.asdr %>%
+  group_by(sex, agegp10, boot_idx) %>%
+  summarize(y.F.Dcell.hat = sum(y.F.Dcell.hat),
+            y.Fcell.kp.hat = sum(y.Fcell.kp.hat),
+            N.F.hat = sum(N.F.hat),
+            N.Fcell.hat = sum(N.Fcell.hat),
+            total.kp.size = sum(total.kp.size)) %>%
+  mutate(ybar.F.Dcell.hat = y.F.Dcell.hat / N.F.hat,
+         ybar.Fcell.kp.hat = y.Fcell.kp.hat / N.Fcell.hat,
+         asdr.hat = (ybar.F.Dcell.hat/ybar.Fcell.kp.hat)*(total.kp.size/N.Fcell.hat))
+
+net.national.asdr.boot <- net.national.asdr %>%
+  select(sex, agegp10, boot_idx, post_mean_asdr = asdr.hat)
+  
+net.national.asdr.agg <- net.national.asdr %>%
+  group_by(sex, agegp10) %>%  
+  summarize(post_mean_asdr = mean(asdr.hat),
+            post_ci_low_asdr = quantile(asdr.hat, .025),
+            post_ci_high_asdr = quantile(asdr.hat, .975),
+            post_sd_asdr = sd(asdr.hat)) %>%
+  mutate(method = 'net_design')
+```
+
+Calculate probabilities for national death rate estimates
+
+```{r ffqf-for-national}
+net.national.47q18 <- net.national.asdr %>%
+  filter(agegp10 %in% c('[18,25)', '[25,35)', '[35,45)', '[45,55)', '[55,65)')) %>%
+  mutate(width = ifelse(agegp10 == '[18,25)',
+                        7,
+                        10),
+         asdr = asdr.hat) %>%
+  mutate(const.mx.p = exp(-width*asdr),
+         v2.mx.p = 1 - (width*asdr)/(1 + (width/2)*asdr)) %>%
+  group_by(sex, boot_idx) %>%
+  summarize(q.47.18 = 1 - prod(const.mx.p),
+            q.47.18.alt = 1 - prod(v2.mx.p))
+
+net.47q18.national.summ <- net.national.47q18 %>%
+  group_by(sex) %>%
+  summarize(post_mean_q = mean(q.47.18),
+            post_sd_q = sd(q.47.18), 
+            post_ci_low_q = quantile(q.47.18, .025),
+            post_ci_high_q = quantile(q.47.18, .975)) %>%
+  mutate(method = 'net_design')
+
+net.47q18.national.boot <- net.national.47q18 %>%
+   mutate(method = 'net_design') %>%
+   select(sex, boot_idx, q.47.18.mean = q.47.18)
+```
+
+Double-check that it does not make a big difference how we calculate prob
+(Doesn't look like it does: mean relative difference is around TODO%)
+
+```{r check-national-ffqf-assumption}
+net.national.47q18.check <- net.national.47q18 %>%
+  group_by(sex) %>%
+  summarize(q.47.18.mean = mean(q.47.18),
+            q.47.18.alt.mean = mean(q.47.18.alt)) %>%
+  mutate(rel_diff = (q.47.18.alt.mean - q.47.18.mean) / q.47.18.mean)
+
+summary(net.national.47q18.check$rel_diff)
+```
+
+Save national results
+
+```{r save-national-results}
+write_csv(net.national.asdr.agg, 
+          file.path(out_dir, 'net_design_asdrs_national.csv'))
+write_csv(net.national.asdr.boot, 
+          file.path(out_dir, 'net_design_asdrs_national_boot.csv'))
+write_csv(net.47q18.national.summ, 
+          file.path(out_dir, 'net_design_probs_national.csv'))  
+write_csv(net.47q18.national.boot, 
+          file.path(out_dir, 'net_design_probs_national_boot.csv'))  
+```
+
+
+
+
+

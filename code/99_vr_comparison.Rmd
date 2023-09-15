@@ -1,0 +1,3127 @@
+---
+title: "Vital registration comparison"
+params:
+  ## comparison_name - are we comparing to VR to the adjusted VR?
+  comparison_name: "vr_comparison"
+  #comparison_name: "vr_adj_comparison"
+  ## geo_name - are we analyzing at the city, region, or national level?
+  geo_name: "city"
+  #geo_name: "region"
+  #geo_name: "national"
+  ## do_12mo: if true, run the sibling 12-month estimates
+  do_12mo: true
+output:
+  html_document:
+    df_print: paged
+---
+
+This file makes the comparison between the two survey-based estimates
+(sibling and network) and the vital registration data.
+
+It uses parameters to choose whether the comparison is at the state or regional level,
+and to choose whether the comparison is to the adjusted or unadjusted vital registration.
+
+For replication, this file is not supposed to be run directly; it is run by another
+notebook.
+
+```{r}
+library(tidyverse)
+library(geofacet)
+#devtools::install_github("dgrtwo/drlib")
+library(drlib) # has reorder_within / scale_x_reordered for plots
+
+library(gtable) # for customizing map
+library(ggplotify) # for customizing map
+
+library(ggforce) # for paginating faceted output
+library(latex2exp)
+library(broom)
+
+library(ggrepel)
+library(patchwork)
+library(tictoc)
+library(glue)
+
+## this has coord_obs_pred, which is helpful for plots
+library(tune)
+
+# for calculating moran's I
+# (spatial autocorrelation)
+library(spdep)
+
+# this has color scale
+library(viridis)
+
+# to avoid issues w/ spherical geometry (minor detail in making maps)
+# see
+# https://gis.stackexchange.com/questions/404385/r-sf-some-edges-are-crossing-in-a-multipolygon-how-to-make-it-valid-when-using
+sf_use_s2(FALSE)
+
+# has a helper function for symmetric y axis
+# devtools::install_github("stefanedwards/lemon")
+# (on 20230613)
+library(lemon)
+
+library(here)
+```
+
+```{r}
+comparison_name <- params$comparison_name 
+
+geo_name <- params$geo_name 
+```
+
+```{r}
+out_dir <- here('out')
+data_dir <- here('data')
+
+vr_dir <- file.path(data_dir, 'vr_prepped')
+
+comp_out_dir0 <- file.path(out_dir, comparison_name)
+comp_out_dir <- file.path(comp_out_dir0, geo_name)
+dir.create(comp_out_dir0, showWarnings = FALSE)
+dir.create(comp_out_dir, showWarnings = FALSE)
+```
+
+```{r}
+tic(glue::glue("Running comparison for {comparison_name} / {geo_name}"))
+```
+
+
+## Some aesthetics for the plots
+
+```{r}
+color_sib <- "#FC4E07"
+color_net <- "#00AFBB"
+color_gs <- "black"
+
+shape_sib <- 0
+shape_net <- 5
+shape_gs  <- 16
+
+region_pal <- tribble(~ region, ~ color,
+                      'NO', 'blue',
+                      'NE', 'orange',
+                      'CW', 'red',
+                      'SE', 'green',
+                      'SO', 'purple')
+
+age_scale_color <- scale_color_viridis(discrete=TRUE, direction=-1)
+```
+
+## Cities to use in comparison
+
+## Open up the estimates
+
+Load vital registration reference estimates
+
+```{r}
+if(comparison_name == 'vr_comparison') {
+  
+  if(geo_name == 'city') {
+    gs_asdrs <- read_csv(file.path(vr_dir, 
+                                   "vr_asdrs.csv")) %>%
+      rename(geo = state_abbrev)
+    
+    gs_probs <- read_csv(file.path(vr_dir, 
+                                   "vr_47q18.csv")) %>%
+      rename(geo = state_abbrev)
+    
+  } else if(geo_name == 'region') {
+
+    gs_asdrs <- read_csv(file.path(vr_dir, 
+                                   "vr_region_asdrs.csv")) %>%
+      rename(geo = region)
+    
+    gs_probs <- read_csv(file.path(vr_dir, 
+                                   "vr_region_47q18.csv")) %>%
+      rename(geo = region)
+    
+  } else if (geo_name == 'national') {
+    
+    gs_asdrs <- read_csv(file.path(vr_dir, 
+                                   "vr_national_asdrs.csv")) %>%
+      mutate(geo = 'national')
+    
+    gs_probs <- read_csv(file.path(vr_dir, 
+                                   "vr_national_47q18.csv")) %>%
+      mutate(geo = 'national')
+    
+  }
+  
+} else if (comparison_name == 'vr_adj_comparison') {
+  
+  if(geo_name == 'city') {
+    gs_asdrs <- read_csv(file.path(vr_dir, 
+                                   "vr_asdrs_adj.csv"))  %>%
+      rename(geo = state_abbrev)
+    
+    gs_probs <- read_csv(file.path(vr_dir, 
+                                   "vr_47q18_adj.csv")) %>%
+      rename(geo = state_abbrev)
+    
+  } else if (geo_name == 'region') {
+  
+    gs_asdrs <- read_csv(file.path(vr_dir, 
+                                   "vr_region_asdrs_adj.csv")) %>%
+      rename(geo = region)
+    
+    gs_probs <- read_csv(file.path(vr_dir, 
+                                   "vr_region_47q18_adj.csv")) %>%
+      rename(geo = region)
+    
+  } else if (geo_name == 'national') {
+    
+    gs_asdrs <- read_csv(file.path(vr_dir, 
+                                   "vr_national_asdrs_adj.csv")) %>%
+      mutate(geo = 'national')
+    
+    gs_probs <- read_csv(file.path(vr_dir, 
+                                   "vr_national_47q18_adj.csv")) %>%
+      mutate(geo = 'national')
+    
+  }
+}
+```
+
+Load sibling estimates
+
+```{r}
+if(geo_name == 'city') {
+  
+  sib_asdrs <- read_csv(file.path(out_dir, 
+                                  'sib_design_asdrs.csv')) %>%
+    rename(geo = state_abbrev)
+  
+  sib_probs <- read_csv(file.path(out_dir, 
+                                  'sib_design_probs.csv')) %>%
+    rename(geo = state_abbrev)
+  
+  sib_asdrs_boot <- read_csv(file.path(out_dir, 
+                                       'sib_design_asdrs_boot.csv')) %>%
+    rename(geo = state_abbrev)
+  
+  sib_probs_boot <- read_csv(file.path(out_dir, 
+                                       'sib_design_probs_boot.csv')) %>%
+    rename(geo = state_abbrev)
+  
+  if(params$do_12mo) {
+    
+    sib_asdrs_12mo <- read_csv(file.path(out_dir, 
+                                         'sib_12mo_design_asdrs.csv')) %>%
+      rename(geo = state_abbrev)
+    
+    sib_probs_12mo <- read_csv(file.path(out_dir, 
+                                    'sib_12mo_design_probs.csv')) %>%
+      rename(geo = state_abbrev)
+    
+    sib_asdrs_boot_12mo <- read_csv(file.path(out_dir, 
+                                         'sib_12mo_design_asdrs_boot.csv')) %>%
+      rename(geo = state_abbrev)
+    
+    sib_probs_boot_12mo <- read_csv(file.path(out_dir, 
+                                              'sib_12mo_design_probs_boot.csv')) %>%
+      rename(geo = state_abbrev)
+  
+  }
+
+} else if (geo_name == 'region') {
+  
+  sib_asdrs <- read_csv(file.path(out_dir, 
+                                  'sib_design_asdrs_region.csv')) %>%
+    rename(geo = region)
+  
+  sib_probs <- read_csv(file.path(out_dir, 
+                                  'sib_design_probs_region.csv')) %>%
+    rename(geo = region)
+  
+  sib_asdrs_boot <- read_csv(file.path(out_dir, 
+                                       'sib_design_asdrs_region_boot.csv')) %>%
+    rename(geo = region)
+  
+  sib_probs_boot <- read_csv(file.path(out_dir, 
+                                       'sib_design_probs_region_boot.csv')) %>%
+    rename(geo = region)
+  
+} else if (geo_name == 'national') {
+  
+  sib_asdrs <- read_csv(file.path(out_dir, 
+                                  'sib_design_asdrs_national.csv')) %>%
+    mutate(geo = 'national')
+  
+  sib_probs <- read_csv(file.path(out_dir, 
+                                  'sib_design_probs_national.csv')) %>%
+    mutate(geo = 'national')
+  
+  sib_asdrs_boot <- read_csv(file.path(out_dir, 
+                                       'sib_design_asdrs_national_boot.csv')) %>%
+    mutate(geo = 'national')
+  
+  sib_probs_boot <- read_csv(file.path(out_dir, 
+                                       'sib_design_probs_national_boot.csv')) %>%
+    mutate(geo = 'national')
+  
+}
+```
+
+Load network estimates
+
+```{r}
+if(geo_name == 'city') {
+  
+  net_asdrs <- read_csv(file.path(out_dir, 
+                                  'net_design_asdrs.csv')) %>%
+    rename(geo = state_abbrev)
+  
+  net_probs <- read_csv(file.path(out_dir, 
+                                  'net_design_probs.csv')) %>%
+    rename(geo = state_abbrev)
+  
+  net_asdrs_boot <- read_csv(file.path(out_dir, 
+                                       'net_design_asdrs_boot.csv')) %>% 
+    mutate(method='net_design') %>%
+    rename(geo = state_abbrev)
+  
+  net_probs_boot <- read_csv(file.path(out_dir, 
+                                       'net_design_probs_boot.csv')) %>% 
+    mutate(method='net_design') %>%
+    rename(geo = state_abbrev,
+           q.47.18 = q.47.18.mean)
+  
+} else if (geo_name == 'region') {
+
+  net_asdrs <- read_csv(file.path(out_dir, 
+                                  'net_design_asdrs_region.csv')) %>%
+    rename(geo = region)
+  
+  net_probs <- read_csv(file.path(out_dir, 
+                                  'net_design_probs_region.csv')) %>%
+    rename(geo = region)
+  
+  net_asdrs_boot <- read_csv(file.path(out_dir, 
+                                       'net_design_asdrs_region_boot.csv')) %>%
+    mutate(method='net_design') %>%
+    rename(geo = region)
+  
+  net_probs_boot <- read_csv(file.path(out_dir, 
+                                       'net_design_probs_region_boot.csv')) %>%
+    mutate(method='net_design') %>%
+    rename(geo = region,
+           q.47.18 = q.47.18.mean)
+
+} else if (geo_name == 'national') {
+  
+  net_asdrs <- read_csv(file.path(out_dir, 
+                                  'net_design_asdrs_national.csv')) %>%
+    mutate(geo = 'national')
+  
+  net_probs <- read_csv(file.path(out_dir, 
+                                  'net_design_probs_national.csv')) %>%
+    mutate(geo = 'national')
+  
+  net_asdrs_boot <- read_csv(file.path(out_dir, 
+                                       'net_design_asdrs_national_boot.csv')) %>%
+    mutate(method='net_design') %>%
+    mutate(geo = 'national')
+  
+  net_probs_boot <- read_csv(file.path(out_dir, 
+                                       'net_design_probs_national_boot.csv')) %>%
+    mutate(method='net_design') %>%
+    mutate(geo = 'national') %>%
+    rename(q.47.18 = q.47.18.mean)
+  
+}
+```
+
+Load estimated VR completeness
+
+```{r}
+if(geo_name == 'city') {
+  ibge_vr_completeness <- read_csv(file.path(out_dir, 
+                                             'vr_completeness_estimates.csv')) %>%
+    rename(geo = state_abbrev)
+}
+```
+
+
+Assemble the different results in one place
+
+```{r}
+est_asdrs <- bind_rows(sib_asdrs,
+                       net_asdrs) %>%
+  filter(agegp10 != '[65,75)') %>%
+  mutate(method = recode(method,
+                         'sib_design'='Sibling',
+                         'net_design'='Network')) %>%
+  mutate(sex = recode(sex,
+                      'male'='Male',
+                      'female'='Female'))
+
+est_asdrs_boot <- bind_rows(sib_asdrs_boot,
+                            net_asdrs_boot) %>%
+  filter(agegp10 != '[65,75)') %>%
+  mutate(method = recode(method,
+                         'sib_design'='Sibling',
+                         'net_design'='Network')) %>%
+  mutate(sex = recode(sex,
+                      'male'='Male',
+                      'female'='Female'))
+
+est_probs <- bind_rows(sib_probs,
+                       net_probs) %>%
+  mutate(method = recode(method,
+                         'sib_design'='Sibling',
+                         'net_design'='Network')) %>%
+  mutate(sex = recode(sex,
+                      'male'='Male',
+                      'female'='Female'))
+
+est_probs_boot <- bind_rows(sib_probs_boot,
+                            net_probs_boot) %>%
+  mutate(method = recode(method,
+                         'sib_design'='Sibling',
+                         'net_design'='Network')) %>%
+  mutate(sex = recode(sex,
+                      'male'='Male',
+                      'female'='Female'))
+```
+
+Assemble 12 mo sib results too
+
+```{r}
+if(params$do_12mo) {
+  est_asdrs_with12mo <- bind_rows(sib_asdrs,
+                         sib_asdrs_12mo %>% mutate(method = 'Sibling12mo'),
+                         net_asdrs) %>%
+    filter(agegp10 != '[65,75)') %>%
+    mutate(method = recode(method,
+                           'sib_design'='Sibling',
+                           'net_design'='Network')) %>%
+    mutate(sex = recode(sex,
+                        'male'='Male',
+                        'female'='Female'))
+  
+  est_asdrs_boot_with12mo <- bind_rows(sib_asdrs_boot,
+                              sib_asdrs_boot_12mo %>% mutate(method = 'Sibling12mo'),
+                              net_asdrs_boot) %>%
+    filter(agegp10 != '[65,75)') %>%
+    mutate(method = recode(method,
+                           'sib_design'='Sibling',
+                           'net_design'='Network')) %>%
+    mutate(sex = recode(sex,
+                        'male'='Male',
+                        'female'='Female'))
+  
+  est_probs_with12mo <- bind_rows(sib_probs,
+                         sib_probs_12mo %>% mutate(method = 'Sibling12mo'),
+                         net_probs) %>%
+    mutate(method = recode(method,
+                           'sib_design'='Sibling',
+                           'net_design'='Network')) %>%
+    mutate(sex = recode(sex,
+                        'male'='Male',
+                        'female'='Female'))
+  
+  est_probs_boot_with12mo <- bind_rows(sib_probs_boot,
+                              sib_probs_boot_12mo %>% mutate(method = 'Sibling12mo'),
+                              net_probs_boot) %>%
+    mutate(method = recode(method,
+                           'sib_design'='Sibling',
+                           'net_design'='Network')) %>%
+    mutate(sex = recode(sex,
+                        'male'='Male',
+                        'female'='Female'))  
+}
+```
+
+
+Count the number of estimates that is exactly 0
+
+```{r}
+num_zero_ests <- est_asdrs %>%
+  group_by(method) %>%
+  summarize(num_zero = sum(post_mean_asdr == 0),
+            total = n())
+
+write_csv(num_zero_ests,
+          file.path(comp_out_dir, "num_zero_ests.csv"))
+
+num_zero_ests
+```
+
+## Quantitative summaries
+
+MSE on natural scale
+
+```{r}
+calc_errors <- function(df, ci = TRUE) {
+  res <- df %>%
+    mutate(delta = 1000*(post_mean_asdr - gs_asdr),
+           delta2 = delta*delta,
+           ## NB: delta_rel is the absolute relative error
+           ##     and delta_rel_notabs is the relative error w/out taking absolute value
+           delta_rel = abs(delta)/(1000*gs_asdr),
+           delta_rel_notabs = delta/(1000*gs_asdr))
+  if(ci) {
+    res <- res %>%
+      mutate(ci_covered = as.numeric(gs_asdr >= post_ci_low_asdr & gs_asdr <= post_ci_high_asdr))
+  }
+  
+  return(res)
+}
+
+calc_errors_probs <- function(df, ci = TRUE) {
+  res <- df %>%
+    mutate(delta = post_mean_q - gs_prob,
+           delta2 = delta*delta,
+           delta_rel = abs(delta)/gs_prob,
+           delta_rel_notabs = delta/gs_prob)
+  if(ci) {
+  res <- res %>% mutate(ci_covered = as.numeric(gs_prob >= post_ci_low_q & gs_prob <= post_ci_high_q))
+  }
+  return(res)
+}
+
+comp_asdrs <- est_asdrs %>%
+  left_join(gs_asdrs %>% dplyr::rename(gs_asdr=asdr)) %>%
+  calc_errors()
+
+comp_asdrs_boot <- est_asdrs_boot %>%
+  left_join(gs_asdrs %>% dplyr::rename(gs_asdr=asdr)) %>%
+  calc_errors(ci=FALSE)
+
+write_csv(comp_asdrs_boot %>%
+          rename(estimate_asdr = post_mean_asdr) %>%
+          mutate(estimate_asdr_1000 = estimate_asdr * 1000) %>%
+          bind_cols(comparison_name = params$comparison_name,
+                    geo_name = params$geo_name),
+          file.path(comp_out_dir, "comp_asdrs_boot.csv"))
+
+comp_asdrs_wide_boot <- comp_asdrs_boot %>%
+  select(-gs_asdr, -post_mean_asdr) %>%
+  pivot_wider(names_from=method, values_from=c(delta, delta2, delta_rel, delta_rel_notabs)) %>%
+  mutate(delta2.n.minus.s = delta2_Network - delta2_Sibling,
+         delta_rel.n.minus.s = delta_rel_Network - delta_rel_Sibling)
+
+comp_probs <- est_probs %>%
+  left_join(gs_probs %>% dplyr::rename(gs_prob=q.47.18)) %>%
+  calc_errors_probs()
+
+comp_probs_boot <- est_probs_boot %>%
+  dplyr::rename(post_mean_q = q.47.18) %>%
+  left_join(gs_probs %>% dplyr::rename(gs_prob=q.47.18)) %>%
+  calc_errors_probs(ci=FALSE)
+
+write_csv(comp_probs_boot %>%
+          rename(estimate_prob = post_mean_q) %>%
+          bind_cols(comparison_name = params$comparison_name,
+                    geo_name = params$geo_name),
+          file.path(comp_out_dir, "comp_probs_boot.csv"))
+
+comp_probs_wide_boot <- comp_probs_boot %>%
+  select(-gs_prob, -post_mean_q, -time.period) %>%
+  pivot_wider(names_from=method, values_from=c(delta, delta2, delta_rel, delta_rel_notabs)) %>%
+  mutate(delta2.n.minus.s = delta2_Network - delta2_Sibling,
+         delta_rel.n.minus.s = delta_rel_Network - delta_rel_Sibling)
+```
+
+Errors for 12mo sib ests
+
+```{r}
+if(params$do_12mo) {
+  
+  comp_asdrs_with12mo <- est_asdrs_with12mo %>%
+    left_join(gs_asdrs %>% dplyr::rename(gs_asdr=asdr)) %>%
+    calc_errors()
+  
+  # quick table comparing squared error for net / sib / sib 12mo
+  errs_with_12mo <- comp_asdrs_with12mo %>%
+    group_by(method) %>%
+    summarize(mean_delta2 = mean(delta2),
+              mean_delta_rel = mean(delta_rel))
+  
+  write_csv(errs_with_12mo,
+            file.path(comp_out_dir, "avg_errs_with_sib12mo.csv"))
+  saveRDS(errs_with_12mo,
+            file.path(comp_out_dir, "avg_errs_with_sib12mo.rds"))
+  
+  errs_with_12mo
+}
+```
+
+## Plots directly comparing estimates at the level of geography (state or region)
+
+```{r plot-compare-ests}
+direct_comp_est_asdrs <- 
+  est_asdrs %>%
+    select(-time.period) %>%
+    tidyr::pivot_wider(id_cols=c('sex', 'agegp10', 'geo'),
+                       values_from=c('post_mean_asdr'),
+                       names_from=c('method')) 
+
+cur_range <- range(log(direct_comp_est_asdrs$Network),
+                   log(direct_comp_est_asdrs$Sibling),
+                   finite=TRUE)
+
+alpha.val <- .6
+
+# logged
+direct_plot_logged <-  direct_comp_est_asdrs %>%
+  ggplot(.) +
+  geom_abline(intercept=0, slope=1) +
+  geom_point(aes(x=log(Network), 
+                 y=log(Sibling),
+                 color=agegp10,
+                 shape=sex), 
+             alpha=alpha.val) +
+  coord_equal() +
+  xlim(cur_range) + ylim(cur_range) +
+  guides(color=guide_legend(override.aes=list(alpha=1),
+                            title='Age'),
+         shape=guide_legend(override.aes=list(alpha=1),
+                            title='')) +
+  ylab("log(Sibling death rate est.)") +
+  xlab("log(Network death rate est.)") +
+  age_scale_color +
+  theme_bw()
+
+# NB: this is used in paper
+saveRDS(direct_plot_logged, file.path(comp_out_dir, "direct_asdr_logged.rds"))
+ggsave(filename=file.path(comp_out_dir, "direct_asdr_logged.pdf"),
+       plot=direct_plot_logged,
+       height=3.5,
+       width=3.5)
+direct_plot_logged
+
+```
+
+```{r plot-compare-ests-probs}
+direct_comp_est_probs <- 
+  est_probs %>%
+    select(-time.period) %>%
+    tidyr::pivot_wider(id_cols=c('sex', 'geo'),
+                       values_from=c('post_mean_q'),
+                       names_from=c('method')) 
+```
+
+
+```{r}
+cur_range <- range(log(direct_comp_est_probs$Network),
+                   log(direct_comp_est_probs$Sibling),
+                   finite=TRUE)
+
+alpha.val <- .6 
+  
+# logged
+direct_plot_probs_logged <-  direct_comp_est_probs %>%
+  ggplot(.) +
+  geom_abline(intercept=0, slope=1) +
+  geom_point(aes(x=log(Network), 
+                 y=log(Sibling),
+                 shape=sex), 
+             alpha=alpha.val) +
+  coord_equal() +
+  xlim(cur_range) + ylim(cur_range) +
+  guides(shape=guide_legend(override.aes=list(alpha=1),
+                            title='')) +
+  ylab("log(Sibling prob. of death est.)") +
+  xlab("log(Network prob. of death est.)") +
+  theme_bw()
+
+# NB: this is used in paper
+saveRDS(direct_plot_probs_logged, file.path(comp_out_dir, "direct_probs_logged.rds"))
+ggsave(filename=file.path(comp_out_dir, "direct_probs_logged.pdf"),
+       plot=direct_plot_probs_logged,
+       height=3.5,
+       width=3.5)
+direct_plot_probs_logged
+
+```
+## Plots by geography
+
+ASDRs w/ ref est
+
+```{r plot-asdrs-ref, fig.width=3.5, fig.height=10}
+
+rel.point.size <- .3
+point.stroke <- .2
+
+asdr_point_plot <- 
+  est_asdrs %>%
+  left_join(gs_asdrs) %>% 
+  group_by(sex, geo) %>%
+  # order facets by state difficulty
+  mutate(delta = post_mean_asdr - asdr,
+         state_difficulty = sum(abs(delta))) %>%
+  ungroup() %>%
+  mutate(geo = as_factor(geo),
+         geo = forcats::fct_reorder(geo, state_difficulty)) %>%
+         #geo = drlib::reorder_within(geo, state_difficulty, sex)) %>%
+  # end new 
+  ggplot(.) +
+  theme_bw(base_size=5) +
+  geom_pointrange(aes(x=agegp10, 
+                      y=post_mean_asdr, 
+                      ymin=post_ci_low_asdr,
+                      ymax=post_ci_high_asdr,
+                      color=method,
+                      shape=method),
+                  position=position_dodge(width=.5),
+                  size=rel(rel.point.size),
+                  stroke=point.stroke) +
+  geom_point(aes(x=agegp10,
+                 y=asdr,
+                 color='Vital registration',
+                 shape='Vital registration'),
+             size=rel(rel.point.size),
+             stroke=1) +
+  ylab("Age-specific death rate") +
+  xlab("") +
+  theme(strip.background=element_rect(fill=NA)) +
+  guides(color=guide_legend(title='Method', override.aes=list(linetype=c(1,1,0))),
+  #guides(color=guide_legend(title='Method'),
+         shape=guide_legend(title='Method')) +
+  scale_shape_manual(values=c('Sibling'=shape_sib, 'Network'=shape_net, 'Vital registration'=shape_gs))+
+  scale_color_manual(values=c('Sibling'=color_sib, 'Network'=color_net, 'Vital registration'=color_gs)) +
+  theme(legend.position='bottom',
+        legend.direction='horizontal')
+   
+asdr_point_plot_onepage <- asdr_point_plot + facet_grid(geo ~ sex)
+
+ggsave(filename=file.path(comp_out_dir, "asdr_pointrange.pdf"),
+       plot=asdr_point_plot_onepage,
+       height=10,
+       width=3.5)
+knitr::plot_crop(file.path(comp_out_dir, "asdr_pointrange.pdf"))
+
+asdr_point_plot_onepage
+```
+
+
+Log-scale ASDRs all on one big page
+
+```{r plot-state-asdr-log, fig.width=3.5, fig.height=10}
+asdr_point_plot_log_onepage <-
+  asdr_point_plot_onepage +
+  ##coord_trans(y='log10')
+  scale_y_log10()
+
+ggsave(filename=file.path(comp_out_dir, "asdr_pointrange_log.pdf"),
+       plot=asdr_point_plot_log_onepage,
+       height=10,
+       width=3.5)
+knitr::plot_crop(file.path(comp_out_dir, "asdr_pointrange_log.pdf"))
+
+asdr_point_plot_log_onepage
+```
+
+### Error summaries across geography
+
+#### ASDRS
+
+All ests, by geography
+
+```{r calculate-errs-in-asdrs-by-geo}
+comp_asdrs_bygeo <- comp_asdrs %>%
+  group_by(method, geo) %>%
+  summarize(geo_mse = mean(delta2),
+            #geo_are = sum(abs(delta_rel))) 
+            # this should be the mean, right?
+            geo_are = mean(abs(delta_rel))) 
+
+comp_asdrs_bygeo_boot <- comp_asdrs_boot %>%
+  group_by(method, geo, boot_idx) %>%
+  summarize(geo_mse = mean(delta2),
+            #geo_are = sum(abs(delta_rel))) 
+            # this should be the mean, right?
+            geo_are = mean(abs(delta_rel))) 
+
+# difference in MSE (network - sibling)
+comp_asdrs_bygeo_wide <- comp_asdrs_bygeo %>%
+  select(-geo_are) %>%
+  pivot_wider(names_from=method, values_from=geo_mse)  %>%
+  mutate(n.minus.s = Network - Sibling)
+
+comp_asdrs_bygeo_wide_boot <- comp_asdrs_bygeo_boot %>%
+  select(-geo_are) %>%
+  pivot_wider(names_from=method, values_from=geo_mse)  %>%
+  mutate(n.minus.s = Network - Sibling)
+
+# difference in ARE (network - sibling)
+comp_rel_asdrs_bygeo_wide <- comp_asdrs_bygeo %>%
+  select(-geo_mse) %>%
+  pivot_wider(names_from=method, values_from=geo_are) %>%
+  mutate(n.minus.s = Network - Sibling)
+
+comp_rel_asdrs_bygeo_wide_boot <- comp_asdrs_bygeo_boot %>%
+  select(-geo_mse) %>%
+  pivot_wider(names_from=method, values_from=geo_are) %>%
+  mutate(n.minus.s = Network - Sibling)
+```
+
+
+By age/sex/geography
+
+```{r asdr-errs-by-age-sex-geo}
+comp_asdrs_bygeoas <- comp_asdrs %>%
+  group_by(method, geo, sex, agegp10) %>%
+  summarize(geo_mse = mean(delta2),
+            # this should be the mean, right?
+            geo_are = mean(abs(delta_rel)),
+            # not absolute relative error (so, can be negative)
+            geo_re = mean(delta_rel_notabs)) %>%
+  ungroup() %>%
+  mutate(geo_rmse = sqrt(geo_mse))
+
+# difference in MSE (network - sibling)
+comp_asdrs_bygeoas_wide <- comp_asdrs_bygeoas %>%
+  select(-geo_are, -geo_re, -geo_rmse) %>%
+  pivot_wider(names_from=method, values_from=geo_mse)  %>%
+  mutate(n.minus.s = Network - Sibling)
+
+# difference in RMSE (network - sibling)
+comp_rmse_asdrs_bygeoas_wide <- comp_asdrs_bygeoas %>%
+  select(-geo_are, -geo_re, -geo_mse) %>%
+  pivot_wider(names_from=method, values_from=geo_rmse)  %>%
+  mutate(n.minus.s = Network - Sibling)
+  # alternate approach:
+  # square root of difference in MSE (network - sibling)
+  # that is,
+  #   sign(MSE(net) - MSE(sib)) * sqrt(MSE(net) - MSE(sib))
+  #mutate(n.minus.s = sign(Network - Sibling) * sqrt(abs(Network - Sibling)))
+
+# difference in ARE (network - sibling)
+comp_rel_asdrs_bygeoas_wide <- comp_asdrs_bygeoas %>%
+  select(-geo_mse, -geo_re, -geo_rmse) %>%
+  pivot_wider(names_from=method, values_from=geo_are) %>%
+  mutate(n.minus.s = Network - Sibling)
+```
+
+By age/sex
+
+```{r asdr-errs-by-age-sex}
+comp_asdrs_byas <- comp_asdrs %>%
+  group_by(method, sex, agegp10) %>%
+  summarize(as_mse = mean(delta2),
+            as_are = mean(abs(delta_rel)),
+            # not absolute relative error (so, can be negative)
+            as_re = mean(delta_rel_notabs))  
+
+# with bootstraps
+comp_asdrs_byas_boot <- comp_asdrs_boot %>%
+  group_by(method, sex, agegp10, boot_idx) %>%
+  summarize(as_mse = mean(delta2),
+            as_are = mean(abs(delta_rel)),
+            # not absolute relative error (so, can be negative)
+            as_re = mean(delta_rel_notabs),
+            .groups='drop') %>%
+  group_by(method, sex, agegp10) %>%
+  summarize(as_mse_ci_low = quantile(as_mse, .025),
+            as_mse_ci_high = quantile(as_mse, .975),
+            as_mse = mean(as_mse),
+            as_are_ci_low = quantile(as_are, .025),
+            as_are_ci_high = quantile(as_are, .975),
+            as_are = mean(as_are),
+            # not absolute relative error (so, can be negative)
+            as_re_ci_low = quantile(as_re, .025),
+            as_re_ci_high = quantile(as_re, .975),
+            as_re = mean(as_re))
+
+# difference in MSE (network - sibling)
+comp_asdrs_byas_wide <- comp_asdrs_byas %>%
+  select(-as_are, -as_re) %>%
+  pivot_wider(names_from=method, values_from=as_mse)  %>%
+  mutate(n.minus.s = Network - Sibling)
+
+# difference in ARE (network - sibling)
+comp_rel_asdrs_byas_wide <- comp_asdrs_byas %>%
+  select(-as_mse, -as_re) %>%
+  pivot_wider(names_from=method, values_from=as_are) %>%
+  mutate(n.minus.s = Network - Sibling)
+```
+
+#### Probabilities
+
+All ests, by geography (probs)
+
+```{r calculate-errs-in-probs-by-geo}
+comp_probs_bygeo <- comp_probs %>%
+  group_by(method, geo) %>%
+  summarize(geo_mse = mean(delta2),
+            #geo_are = sum(abs(delta_rel))) 
+            # this should be the mean, right?
+            geo_are = mean(abs(delta_rel))) 
+
+comp_probs_bygeo_boot <- comp_probs_boot %>%
+  group_by(method, geo, boot_idx) %>%
+  summarize(geo_mse = mean(delta2),
+            #geo_are = sum(abs(delta_rel))) 
+            # this should be the mean, right?
+            geo_are = mean(abs(delta_rel))) 
+
+# difference in MSE (network - sibling)
+comp_probs_bygeo_wide <- comp_probs_bygeo %>%
+  select(-geo_are) %>%
+  pivot_wider(names_from=method, values_from=geo_mse)  %>%
+  mutate(n.minus.s = Network - Sibling)
+
+comp_probs_bygeo_wide_boot <- comp_probs_bygeo_boot %>%
+  select(-geo_are) %>%
+  pivot_wider(names_from=method, values_from=geo_mse)  %>%
+  mutate(n.minus.s = Network - Sibling)
+
+# difference in ARE (network - sibling)
+comp_rel_probs_bygeo_wide <- comp_probs_bygeo %>%
+  select(-geo_mse) %>%
+  pivot_wider(names_from=method, values_from=geo_are) %>%
+  mutate(n.minus.s = Network - Sibling)
+
+comp_rel_probs_bygeo_wide_boot <- comp_probs_bygeo_boot %>%
+  select(-geo_mse) %>%
+  pivot_wider(names_from=method, values_from=geo_are) %>%
+  mutate(n.minus.s = Network - Sibling)
+```
+
+
+By age/sex/geography (probs)
+
+```{r prob-errs-by-age-sex-geo}
+comp_probs_bygeos <- comp_probs %>%
+  group_by(method, geo, sex) %>%
+  summarize(geo_mse = mean(delta2),
+            #geo_are = sum(abs(delta_rel))) 
+            # this should be the mean, right?
+            geo_are = mean(abs(delta_rel)))  
+
+# difference in MSE (network - sibling)
+comp_probs_bygeos_wide <- comp_probs_bygeos %>%
+  select(-geo_are) %>%
+  pivot_wider(names_from=method, values_from=geo_mse)  %>%
+  mutate(n.minus.s = Network - Sibling)
+
+# difference in ARE (network - sibling)
+comp_rel_probs_bygeos_wide <- comp_probs_bygeos %>%
+  select(-geo_mse) %>%
+  pivot_wider(names_from=method, values_from=geo_are) %>%
+  mutate(n.minus.s = Network - Sibling)
+```
+
+Plot the difference between the two methods against the estimated completeness
+
+```{r comp-errs-vrcompleteness, fig.height=3.5, fig.width=3.5}
+## NB: only have completeness at the state level...
+if(geo_name == 'city') {
+
+#comp_df <- comp_asdrs_bygeo_wide
+comp_df <- comp_rel_asdrs_bygeo_wide
+
+comp_df_withvr <- comp_df %>%
+  left_join(ibge_vr_completeness %>%
+              select(geo, ibge_est_vrcov = mean_sim_cov_pct))
+
+biggestdiff <- max(abs(comp_df_withvr$n.minus.s))
+xrange <- c(-biggestdiff, biggestdiff)
+
+## controls how far out annotations go
+annscale <- .6
+
+geo_err_vr_comp <-
+  comp_df_withvr %>%
+        mutate(geo = fct_reorder(geo, n.minus.s)) %>%
+  ggplot(.) +
+  geom_text(aes(y=n.minus.s, 
+                x=ibge_est_vrcov, 
+                label=geo)) +
+  #geom_vline(xintercept=0, color='dark grey') +
+  #geom_point(aes(y=state_abbrev, x=n.minus.s)) +
+  theme_minimal() +
+  ylab("Network estimate MARE - Sibling estimate MARE") +
+  xlab("Estimated VR completeness") +
+  expand_limits(y=xrange) +
+  annotate(geom='text', 
+           label="<- Network is better ", 
+           #x='SE', 
+           x=100, 
+           y=-biggestdiff*annscale, 
+           size=rel(3),
+           color='red', 
+           angle=90) +
+  annotate(geom='text', 
+           label="Sibling is better ->", 
+           #x='SE', 
+           x=100, 
+           y=biggestdiff*annscale, 
+           size=rel(3),
+           color='red', 
+           angle=90) +
+  theme(axis.title.x=element_text(size=rel(.8))) +
+  ## see
+  ## https://stackoverflow.com/questions/12409960/ggplot2-annotate-outside-of-plot
+  ## for how this helps plot not clip annotations
+  coord_cartesian(clip='off') +
+  NULL
+  
+
+ggsave(filename=file.path(comp_out_dir, "geo_err_summ_vrsens.pdf"),
+       plot=geo_err_vr_comp,
+       height=3.5,
+       width=3.5)
+knitr::plot_crop(file.path(comp_out_dir, "geo_err_summ_vrsens.pdf"))
+
+geo_err_vr_comp
+
+}
+```
+
+
+Scatter plot with all death rates
+
+```{r}
+method_facet_names <- c('Sibling' = 'Sibling Estimates',
+                        'Network' = 'Network Estimates')
+
+asdr_point_scatter_df <- est_asdrs %>%
+  left_join(gs_asdrs) %>% 
+  mutate(method = dplyr::recode(method, !!!method_facet_names))
+
+cur_range <- range(c(asdr_point_scatter_df$post_mean_asdr,
+                     asdr_point_scatter_df$asdr),
+                   finite = TRUE)
+
+asdr_point_scatter <- asdr_point_scatter_df %>%
+  ggplot(.) +
+  theme_bw(base_size=5) +
+  geom_abline(intercept=0, slope=1) +
+  #geom_pointrange(aes(x=asdr, 
+  geom_point(aes(x=asdr, 
+                      y=post_mean_asdr, 
+                      #ymin=post_ci_low_asdr,
+                      #ymax=post_ci_high_asdr,
+                      color=agegp10,
+                      shape=sex),
+                  alpha=.5) +
+                  #size=rel(rel.point.size),
+                  #stroke=point.stroke) +
+  xlim(cur_range) + ylim(cur_range) +
+  scale_x_log10() + 
+  scale_y_log10() +
+  facet_grid(~ method) +
+  ylab("log(Estimated age-specific death rate)") +
+  xlab("log(VR age-specific death rate)") +
+  guides(color=guide_legend(title='Age', override.aes=list(alpha=1)),
+         shape=guide_legend(title='', override.aes=list(alpha=1))) +
+  coord_equal() +
+  age_scale_color +
+  NULL
+
+# NB: this is used in paper
+ggsave(filename=file.path(comp_out_dir, "asdr_point_scatter_log.pdf"),
+       plot=asdr_point_scatter,
+       height=4,
+       width=6)
+saveRDS(asdr_point_scatter, 
+        file.path(comp_out_dir, "asdr_point_scatter_log.rds"))
+
+asdr_point_scatter
+```
+
+Make a plot that has a matrix of VR/Sibling/Network
+
+```{r splom-sib-net-vr}
+direct_comp_all_asdrs_df <- 
+  est_asdrs %>%
+    bind_rows(gs_asdrs %>% rename(post_mean_asdr=asdr) %>% mutate(method='VR')) %>%
+    select(-time.period) %>%
+    tidyr::pivot_wider(id_cols=c('sex', 'agegp10', 'geo'),
+                       values_from=c('post_mean_asdr'),
+                       names_from=c('method')) 
+
+cur_range <- with(direct_comp_all_asdrs_df,
+                  range(log(Sibling),
+                        log(Network),
+                        log(VR),
+                        finite=TRUE))
+
+
+alpha.val <- 0.6
+
+splom_sn <- direct_comp_all_asdrs_df %>%
+  ggplot(.) +
+  geom_abline(intercept=0, slope=1) +
+  geom_point(aes(x=log(Sibling), 
+                 y=log(Network),
+                 color=agegp10,
+                 shape=sex), 
+             alpha=alpha.val) +
+  coord_equal() +
+  xlim(cur_range) + ylim(cur_range) +
+  guides(color=guide_legend(override.aes=list(alpha=1),
+                            title='Age'),
+         shape=guide_legend(override.aes=list(alpha=1),
+                            title='')) +
+  xlab("log(Sibling death rate est.)") +
+  ylab("log(Network death rate est.)") +
+  ggtitle("A") +
+  age_scale_color +
+  theme_bw() 
+
+
+splom_vn <- direct_comp_all_asdrs_df %>%
+  ggplot(.) +
+  geom_abline(intercept=0, slope=1) +
+  geom_point(aes(x=log(VR), 
+                 y=log(Network),
+                 color=agegp10,
+                 shape=sex), 
+             alpha=alpha.val) +
+  coord_equal() +
+  xlim(cur_range) + ylim(cur_range) +
+  guides(color=guide_legend(override.aes=list(alpha=1),
+                            title='Age'),
+         shape=guide_legend(override.aes=list(alpha=1),
+                            title='')) +
+  ylab("log(Network death rate est.)") +
+  xlab("log(VR death rate)") +
+  ggtitle("B") +
+  age_scale_color +
+  theme_bw() 
+
+splom_vs <- direct_comp_all_asdrs_df %>%
+  ggplot(.) +
+  geom_abline(intercept=0, slope=1) +
+  geom_point(aes(x=log(VR), 
+                 y=log(Sibling),
+                 color=agegp10,
+                 shape=sex), 
+             alpha=alpha.val) +
+  coord_equal() +
+  xlim(cur_range) + ylim(cur_range) +
+  guides(color=guide_legend(override.aes=list(alpha=1),
+                            title='Age'),
+         shape=guide_legend(override.aes=list(alpha=1),
+                            title='')) +
+  ylab("log(Sibling death rate est.)") +
+  xlab("log(VR death rate)") +
+  ggtitle("C") +
+  age_scale_color +
+  theme_bw() 
+
+
+splom_all <- splom_sn + 
+             splom_vn +
+             guide_area() +
+             splom_vs + 
+  plot_layout(guides='collect', nrow=2, byrow=TRUE)
+
+meta_layout <- "
+#cccddd
+aeeefff
+aeeefff
+bggghhh
+bggghhh
+"
+
+row1_title <- ggplot() + annotate(geom='text', 
+                                  x=1,y=1, 
+                                  label='bold(underline(Network))', 
+                                  angle=90,
+                                  parse=TRUE) +  theme_void()
+row2_title <- ggplot() + annotate(geom='text', 
+                                  x=1,y=1, 
+                                  label='bold(underline(Sibling))', 
+                                  angle=90,
+                                  parse=TRUE) + theme_void()
+col1_title <- ggplot() + annotate(geom='text', 
+                                  x=1,y=1, 
+                                  label='bold(underline(Sibling))',
+                                  parse=TRUE) + theme_void()
+col2_title <- ggplot() + annotate(geom='text', 
+                                  x=1,y=1, 
+                                  label='bold(underline(VR))',
+                                  parse=TRUE) + theme_void()
+
+plotlist <- list(a=row1_title,
+                 b=row2_title,
+                 c=col1_title,
+                 d=col2_title,
+                 e=splom_sn,
+                 f=splom_vn,
+                 g=guide_area(),
+                 h=splom_vs)
+  
+final_splom <- wrap_plots(
+     plotlist,
+     guides='collect',
+     design=meta_layout,
+     widths=c(2,10,10)) & 
+  theme(legend.box='horizontal')
+  #theme(legend.box='horizontal', legend.position='bottom')
+
+fig_height <-7 
+fig_width <- fig_height
+
+saveRDS(final_splom, file.path(comp_out_dir, "splom_asdr.rds"))
+ggsave(filename=file.path(comp_out_dir, "splom_asdr.pdf"),
+       plot=final_splom,
+       height=fig_height,
+       width=fig_width)
+ggsave(filename=file.path(comp_out_dir, "splom_asdr.png"),
+       plot=final_splom,
+       height=fig_height,
+       width=fig_width)
+final_splom
+
+```
+
+Version w/ CI
+
+```{r}
+asdr_point_scatter_df <- est_asdrs %>%
+  left_join(gs_asdrs) %>% 
+  mutate(method = dplyr::recode(method, !!!method_facet_names))
+
+#cur_range <- range(c(asdr_point_scatter_df$post_ci_low_asdr,
+#                     asdr_point_scatter_df$post_ci_high_asdr,
+#                     asdr_point_scatter_df$asdr),
+#                   finite = TRUE)
+cur_range <- range(c(asdr_point_scatter_df$post_mean_asdr,
+                     asdr_point_scatter_df$asdr),
+                   finite = TRUE)
+
+asdr_pointrange_scatter <- asdr_point_scatter_df %>%
+  ggplot(.) +
+  theme_bw(base_size=5) +
+  geom_abline(intercept=0, slope=1) +
+  geom_pointrange(aes(x=asdr, 
+                      y=post_mean_asdr, 
+                      ymin=post_ci_low_asdr,
+                      ymax=post_ci_high_asdr,
+                      color=agegp10,
+                      shape=sex),
+                  alpha=.25) +
+  xlim(cur_range) + ylim(cur_range) +
+  scale_x_log10() + scale_y_log10() +
+  facet_grid(~ method) +
+  ylab("log(Estimated age-specific death rate)") +
+  xlab("log(VR age-specific death rate)") +
+  guides(color=guide_legend(title='Age', override.aes=list(alpha=1)),
+         shape=guide_legend(title='', override.aes=list(alpha=1))) +
+  coord_equal() +
+  age_scale_color +
+  NULL
+
+# NB: this is used in paper
+ggsave(filename=file.path(comp_out_dir, "asdr_pointrange_scatter_log.pdf"),
+       plot=asdr_pointrange_scatter,
+       height=4,
+       width=4)
+ggsave(filename=file.path(comp_out_dir, "asdr_pointrange_scatter_log.png"),
+       plot=asdr_pointrange_scatter,
+       height=4,
+       width=4)
+
+
+saveRDS(asdr_pointrange_scatter, 
+        file.path(comp_out_dir, "asdr_pointrange_scatter_log.rds"))
+
+asdr_pointrange_scatter
+```
+
+CI width for age-specific death rates
+
+```{r}
+est_asdrs_ci_width <- est_asdrs %>%
+  mutate(ci_width = post_ci_high_asdr - post_ci_low_asdr,
+         rel_ci_width = ci_width / post_mean_asdr) %>%
+  select(method, geo, agegp10, sex, ci_width, rel_ci_width) %>%
+  pivot_wider(values_from = c('ci_width', 'rel_ci_width'),
+              names_from = 'method',
+              names_glue = "{.value}_{tolower(method)}") %>%
+  # don't count cases w/ 0 deaths
+  filter(ci_width_sibling != 0, ci_width_network != 0) %>%
+  mutate(sib_over_net_ci_width = ci_width_sibling / ci_width_network,
+         sib_over_net_rel_ci_width = rel_ci_width_sibling / rel_ci_width_network)
+
+asdr_ci_width_plot <- ggplot(est_asdrs_ci_width) +
+  geom_histogram(aes(x=sib_over_net_ci_width), binwidth=.5,boundary=0) +
+  geom_vline(aes(xintercept=1), color='red', linetype='dotted') +
+  theme_minimal() +
+  xlab("Width(Sibling CI) / Width(Network CI)") +
+  ylab("Number of estimated death rates")
+
+ggsave(filename=file.path(comp_out_dir, "asdr_ci_width.pdf"),
+       plot=asdr_ci_width_plot,
+       height=4,
+       width=4)
+ggsave(filename=file.path(comp_out_dir, "asdr_ci_width.png"),
+       plot=asdr_ci_width_plot,
+       height=4,
+       width=4)
+
+## NB: this is used
+saveRDS(asdr_ci_width_plot, 
+        file.path(comp_out_dir, "asdr_ci_width.rds"))
+
+ci_pct_over_1_asdr <- 100*mean(est_asdrs_ci_width$sib_over_net_ci_width > 1)
+ci_ratio_asdr <- mean(est_asdrs_ci_width$sib_over_net_ci_width)
+
+cat(glue::glue("
+               {round(ci_pct_over_1_asdr)} percent of estimated ASDRs have bigger CI for sibling than for network
+               On average, CI are about {round(ci_ratio_asdr,1)} times wider for the sibling method. 
+               "))
+
+asdr_ci_width_plot
+```
+
+
+# Direct comparison - probs
+
+
+Scatter plot with the probs
+
+```{r}
+direct_comp_est_probs <- 
+  est_probs %>%
+    select(-time.period) %>%
+    tidyr::pivot_wider(id_cols=c('sex', 'geo'),
+                       values_from=c('post_mean_q'),
+                       names_from=c('method')) 
+
+cur_range <- range(log(direct_comp_est_probs$Network),
+                   log(direct_comp_est_probs$Sibling),
+                   finite=TRUE)
+
+```
+
+
+```{r}
+method_facet_names <- c('Sibling' = 'Sibling Estimates',
+                        'Network' = 'Network Estimates')
+
+prob_point_scatter_df <- est_probs %>%
+  left_join(gs_probs %>% select(geo, sex, q.47.18)) %>% 
+  mutate(method = dplyr::recode(method, !!!method_facet_names))
+
+cur_range <- range(c(prob_point_scatter_df$post_mean_q,
+                     prob_point_scatter_df$q.47.18),
+                   finite = TRUE)
+
+prob_point_scatter <- prob_point_scatter_df %>%
+  ggplot(.) +
+  theme_bw(base_size=5) +
+  geom_abline(intercept=0, slope=1) +
+  geom_point(aes(x=q.47.18, 
+                 y=post_mean_q, 
+                 shape=sex),
+                 alpha=.5) +
+  coord_equal() +
+  xlim(cur_range) + ylim(cur_range) +
+  facet_grid(~ method) +
+  ylab("Estimated probability of adult death") +
+  xlab("VR probability of adult death") +
+  guides(shape=guide_legend(title='', override.aes=list(alpha=1))) +
+  NULL
+
+# NB: this is used in paper
+ggsave(filename=file.path(comp_out_dir, "prob_point_scatter.pdf"),
+       plot=prob_point_scatter,
+       height=4,
+       width=6)
+saveRDS(prob_point_scatter, 
+        file.path(comp_out_dir, "prob_point_scatter.rds"))
+
+prob_point_scatter
+```
+
+
+```{r}
+method_facet_names <- c('Sibling' = 'Sibling Estimates',
+                        'Network' = 'Network Estimates')
+
+prob_pointrange_scatter_df <- est_probs %>%
+  left_join(gs_probs %>% select(geo, sex, q.47.18)) %>% 
+  mutate(method = dplyr::recode(method, !!!method_facet_names))
+
+cur_range <- range(c(prob_pointrange_scatter_df$post_ci_low_q,
+                     prob_pointrange_scatter_df$post_ci_high_q,
+                     prob_pointrange_scatter_df$q.47.18),
+                   finite = TRUE)
+
+prob_pointrange_scatter <- prob_pointrange_scatter_df %>%
+  ggplot(.) +
+  theme_bw(base_size=5) +
+  geom_abline(intercept=0, slope=1) +
+  geom_pointrange(aes(x=q.47.18, 
+                      y=post_mean_q, 
+                      ymin=post_ci_low_q,
+                      ymax=post_ci_high_q,
+                      shape=sex),
+                      alpha=.5) +
+  coord_equal() +
+  xlim(cur_range) + ylim(cur_range) +
+  facet_grid(~ method) +
+  ylab("Estimated probability of adult death") +
+  xlab("VR probability of adult death") +
+  guides(shape=guide_legend(title='', override.aes=list(alpha=1))) +
+  NULL
+
+# NB: this is used in paper
+ggsave(filename=file.path(comp_out_dir, "prob_pointrange_scatter.pdf"),
+       plot=prob_pointrange_scatter,
+       height=4,
+       width=6)
+saveRDS(prob_pointrange_scatter, 
+        file.path(comp_out_dir, "prob_pointrange_scatter.rds"))
+
+prob_pointrange_scatter
+```
+
+
+### minimum detectable effects
+
+```{r}
+##
+## se - standard error for difference in two means
+mde_onesided <- function(se, alpha=.05, beta=.2) {
+  return(se * (qnorm(1-(alpha/2)) - qnorm(beta)))  
+}
+
+mde_asdrs <- est_asdrs %>% 
+  group_by(method, agegp10, sex, time.period) %>% 
+  summarize(mean_se = mean(post_sd_asdr), 
+            mean_asdr=mean(post_mean_asdr)) %>% 
+  mutate(cv_asdr = mean_se/mean_asdr, 
+         ## NB: if two estimates both have std err sigma and are independent
+         ##     then their difference will have std err sqrt(2)*sigma
+         mde = mde_onesided((sqrt(2)*mean_se))) %>%
+  mutate(rel_mde = mde / mean_asdr)
+
+mde_probs <- est_probs %>% 
+  group_by(method, sex, time.period) %>% 
+  summarize(mean_se = mean(post_sd_q), 
+            mean_prob = mean(post_mean_q)) %>% 
+  mutate(cv_prob = mean_se/mean_prob, 
+         ## NB: if two estimates both have std err sigma and are independent
+         ##     then their difference will have std err sqrt(2)*sigma
+         mde = mde_onesided(sqrt(2)*(mean_se))) %>%
+  mutate(rel_mde = mde / mean_prob)
+
+mde_asdrs
+mde_probs
+```
+
+
+### CI width for probabilities
+
+CI width for probabilities 
+
+```{r}
+est_probs_ci_width <- est_probs %>%
+  mutate(ci_width = post_ci_high_q - post_ci_low_q,
+         rel_ci_width = ci_width / post_mean_q) %>%
+  select(method, geo, sex, ci_width, rel_ci_width) %>%
+  pivot_wider(values_from = c('ci_width', 'rel_ci_width'),
+              names_from = 'method',
+              names_glue = "{.value}_{tolower(method)}") %>%
+  # don't count cases w/ 0 deaths
+  filter(ci_width_sibling != 0, ci_width_network != 0) %>%
+  mutate(sib_over_net_ci_width = ci_width_sibling / ci_width_network,
+         sib_over_net_rel_ci_width = rel_ci_width_sibling / rel_ci_width_network)
+
+prob_ci_width_plot <- ggplot(est_probs_ci_width) +
+  geom_histogram(aes(x=sib_over_net_ci_width), binwidth=.5,boundary=0) +
+  geom_vline(aes(xintercept=1), color='red', linetype='dotted') +
+  theme_minimal() +
+  xlab("Width(Sibling CI) / Width(Network CI)") +
+  ylab("Number of estimated probabilities of death")
+
+ggsave(filename=file.path(comp_out_dir, "prob_ci_width.pdf"),
+       plot=prob_ci_width_plot,
+       height=4,
+       width=4)
+ggsave(filename=file.path(comp_out_dir, "prob_ci_width.png"),
+       plot=prob_ci_width_plot,
+       height=4,
+       width=4)
+
+## NB: this is used
+saveRDS(prob_ci_width_plot, 
+        file.path(comp_out_dir, "prob_ci_width.rds"))
+
+ci_pct_over_1_prob <- 100*mean(est_probs_ci_width$sib_over_net_ci_width > 1)
+ci_ratio_prob <- mean(est_probs_ci_width$sib_over_net_ci_width)
+
+cat(glue::glue("
+               {round(ci_pct_over_1_prob)} percent of estimated probabilities have bigger CI for sibling than for network
+               On average, CI are about {round(ci_ratio_prob,1)} times wider for the sibling method. 
+               "))
+
+
+prob_ci_width_plot
+```
+
+Save a dataframe with the CI properties
+
+```{r}
+# NB: this is used
+
+all_ci_widths <-
+  bind_rows(est_asdrs_ci_width %>% 
+              mutate(qoi = 'asdr'),
+            est_probs_ci_width %>% 
+              mutate(qoi = 'prob')) %>%
+  group_by(qoi) %>%
+  summarize(mean_ci_width_sibling = mean(ci_width_sibling),
+            mean_ci_width_network = mean(ci_width_network),
+            avg_sibci_over_netci = mean(sib_over_net_ci_width),
+            pct_over_1 = 100*mean(sib_over_net_ci_width > 1),
+            # same quantities for relative CI
+            mean_rel_ci_width_sibling = mean(rel_ci_width_sibling),
+            mean_rel_ci_width_network = mean(rel_ci_width_network),
+            avg_rel_sibci_over_netci = mean(sib_over_net_rel_ci_width),
+            pct_rel_over_1 = 100*mean(sib_over_net_rel_ci_width > 1))
+
+saveRDS(all_ci_widths,
+        file=file.path(comp_out_dir, "ci_width.rds"))
+
+all_ci_widths
+```
+
+
+Error distn for file
+
+```{r}
+mse_diff_hist <- comp_asdrs_wide_boot %>%
+  group_by(boot_idx) %>%
+  summarize(mean.delta2.n.minus.s = mean(delta2.n.minus.s),
+            mean.delta2.n = mean(delta2_Network),
+            mean.delta2.s = mean(delta2_Sibling))
+
+errs_boot_asdr_mse <- mse_diff_hist  %>% 
+  rename(err.n.minus.s = mean.delta2.n.minus.s,
+         err.n = mean.delta2.n,
+         err.s = mean.delta2.s) %>%
+  bind_cols(loss = 'mse',
+            qty = 'asdr',
+            comparison_name = params$comparison_name,
+            geo_name = params$geo_name)
+
+mse_diff_probs_hist <- comp_probs_wide_boot %>%
+  group_by(boot_idx) %>%
+  summarize(mean.delta2.n.minus.s = mean(delta2.n.minus.s),
+            mean.delta2.n = mean(delta2_Network),
+            mean.delta2.s = mean(delta2_Sibling))
+
+errs_boot_probs_mse <- mse_diff_probs_hist  %>% 
+  rename(err.n.minus.s = mean.delta2.n.minus.s,
+         err.n = mean.delta2.n,
+         err.s = mean.delta2.s) %>%
+  bind_cols(loss = 'mse',
+            qty = 'prob',
+            comparison_name = params$comparison_name,
+            geo_name = params$geo_name)
+
+rel_diff_hist <- comp_asdrs_wide_boot %>%
+  group_by(boot_idx) %>%
+  summarize(mean.err = mean(delta_rel.n.minus.s),
+            mean.net.err = mean(delta_rel_Network),
+            mean.sib.err = mean(delta_rel_Sibling))
+  
+errs_boot_asdr_mare <- rel_diff_hist  %>% 
+  rename(err.n.minus.s = mean.err,
+         err.n = mean.net.err,
+         err.s = mean.sib.err) %>%
+  bind_cols(loss = 'mare',
+            qty = 'asdr',
+            comparison_name = params$comparison_name,
+            geo_name = params$geo_name)
+
+rel_diff_prob_hist <- comp_probs_wide_boot %>%
+  group_by(boot_idx) %>%
+  summarize(mean.err = mean(delta_rel.n.minus.s),
+            mean.err.n = mean(delta_rel_Network),
+            mean.err.s = mean(delta_rel_Sibling))
+  
+
+errs_boot_probs_mare <- rel_diff_prob_hist  %>% 
+  rename(err.n.minus.s = mean.err,
+         err.n = mean.err.n,
+         err.s = mean.err.s) %>%
+  bind_cols(loss = 'mare',
+            qty = 'prob',
+            comparison_name = params$comparison_name,
+            geo_name = params$geo_name)
+```
+
+
+```{r}
+# convert MSE results to RMSE
+errs_boot_asdr_rmse <- errs_boot_asdr_mse %>% 
+  mutate(err.n = sqrt(err.n),
+         err.s = sqrt(err.s),
+         err.n.minus.s = err.n - err.s,
+         loss = 'rmse')
+errs_boot_probs_rmse <- errs_boot_probs_mse %>% 
+  mutate(err.n = sqrt(err.n),
+         err.s = sqrt(err.s),
+         err.n.minus.s = err.n - err.s,
+         loss = 'rmse')
+
+errs_boot_both_rmse <-
+  bind_rows(errs_boot_asdr_rmse,
+            errs_boot_probs_rmse)
+
+err_diffs_boot <- bind_rows(errs_boot_asdr_mare, 
+                            errs_boot_asdr_mse, 
+                            errs_boot_probs_mare, 
+                            errs_boot_probs_mse)
+
+# NB: this file is used
+write_csv(bind_rows(err_diffs_boot,
+                    errs_boot_both_rmse),
+          file.path(comp_out_dir, "err_diffs_boot.csv"))
+
+err_diffs_boot
+```
+
+# Correlations between different sets of estimates
+
+Summarize relationship between sibling and network probability of death estimates with correlation matrix
+
+
+```{r}
+direct_comp_all_probs_df <- 
+  est_probs %>%
+    bind_rows(gs_probs %>% rename(post_mean_q = q.47.18) %>% mutate(method='VR')) %>%
+    select(-time.period) %>%
+    tidyr::pivot_wider(id_cols=c('sex', 'geo'),
+                       values_from=c('post_mean_q'),
+                       names_from=c('method')) 
+
+cat("\n\nCorrelation between probabilities, not on log scale\n")
+# not on log scale
+print(
+  cor(direct_comp_all_probs_df %>% 
+           select(Sibling, Network, VR))
+)
+```
+
+Summarize relationship between sibling and network death rate estimates with correlation matrix
+
+
+```{r}
+
+cat("\n\nCorrelation between ASDRs, not on log scale\n")
+# not on log scale
+print(
+  cor(direct_comp_all_asdrs_df %>% 
+                select(Sibling, Network, VR))
+  )
+cat("\n\n")
+
+cat("\n\nCorrelation between log(ASDR)s, log(0) mapped to tiny value:\n")
+# log scale, replace log(0) with log(1e-8)
+print(cor(direct_comp_all_asdrs_df %>% 
+      select(Sibling, Network, VR) %>% 
+      mutate(across(everything(),log)) %>%
+      mutate(Sibling = ifelse(! is.finite(Sibling), log(1e-8), Sibling))))
+cat("\n\n")
+
+cat("\n\nCorrelation between log(ASDR)s, dropping rows where sibling estimates are 0\n")
+# log scale, drop rows where sibling ests are 0
+print(cor(
+  direct_comp_all_asdrs_df %>% 
+      select(Sibling, Network, VR) %>% 
+      mutate(across(everything(),log)) %>%
+      filter(if_all(everything(), ~ is.finite(.x)))
+    ))
+```
+
+Method-specific errors in ASDR estimates across age groups, aggregating over cities
+
+NOTE: the bars here are the first and third quartile of cities (so the length is inter-quartile range);
+these are not 95% CI
+
+```{r err-within-method-by-age}
+err_within_method_byage <- 
+  comp_asdrs %>%
+  group_by(method, sex, agegp10) %>%
+  summarize(delta_rel_mean = mean(delta_rel),
+            delta_rel_ci_low = quantile(delta_rel, .25),
+            delta_rel_ci_high = quantile(delta_rel, .75),
+            delta_mean = mean(delta),
+            delta_ci_low = quantile(delta, .25),
+            delta_ci_high = quantile(delta, .75),
+            .groups='drop')
+
+err_within_method_byage_plot <- 
+err_within_method_byage %>%
+  ggplot(.) +
+  #geom_point(aes(x=agegp10,
+  geom_pointrange(aes(x=agegp10,
+                      y=delta_mean,
+                      ymin = delta_ci_low,
+                      ymax = delta_ci_high,
+                      color = method,
+                      shape = sex),
+                  position=position_dodge(width=.5)) +
+  theme_minimal() +
+  ylab("Average error\nin estimated death rate") +
+  xlab("") +
+  labs(caption="NB: Bars show estimated inter-quartile range across the cities")
+
+# NB: this is used
+ggsave(filename=file.path(comp_out_dir, "asdr_err_within_method_byage.pdf"),
+       plot=err_within_method_byage_plot)
+```
+
+### CI covereage
+
+How many estimates have no CI?
+
+```{r}
+comp_asdrs %>%
+  mutate(zero_ci = as.numeric(post_sd_asdr==0)) %>%
+  group_by(method, sex, zero_ci) %>%
+  summarize(count=n()) %>%
+  pivot_wider(names_from=c(method,sex), values_from=count)
+```
+
+Note that this is CI coverage with zero estimates removed -- in other words, when the sibling
+method produces a point estimate of 0, we don't include it in this summary
+
+```{r coverage-table}
+comp_ci_coverage_asdr <- 
+  comp_asdrs %>%
+    mutate(zero_ci = as.numeric(post_sd_asdr==0)) %>%
+    # if no CI b/c zero reported deaths, count as not covered
+    mutate(ci_covered = ifelse(zero_ci, 0, ci_covered)) %>%
+    group_by(method, sex) %>%
+    summarize(empirical_ci_coverage = mean(ci_covered),
+              # this version doesn't count zero cis
+              empirical_ci_coverage_ignorezero = sum((1-zero_ci) * ci_covered) / sum(1-zero_ci)) %>%
+    mutate(qty = 'asdr')
+
+comp_ci_coverage_probs <- 
+  comp_probs %>%
+    mutate(zero_ci = as.numeric(post_sd_q==0)) %>%
+    # if no CI b/c zero reported deaths, count as not covered
+    mutate(ci_covered = ifelse(zero_ci, 0, ci_covered)) %>%
+    group_by(method, sex) %>%
+    summarize(empirical_ci_coverage = mean(ci_covered),
+              # this version doesn't count zero cis
+              empirical_ci_coverage_ignorezero = sum((1-zero_ci) * ci_covered) / sum(1-zero_ci)) %>%
+    mutate(qty = 'prob')
+
+comp_ci_coverage <- bind_rows(comp_ci_coverage_asdr,
+                              comp_ci_coverage_probs) %>%
+                    mutate(geo = params$geo,
+                           comparison_name = params$comparison_name) 
+
+## NB: this is used
+
+saveRDS(comp_ci_coverage,
+        file.path(comp_out_dir, "comp_ci_coverage.rds"))
+```
+
+# National analysis ends here
+
+```{r}
+if(geo_name == 'national') {
+  toc()
+  knitr::knit_exit()
+}
+```
+
+
+
+## Bias-Variance Decomposition
+
+Check bias-variance decomposition w/in city/age/sex group:
+MSE = bias^2 + var
+
+```{r}
+fp.var <- function(x) {
+  return(mean((x - mean(x))^2))
+}
+
+bvd_check <- comp_asdrs_boot %>%
+  group_by(geo, sex, agegp10, method) %>%
+  summarize(estimand = mean(post_mean_asdr),
+            gs = mean(gs_asdr),
+            mse = mean((post_mean_asdr - gs_asdr)^2),
+            # NB: the mse var in comp_asdrs_boot is based on delta = (est - truth)*1000
+            #mse = mean(delta2/(1000^2)),
+            bias = mean(post_mean_asdr - gs_asdr),
+            var = var(post_mean_asdr)) %>%
+            #var = fp.var(post_mean_asdr)) %>%
+            #var = mean((post_mean_asdr - estimand)^2)) %>%
+  mutate(check = mse - (bias^2 + var))
+
+bvd_check %>%
+  ggplot(.) +
+  geom_abline(intercept=0, slope=1, color='grey') +
+  geom_point(aes(x = bias^2 + var,
+                 y = mse)) +
+  theme_minimal() +
+  coord_equal()
+
+bvd_check
+```
+```{r}
+bvd_check_long <- bvd_check %>%
+  pivot_longer(cols=c('mse', 'bias', 'var')) %>%
+  select(-estimand, -check) %>%
+  rename(qty = name) %>%
+  pivot_wider(names_from = c('method'),
+              values_from = 'value')
+
+bvd_check_long
+```
+
+Aggregate up to age/sex groups (across cities)
+
+```{r}
+bvd_as_rmse_plot <- bvd_check_long %>%
+  #filter(qty %in% c('bias', 'var')) %>%
+  filter(qty == 'mse') %>%
+  group_by(sex, agegp10) %>%
+  # we take the average of the MSE; when we plot,
+  # we'll take the square root to make it a little more interpretable - but
+  # the quantity being averaged is the MS E
+  summarize(Network = mean(Network),
+            Sibling=mean(Sibling)) %>%
+  ggplot(.) +
+  geom_abline(intercept=0, slope=1, color='grey', lty=2) +
+  geom_point(aes(x=sqrt(Network), y=sqrt(Sibling), color=agegp10, shape=sex)) +
+  guides(color=guide_legend(override.aes=list(alpha=1),
+                            title='Age'),
+         shape=guide_legend(override.aes=list(alpha=1),
+                            title='')) +
+  #xlab("Network variance") + ylab("Sibling variance") +
+  xlab("Square root of\nNetwork average MSE") +
+  ylab("Square root of\nSibling average MSE") +
+  expand_limits(x=0, y=0) +
+  #coord_equal() +
+  tune::coord_obs_pred() +
+  age_scale_color +
+  theme_minimal() 
+
+
+# NB: this one is used
+saveRDS(bvd_as_rmse_plot, file.path(comp_out_dir, "bvd_as_rmse_plot.rds"))
+ggsave(file.path(comp_out_dir, "bvd_as_rmse.pdf"),
+       bvd_as_rmse_plot,
+       width=5, height=4)
+
+bvd_as_rmse_plot
+```
+
+Sqrt of the variance
+
+```{r}
+bvd_as_se_plot <- bvd_check_long %>%
+  #filter(qty %in% c('bias', 'var')) %>%
+  filter(qty == 'var') %>%
+  group_by(sex, agegp10) %>%
+  ## we average the variance across cities,
+  ## then we take the square root to make it easier to read
+  ## but the quantity being averaged is the variance
+  summarize(Network = mean(Network),
+            Sibling=mean(Sibling)) %>%
+  ggplot(.) +
+  geom_abline(intercept=0, slope=1, color='grey', lty=2) +
+  geom_point(aes(x=sqrt(Network), y=sqrt(Sibling), color=agegp10, shape=sex)) +
+  guides(color=guide_legend(override.aes=list(alpha=1),
+                            title='Age'),
+         shape=guide_legend(override.aes=list(alpha=1),
+                            title='')) +
+  #xlab("Network variance") + ylab("Sibling variance") +
+  #xlab(TeX(r'(Network average $\sqrt{var}$)')) + 
+  #ylab(TeX(r'(Sibling average $\sqrt{var}$)')) + 
+  xlab("Square root of\nNetwork average variance") +
+  ylab("Square root of\nSibling average variance") +
+  #coord_equal() +
+  tune::coord_obs_pred() +
+  theme_minimal() +
+  age_scale_color +
+  expand_limits(x = 0, y = 0)
+
+# NB: this one is used
+saveRDS(bvd_as_se_plot, file.path(comp_out_dir, "bvd_as_se_plot.rds"))
+ggsave(file.path(comp_out_dir, "bvd_as_se.pdf"),
+       bvd_as_se_plot,
+       width=5, height=4)
+
+bvd_as_se_plot
+```
+
+Bias
+
+```{r}
+bvd_as_bias_plot <- bvd_check_long %>%
+  #filter(qty %in% c('bias', 'var')) %>%
+  filter(qty == 'bias') %>%
+  group_by(sex, agegp10) %>%
+  summarize(Network = mean(Network),
+            Sibling=mean(Sibling)) %>%
+  ggplot(.) +
+  #geom_abline(intercept=0, slope=1, color='grey', linetype=2) +
+  geom_vline(xintercept=0, color='grey') +
+  geom_hline(yintercept=0, color='grey') +
+  geom_point(aes(x=Network, y=Sibling, color=agegp10, shape=sex)) +
+  guides(color=guide_legend(override.aes=list(alpha=1),
+                            title='Age'),
+         shape=guide_legend(override.aes=list(alpha=1),
+                            title='')) +
+  xlab("Network bias") + ylab("Sibling bias") +
+  #coord_equal() +
+  tune::coord_obs_pred() +
+  lemon::scale_y_symmetric(mid=0) +
+  lemon::scale_x_symmetric(mid=0) +
+  age_scale_color +
+  theme_minimal() 
+
+# NB: this one is used
+saveRDS(bvd_as_bias_plot, file.path(comp_out_dir, "bvd_as_bias_plot.rds"))
+
+ggsave(file.path(comp_out_dir, "bvd_as_bias.pdf"),
+       bvd_as_bias_plot,
+       width=5, height=4)
+
+bvd_as_bias_plot
+```
+
+Count number of age/sex groups for which magnitude of net bias is bigger
+than magnitude of sibling bias
+
+```{r}
+check_ns_mag_bias <- bvd_check_long %>%
+  #filter(qty %in% c('bias', 'var')) %>%
+  filter(qty == 'bias') %>%
+  group_by(sex, agegp10) %>%
+  summarize(Network = mean(Network),
+            Sibling=mean(Sibling)) %>%
+  mutate(net_bias_mag_bigger = as.numeric(abs(Network) > abs(Sibling)))
+
+glue::glue("
+           The bias of the network method is bigger in magnitude for
+           {sum(check_ns_mag_bias$net_bias_mag_bigger)} out of {nrow(check_ns_mag_bias)} age-sex groups
+           ")
+
+check_ns_mag_bias
+```
+
+# Maps
+
+```{r}
+city.dat <- read_csv(file.path(data_dir, "cities.csv"))
+
+# join in city names for titles
+state.city.map <- city.dat %>% select(state_abbrev, region, state_name, city_name=municipio)
+state.city.map <- state.city.map %>%
+  mutate(title = paste0(city_name, " (", state_abbrev, ")")) %>%
+  mutate(geo = state_abbrev)
+  #mutate(title = paste0(city_name, ",\n", state_name))
+
+#br_customgrid <- br_grid1 %>% 
+br_customgrid <- br_states_grid1 %>% 
+  select(-name) %>%
+  left_join(state.city.map %>% select(code=state_abbrev, name=title))
+```
+
+## Hexgrid maps
+
+Helper fn 
+
+```{r city-method-mare-map, fig.height=4.5, fig.width=3}
+  
+comp_df <- comp_rel_asdrs_bygeo_wide
+  
+##
+## data - dataset to use, already filtered (so either males or females)
+##        needs a column called 'geo'
+## qoivar - the value to plot
+## name - the label for the qoi
+br_compare_choro_map <- function(data, qoivar, name, 
+                                 title=NULL, 
+                                 labels=TRUE, 
+                                 fillscale=NULL,
+                                 logfill=FALSE,
+                                 hex=TRUE) {
+    
+  mapobj <- readRDS(file.path(out_dir, "brazil_map.rds"))
+  
+  # should we plot a hex map? or a political map?
+  if(hex) {
+    # hexmap
+    if(geo_name == 'region') {
+      basemap <- mapobj$hexmap_region
+    } else {
+      basemap <- mapobj$hexmap
+    }
+    # political map
+  } else {
+    basemap <- mapobj$map
+  }
+  
+  if(geo_name == 'city') {
+    mapraw <- basemap %>%
+      mutate(geo = postal) 
+  } else {
+    mapraw <- basemap %>%
+      mutate(geo = region) 
+  }
+  
+  mapdat <- mapraw %>%
+    left_join(data %>% rename(qoi = qoivar))
+  
+  capdat <- mapobj$capitals
+  
+  if(is.null(fillscale)) {
+    # default fill scale
+    plot_fill_scale <- scale_fill_distiller(name=name, type='div')
+  } else {
+    plot_fill_scale <- fillscale
+  }
+  
+  if (logfill) {
+    plot_fill_scale <- plot_fill_scale + scale_color_continuous(trans=log10)
+  }
+  
+
+  # for removing the background from ggplots
+  remove_background <- theme(panel.background = element_blank(),
+            panel.border = element_blank(),
+            panel.grid.major = element_blank(),
+            axis.ticks.x = element_blank(),
+            axis.text.x = element_blank(),
+            axis.ticks.y = element_blank(),
+            axis.text.y = element_blank()) 
+  
+  cur_map <- 
+    ggplot(data=mapdat) + 
+      theme_bw(base_size=5) +
+      geom_sf(aes(fill=qoi), 
+              linetype='dotted', 
+              alpha=.8) +
+    plot_fill_scale +
+    #log_scale_fill +
+    remove_background  +
+    xlab('') + ylab('') +
+    theme(legend.position=c(.2,.3),
+          legend.direction='vertical',
+          legend.text=element_text(size=8),
+          legend.title=element_text(size=8, face='bold')) +
+    NULL
+  
+  if(labels) {
+    cur_map <- cur_map +
+      geom_sf(data=capdat) +
+      geom_text_repel(data=capdat,
+                      aes(x=lon, y=lat, 
+                          label=glue::glue("{municipio} ({state_abbrev})")),
+                      size=rel(3))
+  }
+  
+  if(! is.null(title)) {
+    cur_map <- cur_map + ggtitle(title)
+  }
+  
+  return(cur_map)
+}
+
+# see 
+# https://github.com/tidyverse/ggplot2/issues/1012
+scale_fill_log10 <- function(...) {
+  scale_fill_continuous(..., trans = scales::log10_trans())
+}
+
+# make maps for each age/sex group and assemble
+# them into one figure
+br_hexgrid_map <- function(qoivar,
+                           qoiname,
+                           scale_lims=NULL,
+                           fillscale=NULL,
+                           logfill=FALSE) {
+  
+  # TODO 
+  if(! is.null(scale_lims)) {
+    cur_lims <- scale_lims*1.05 
+  } else {
+    cur_lims <- NULL
+  }
+  
+  if(logfill) {
+    plot_logfill <- scale_fill_log10()
+  } else {
+    plot_logfill <- NULL
+  }
+  
+  if(! is.null(fillscale)) {
+    plot_fillscale <- fillscale
+  } else {
+    plot_fillscale <- scale_fill_distiller(name=qoiname, 
+                                           palette = 'Spectral',
+                                           limits=cur_lims,
+                                           oob=scales::squish,
+                                           type='div') 
+  }
+  
+  maps_indiv <- comp_asdrs_bygeoas %>%
+    group_by(sex, method, agegp10) %>%
+    group_modify(function(cur_df, key) {
+      
+      cur_sex <- key$sex[1]
+      cur_agegp10 <- key$agegp10[1]
+      cur_method <- key$method[1]
+      
+      cur_map_errs <- br_compare_choro_map(cur_df,
+                                           qoivar=qoivar,
+                                           title=glue::glue('{cur_method}: {cur_sex}, {cur_agegp10}'),
+                                           name=glue::glue('{cur_method} {qoiname}'),
+                                           labels=FALSE,
+                                           fillscale=plot_fillscale,
+                                           hex=TRUE) +
+        plot_logfill
+      return(tibble(map_errs=list(cur_map_errs)))
+      
+    })
+  
+  layout <- "
+  AF#KP
+  BG#LQ
+  CH#MR
+  DI#NS
+  EJ#OT
+  "
+  
+  ppw <- 4 # plot panel width (relative)
+  spw <- 1 # space panel width (relative)
+  
+  
+  maps_array <- maps_indiv %>% 
+    pull(map_errs) %>%
+    wrap_plots(design=layout,
+               widths=c(ppw, ppw, spw, ppw, ppw)) +
+    plot_layout(guides='collect') &
+    theme(legend.position='bottom',
+          legend.direction='horizontal',
+          plot.title=element_text(hjust=0.5)) 
+  
+  
+  meta_layout <- "
+  ##FF###MM##
+  #NNSS#TTUU#
+  APPPPPPPPPV
+  BPPPPPPPPPW
+  CPPPPPPPPPX
+  DPPPPPPPPPY
+  EPPPPPPPPPZ
+  "
+  
+  final_maps <- wrap_plots(
+     A=wrap_elements(grid::textGrob("18-24")), 
+     B=wrap_elements(grid::textGrob("25-34")), 
+     C=wrap_elements(grid::textGrob("35-44")), 
+     D=wrap_elements(grid::textGrob("45-54")), 
+     E=wrap_elements(grid::textGrob("55-64")), 
+     V=wrap_elements(grid::textGrob("18-24")), 
+     W=wrap_elements(grid::textGrob("25-34")), 
+     X=wrap_elements(grid::textGrob("35-44")), 
+     Y=wrap_elements(grid::textGrob("45-54")), 
+     Z=wrap_elements(grid::textGrob("55-64")), 
+     F=wrap_elements(grid::textGrob("Female")),
+     M=wrap_elements(grid::textGrob("Male")),
+     N=wrap_elements(grid::textGrob("Network")),
+     T=wrap_elements(grid::textGrob("Network")),
+     S=wrap_elements(grid::textGrob("Sibling")),
+     U=wrap_elements(grid::textGrob("Sibling")),
+     P=maps_array,
+     design=meta_layout,
+   heights=c(1,1,rep(6,5))) +
+   plot_annotation(caption="Values outside of limits squished to limits.")
+  
+  return(final_maps)
+}
+```
+
+Plot age/sex MARE for estimates
+
+```{r method_map_as_mare}
+method_mare_as_maps <- br_hexgrid_map(qoivar='geo_are',
+                                      qoiname='MARE',
+                                      scale_lims=c(0,2))
+                                     #fillscale=scale_fill_gradient(name='MARE',
+                                     #                               #type='div',
+                                     #                               #palette='RdBu',
+                                     #                               low='black',
+                                     #                               high='red',
+                                     #                               oob=scales::squish,
+                                     #                               limits=c(0,2)))
+      
+saveRDS(method_mare_as_maps, file.path(comp_out_dir, "method_mare_agesex_map.rds"))
+ggsave(filename=file.path(comp_out_dir, "method_mare_agesex_map.pdf"),
+       plot=method_mare_as_maps,
+       height=10,
+       width=8)
+ggsave(filename=file.path(comp_out_dir, "method_mare_agesex_map.png"),
+       plot=method_mare_as_maps,
+       height=10,
+       width=8)
+
+method_mare_as_maps
+```
+
+
+Plot age/sex MSE for estimates
+
+```{r method_map_as_mse}
+method_mse_as_maps <- br_hexgrid_map(qoivar='geo_mse',
+                                     qoiname='MSE',
+                                     scale_lims=c(0,50))
+      
+saveRDS(method_mse_as_maps, file.path(comp_out_dir, "method_mse_agesex_map.rds"))
+ggsave(filename=file.path(comp_out_dir, "method_mse_agesex_map.pdf"),
+       plot=method_mse_as_maps,
+       height=10,
+       width=8)
+ggsave(filename=file.path(comp_out_dir, "method_mse_agesex_map.png"),
+       plot=method_mse_as_maps,
+       height=10,
+       width=8)
+
+method_mse_as_maps
+```
+
+
+
+Plot age/sex RMSE for estimates
+
+```{r method_map_as_rmse}
+method_rmse_as_maps <- br_hexgrid_map(qoivar='geo_rmse',
+                                      qoiname='RMSE',
+                                      scale_lims=c(0,10))
+      
+saveRDS(method_rmse_as_maps, file.path(comp_out_dir, "method_rmse_agesex_map.rds"))
+ggsave(filename=file.path(comp_out_dir, "method_rmse_agesex_map.pdf"),
+       plot=method_rmse_as_maps,
+       height=10,
+       width=8)
+ggsave(filename=file.path(comp_out_dir, "method_rmse_agesex_map.png"),
+       plot=method_rmse_as_maps,
+       height=10,
+       width=8)
+
+method_rmse_as_maps
+```
+
+Plot age/sex RE (not absolute value) for estimates
+
+```{r method_map_as_re}
+method_re_as_maps <- br_hexgrid_map(qoivar='geo_re',
+                                    qoiname='log(RE)',
+                                    logfill=TRUE,
+                                    fillscale=scale_fill_distiller(type='div',palette='RdBu'),
+                                    #scale_lims=c(0,5))
+                                    scale_lims=c(-2,2))
+      
+saveRDS(method_re_as_maps, file.path(comp_out_dir, "method_re_agesex_map.rds"))
+ggsave(filename=file.path(comp_out_dir, "method_re_agesex_map.pdf"),
+       plot=method_re_as_maps,
+       height=10,
+       width=8)
+
+method_re_as_maps
+```
+
+Repeat the maps above for age/sex MARE differences
+
+```{r}
+#comp_asdrs_bygeoas_wide
+#comp_rel_asdrs_bygeoas_wide
+
+as_gps <- expand_grid(agegp10 = unique(comp_asdrs_bygeoas_wide$agegp10),
+                      sex = unique(comp_asdrs_bygeoas_wide$sex))
+
+mare_as_maps <- comp_rel_asdrs_bygeoas_wide %>%
+  ungroup() %>%
+  group_by(agegp10, sex) %>%
+  group_map(function(cur_df, key) {
+    #cur_sex <- cur_df$sex[1]
+    #cur_agegp10 <- cur_df$agegp10[1]
+    
+    cur_sex <- key$sex[1]
+    cur_agegp10 <- key$agegp10[1]
+    
+    cur_map_mare <- br_compare_choro_map(cur_df,
+                                         qoivar='n.minus.s',
+                                         title=glue::glue('{cur_sex}, {cur_agegp10}'),
+                                         name=glue::glue('Network MARE -\nSibling MARE'),
+                                         labels=FALSE)
+    
+  })
+
+#maxval <- max(abs(range(comp_rel_asdrs_bygeoas_wide$n.minus.s)))
+maxval <- 2 
+
+mare_as_maps <- mare_as_maps %>% 
+  wrap_plots(mare_as_maps, nrow=5, ncol=2) &
+  scale_fill_distiller(name='Network MARE -\nSibling MARE', 
+                       limits=c(-maxval, maxval)*1.05,
+                       oob=scales::squish,
+                       type='div')
+
+mare_as_maps <- mare_as_maps + 
+  plot_layout(guides='collect') +
+  plot_annotation(caption="Values outside of limits squished to limits.") &
+  theme(legend.position='bottom',
+        legend.direction='horizontal') 
+  
+saveRDS(mare_as_maps, file.path(comp_out_dir, "method_compare_mare_agesex_map.rds"))
+ggsave(filename=file.path(comp_out_dir, "method_compare_mare_agesex_map.pdf"),
+       plot=mare_as_maps,
+       height=12,
+       width=4)
+ggsave(filename=file.path(comp_out_dir, "method_compare_mare_agesex_map.png"),
+       plot=mare_as_maps,
+       height=12,
+       width=4)
+
+mare_as_maps
+
+```
+
+... and for age/sex MSE
+
+```{r}
+#comp_asdrs_bygeoas_wide
+#comp_rel_asdrs_bygeoas_wide
+
+as_gps <- expand_grid(agegp10 = unique(comp_asdrs_bygeoas_wide$agegp10),
+                      sex = unique(comp_asdrs_bygeoas_wide$sex))
+
+mse_as_maps <- comp_asdrs_bygeoas_wide %>%
+  ungroup() %>%
+  group_by(agegp10, sex) %>%
+  group_map(function(cur_df, key) {
+    #cur_sex <- cur_df$sex[1]
+    #cur_agegp10 <- cur_df$agegp10[1]
+    
+    cur_sex <- key$sex[1]
+    cur_agegp10 <- key$agegp10[1]
+    
+    cur_map_mare <- br_compare_choro_map(cur_df,
+                                         qoivar='n.minus.s',
+                                         title=glue::glue('{cur_sex}, {cur_agegp10}'),
+                                         name=glue::glue('Network MARE -\nSibling MARE'),
+                                         labels=FALSE)
+    
+  })
+
+#maxval <- max(abs(range(comp_asdrs_bygeoas_wide$n.minus.s)))
+maxval <- 50
+
+mse_as_maps <- mse_as_maps %>% 
+  wrap_plots(mse_as_maps, nrow=5, ncol=2) &
+  scale_fill_distiller(name='Network MSE -\nSibling MSE', 
+                       limits=c(-maxval, maxval)*1.05,
+                       oob=scales::squish,
+                       type='div')
+
+mse_as_maps <- mse_as_maps + 
+  plot_layout(guides='collect') +
+  plot_annotation(caption="Values outside of limits squished to limits.") &
+  theme(legend.position='bottom',
+        legend.direction='horizontal') 
+  
+saveRDS(mse_as_maps, file.path(comp_out_dir, "method_compare_mse_agesex_map.rds"))
+ggsave(filename=file.path(comp_out_dir, "method_compare_mse_agesex_map.pdf"),
+       plot=mse_as_maps,
+       height=12,
+       width=4)
+ggsave(filename=file.path(comp_out_dir, "method_compare_mse_agesex_map.png"),
+       plot=mse_as_maps,
+       height=12,
+       width=4)
+
+mse_as_maps
+
+```
+
+... and for age/sex RMSE
+
+```{r}
+#comp_asdrs_bygeoas_wide
+#comp_rel_asdrs_bygeoas_wide
+
+as_gps <- expand_grid(agegp10 = unique(comp_asdrs_bygeoas_wide$agegp10),
+                      sex = unique(comp_asdrs_bygeoas_wide$sex))
+
+rmse_as_maps <- comp_rmse_asdrs_bygeoas_wide %>%
+  ungroup() %>%
+  group_by(agegp10, sex) %>%
+  group_map(function(cur_df, key) {
+    #cur_sex <- cur_df$sex[1]
+    #cur_agegp10 <- cur_df$agegp10[1]
+    
+    cur_sex <- key$sex[1]
+    cur_agegp10 <- key$agegp10[1]
+    
+    cur_map_rmse <- br_compare_choro_map(cur_df,
+                                         qoivar='n.minus.s',
+                                         title=glue::glue('{cur_sex}, {cur_agegp10}'),
+                                         name=glue::glue('Network RMSE -\nSibling RMSE'),
+                                         labels=FALSE)
+    
+  })
+
+#maxval <- max(abs(range(comp_asdrs_bygeoas_wide$n.minus.s)))
+maxval <-7 
+
+rmse_as_maps <- rmse_as_maps %>% 
+  wrap_plots(rmse_as_maps, nrow=5, ncol=2) &
+  scale_fill_distiller(name='Network RMSE-\nSibling RMSE)', 
+                       limits=c(-maxval, maxval)*1.05,
+                       oob=scales::squish,
+                       type='div')
+
+rmse_as_maps <- rmse_as_maps + 
+  plot_layout(guides='collect') +
+  plot_annotation(caption="Values outside of limits squished to limits.") &
+  theme(legend.position='bottom',
+        legend.direction='horizontal') 
+  
+saveRDS(rmse_as_maps, file.path(comp_out_dir, "method_compare_rmse_agesex_map.rds"))
+ggsave(filename=file.path(comp_out_dir, "method_compare_rmse_agesex_map.pdf"),
+       plot=rmse_as_maps,
+       height=12,
+       width=4)
+ggsave(filename=file.path(comp_out_dir, "method_compare_rmse_agesex_map.png"),
+       plot=rmse_as_maps,
+       height=12,
+       width=4)
+
+rmse_as_maps
+
+```
+
+
+## Summarize Geographical relationships with Moran's I
+
+Helper function to calculate Moran's I
+
+```{r}
+
+calculate_moran_I <- function(qoi_df, 
+                              qoi_var, 
+                              alternative = 'two.sided',
+                              # other args for spdep::moran.test
+                              ...) {
+
+  mapobj <- readRDS(file.path(out_dir, "brazil_map.rds"))
+  
+  if(geo_name == 'city') {
+    mapraw <- mapobj$map %>%
+      mutate(geo = postal) 
+  } else {
+    mapraw <- mapobj$map %>%
+      mutate(geo = region) %>%
+      group_by(geo) %>%
+      summarize() %>%
+      ungroup()
+  }
+  
+  # see
+  # https://mgimond.github.io/Spatial/spatial-autocorrelation-in-r.html
+  neighbors <- spdep::poly2nb(mapraw) 
+  neighbors_weight <- spdep::nb2listw(neighbors, style="W", zero.policy=TRUE)
+  
+  #comp_rel_asdrs_bygeo_wide,
+  #qoivar='n.minus.s'
+                                        
+  mapdat <- mapraw %>%
+    left_join(qoi_df %>% rename(qoi = all_of(qoi_var)))
+  
+  res <- spdep::moran.test(mapdat[['qoi']], 
+                           listw=neighbors_weight,
+                           alternative=alternative,
+                           ...)
+  
+  res$moran_I <- round(res$estimate[1],2)
+  res$p_value <- round(res$p.value, 2)
+  res$desc <- glue::glue("Moran's I, p-value calculated based on {alternative}",
+                         .envir = res)
+    
+  # rename 'method' slot, since we use that for something else
+  res$moran_method <- res$method
+  res$method <- NULL
+  
+  return(res)
+}
+
+# helper function to coerce results of Moran's I calculation
+# to a tibble row
+moran_I_to_tibble <- function(res, ...) {
+  class(res) <- NULL
+  res$estimate <- list(res$estimate)
+  return(as_tibble_row(c(res, ...)))
+}
+
+```
+
+### Moran's I for MARE values
+
+Calculate Moran's I for MARE values
+
+```{r}
+mare_moran_I <- comp_rel_asdrs_bygeoas_wide %>%
+  rename(diff = 'n.minus.s') %>%
+  pivot_longer(cols=c('Network', 'Sibling', 'diff'),
+               names_to = 'method',
+               values_to = 'value') %>%
+  ungroup() %>%
+  group_by(geo, method) %>%
+  summarize(value = mean(value)) %>%
+  group_by(method) %>%
+  group_map(function(cur_df, key) {
+    
+    cur_method <- key$method[1]
+    
+    res <- calculate_moran_I(cur_df, 'value')
+    
+    res$sex <- 'both'
+    res$agegp10 <- 'all'
+    res$method <- cur_method
+    
+    return(res)
+    
+  })
+
+spatial_res_mare <- map_dfr(mare_moran_I,
+                            ~ moran_I_to_tibble(.x,
+                                                qty = 'MARE'))
+```
+
+Calculate Moran's I for MARE values by age/sex group
+
+```{r}
+mare_as_moran_I <- comp_rel_asdrs_bygeoas_wide %>%
+  rename(diff = 'n.minus.s') %>%
+  pivot_longer(cols=c('Network', 'Sibling', 'diff'),
+               names_to = 'method',
+               values_to = 'value') %>%
+  ungroup() %>%
+  group_by(sex, method, agegp10) %>%
+  group_map(function(cur_df, key) {
+    
+    cur_sex <- key$sex[1]
+    cur_agegp10 <- key$agegp10[1]
+    cur_method <- key$method[1]
+    
+    res <- calculate_moran_I(cur_df, 'value')
+    
+    res$sex <- cur_sex
+    res$agegp10 <- cur_agegp10
+    res$method <- cur_method
+    
+    return(res)
+    
+  })
+
+spatial_res_mare_as <- map_dfr(mare_as_moran_I,
+                               ~ moran_I_to_tibble(.x,
+                                                   qty = 'MARE'))
+```
+
+
+### Moran's I for MSE values
+
+Calculate Moran's I for MSE values
+
+```{r}
+mse_moran_I <- comp_asdrs_bygeoas_wide %>%
+  rename(diff = 'n.minus.s') %>%
+  pivot_longer(cols=c('Network', 'Sibling', 'diff'),
+               names_to = 'method',
+               values_to = 'value') %>%
+  ungroup() %>%
+  group_by(geo, method) %>%
+  summarize(value = mean(value)) %>%
+  group_by(method) %>%
+  group_map(function(cur_df, key) {
+    
+    cur_method <- key$method[1]
+    
+    res <- calculate_moran_I(cur_df, 'value')
+    
+    res$sex <- 'both'
+    res$agegp10 <- 'all'
+    res$method <- cur_method
+    
+    return(res)
+    
+  })
+
+spatial_res_mse <- map_dfr(mse_moran_I,
+                           ~ moran_I_to_tibble(.x,
+                                               qty = 'MSE'))
+```
+
+Calculate Moran's I for MSE values by age/sex group
+
+```{r}
+mse_as_moran_I <- comp_asdrs_bygeoas_wide %>%
+  rename(diff = 'n.minus.s') %>%
+  pivot_longer(cols=c('Network', 'Sibling', 'diff'),
+               names_to = 'method',
+               values_to = 'value') %>%
+  ungroup() %>%
+  group_by(sex, method, agegp10) %>%
+  group_map(function(cur_df, key) {
+    
+    cur_sex <- key$sex[1]
+    cur_agegp10 <- key$agegp10[1]
+    cur_method <- key$method[1]
+    
+    res <- calculate_moran_I(cur_df, 'value')
+    
+    res$sex <- cur_sex
+    res$agegp10 <- cur_agegp10
+    res$method <- cur_method
+    
+    return(res)
+    
+  })
+
+spatial_res_mse_as <- map_dfr(mse_as_moran_I,
+                              ~ moran_I_to_tibble(.x,
+                                                  qty = 'MSE'))
+```
+
+```{r}
+moran_I_df <- bind_rows(spatial_res_mare,
+                        spatial_res_mare_as,
+                        spatial_res_mse,
+                        spatial_res_mse_as)
+
+
+write_csv(moran_I_df %>% unnest_wider(estimate) %>% arrange(p_value),
+          file.path(comp_out_dir, "moran_I.csv"))
+```
+
+Moran's I values that are significant at $p=0.05$ level
+
+```{r}
+moran_I_df %>% filter(p_value < 0.05)
+```
+
+## Heatmap figures 
+
+Create a dataset `all_err_diffs_boot`
+which has a row for each geo/sex/agegp/boot_idx that has, for Sibling and Network
+  - delta = (estimate - truth) [diff between estimate and truth]
+  - delta2 = (estimate - truth)^2 [delta squared - used in calculating MSE and RMSE]
+  - delta_rel = |estimate - truth| / truth [absolute relative diff between estimate and truth]
+  - delta_rel_notabs = (estimate - truth) / truth [relative diff between estimate and truth, with no absolute value taken]
+  - estimate (the actual estimate)
+  - gs_asdr (the gold standard value)
+  
+```{r}
+all_err_diffs_boot <- comp_asdrs_boot %>%
+  rename(estimate = post_mean_asdr) %>%
+  pivot_wider(id_cols = c('geo', 'sex', 'agegp10', 'boot_idx', 'gs_asdr'),
+              names_from=method,
+              values_from=c(starts_with('delta'), 'estimate'))
+```
+
+Create a dataset `geo_err_diffs_boot` which summarizes errors within each geographical area;
+it has a row for each geo/boot_idx that has, for Network/Sibling
+  - mean_delta
+  - mean_delta2
+  - mean_delta_rel
+it also has differences:
+  - mean_diff_rel
+  - mean_diff_mse
+  - mean_diff_rmse = sqrt(mean_delta2_Network) - sqrt(mean_delta2_Sibling)
+  
+```{r}
+## given a dataset assumed to be grouped in some way 
+## aggregate errors and calculate rmse after aggregating
+summ_estimate_errs <- function(df) {
+  df %>%
+    summarize(# sibling
+              mean_delta_Sibling = mean(delta_Sibling),
+              mean_delta2_Sibling = mean(delta2_Sibling),
+              mean_delta_rel_Sibling = mean(delta_rel_Sibling),
+              mean_delta_rel_notabs_Sibling = mean(delta_rel_notabs_Sibling), 
+              # network 
+              mean_delta_Network = mean(delta_Network),
+              mean_delta2_Network = mean(delta2_Network),
+              mean_delta_rel_Network = mean(delta_rel_Network),
+              mean_delta_rel_notabs_Network = mean(delta_rel_notabs_Network)) %>%
+    ungroup() %>%
+    mutate(mean_diff_rel = mean_delta_rel_Network - mean_delta_rel_Sibling,
+           mean_diff_rel_notabs = mean_delta_rel_notabs_Network - mean_delta_rel_notabs_Sibling,
+           mean_diff_mse = mean_delta2_Network - mean_delta2_Sibling,
+           mean_diff_rmse = sqrt(mean_delta2_Network) - sqrt(mean_delta2_Sibling),
+           mean_diff_raw = mean_delta_Network - mean_delta_Sibling)
+}
+
+## given a summarized and grouped dataset,
+## calculate summaries (point ests + cis) for network, sibling, and diffs
+calc_ci_errs <- function(df) {
+  df %>%
+  summarize(
+            ## sibling
+            sib_mare = mean(mean_delta_rel_Sibling),
+            sib_mare_ci_low = quantile(mean_delta_rel_Sibling, .025),
+            sib_mare_ci_high = quantile(mean_delta_rel_Sibling, .975),
+            sib_mse = mean(mean_delta2_Sibling),
+            sib_mse_ci_low = quantile(mean_delta2_Sibling, .025),
+            sib_mse_ci_high = quantile(mean_delta2_Sibling, .975),
+            sib_rmse = sqrt(mean(mean_delta2_Sibling)),
+            sib_rmse_ci_low = sqrt(quantile(mean_delta2_Sibling, .025)),
+            sib_rmse_ci_high = sqrt(quantile(mean_delta2_Sibling, .975)),
+            sib_raw = mean(mean_delta_Sibling),
+            sib_raw_ci_low = quantile(mean_delta_Sibling, .025),
+            sib_raw_ci_high = quantile(mean_delta_Sibling, .975),
+            sib_rel_notabs = mean(mean_delta_rel_notabs_Sibling),
+            sib_rel_notabs_ci_low = quantile(mean_delta_rel_notabs_Sibling, .025),
+            sib_rel_notabs_ci_high = quantile(mean_delta_rel_notabs_Sibling, .975),
+            ## network 
+            net_mare = mean(mean_delta_rel_Network),
+            net_mare_ci_low = quantile(mean_delta_rel_Network, .025),
+            net_mare_ci_high = quantile(mean_delta_rel_Network, .975),
+            net_mse = mean(mean_delta2_Network),
+            net_mse_ci_low = quantile(mean_delta2_Network, .025),
+            net_mse_ci_high = quantile(mean_delta2_Network, .975),
+            net_rmse = sqrt(mean(mean_delta2_Network)),
+            net_rmse_ci_low = sqrt(quantile(mean_delta2_Network, .025)),
+            net_rmse_ci_high = sqrt(quantile(mean_delta2_Network, .975)),
+            net_raw = mean(mean_delta_Network),
+            net_raw_ci_low = quantile(mean_delta_Network, .025),
+            net_raw_ci_high = quantile(mean_delta_Network, .975),
+            net_rel_notabs = mean(mean_delta_rel_notabs_Network),
+            net_rel_notabs_ci_low = quantile(mean_delta_rel_notabs_Network, .025),
+            net_rel_notabs_ci_high = quantile(mean_delta_rel_notabs_Network, .975),
+            ## differences    
+            diff_mare = mean(mean_diff_rel),
+            diff_mare_ci_low = quantile(mean_diff_rel, .025),
+            diff_mare_ci_high = quantile(mean_diff_rel, .975),
+            diff_mse = mean(mean_diff_mse),
+            diff_mse_ci_low = quantile(mean_diff_mse, .025),
+            diff_mse_ci_high = quantile(mean_diff_mse, .975),
+            diff_rmse = mean(mean_diff_rmse),
+            diff_rmse_ci_low = quantile(mean_diff_rmse, .025),
+            diff_rmse_ci_high = quantile(mean_diff_rmse, .975),
+            diff_raw = mean(mean_diff_raw),
+            diff_raw_ci_low = quantile(mean_diff_raw, .025),
+            diff_raw_ci_high = quantile(mean_diff_raw, .975),
+            diff_rel_notabs = mean(mean_diff_rel_notabs),
+            diff_rel_notabs_ci_low = quantile(mean_diff_rel_notabs, .025),
+            diff_rel_notabs_ci_high = quantile(mean_diff_rel_notabs, .975)
+            )
+}
+
+## given df with errors and grouping vars,
+## calculate point ests and cis for those grouping vars,
+## based on the general principle of calculating aggregates within
+## each bootstrap rep, then summarizing across bootstrap reps
+##
+## example:
+##   if groups is age and sex, then
+##       1) calculate mare and rmse for each age and sex group within each boot rep
+##       2) then calculate average and 95% CI of these age/sex mare and rmse values across boot reps
+calc_summ_errs <- function(df, groups) {
+  df %>%
+    ## calculate rmse, mare, etc within groups and boot rep
+    group_by(across({{groups}}), boot_idx) %>%
+    summ_estimate_errs() %>%
+    ## now summarize across boot reps, within groups
+    group_by(across({{groups}})) %>%
+    calc_ci_errs()
+}
+```
+
+```{r}
+geo_err_diffs_summ <-
+  all_err_diffs_boot %>%
+  calc_summ_errs(geo)
+
+agesex_err_diffs_summ <-
+  all_err_diffs_boot %>%
+  calc_summ_errs(c(sex, agegp10))
+
+geo_agesex_err_diffs_summ <-
+  all_err_diffs_boot %>%
+  calc_summ_errs(c(geo, sex, agegp10))
+
+## this should calculate errs across cities for each bootstrap rep,
+## then take ci, etc, over bootstrap reps
+tot_err_diffs_summ <- all_err_diffs_boot %>%
+  group_by(boot_idx) %>%
+  summ_estimate_errs() %>%
+  mutate(dummy=1) %>%
+  group_by(dummy) %>%
+  calc_ci_errs() %>%
+  ungroup()
+```
+
+```{r}
+# see
+# https://stackoverflow.com/questions/60016390/set-axes-limits-in-patchwork-when-combining-ggplot2-objects
+apply_consistent_y_lims <- function(this_plot){
+    num_plots <- length(this_plot$layers)
+    y_lims <- lapply(1:num_plots, function(x) ggplot_build(this_plot[[x]])$layout$panel_scales_y[[1]]$range$range)
+    min_y <- min(unlist(y_lims))
+    max_y <- max(unlist(y_lims))
+    this_plot & ylim(min_y, max_y)
+}
+```
+
+
+```{r}
+## NB: this fn assumes that the environment has
+##   geo_err_diffs_summ
+##   agesex_err_diffs_summ
+##   geo_agesex_err_diffs_summ
+err_breakdown_plot <- function(err_metric, 
+                               err_metric_name, 
+                               diff = FALSE) {
+  
+  if (diff) {
+    fill_scale <- scale_fill_gradient2(low='yellow', high='red', midpoint=0)
+    vline <- geom_vline(xintercept = 0, color='grey')
+    hline <- geom_hline(yintercept = 0, color='grey')
+    symm_x <- lemon::scale_x_symmetric(mid=0)
+  } else {
+    fill_scale <- scale_fill_gradient(low='white', high='red')
+    vline <- NULL
+    hline <- NULL
+    symm_x <- NULL
+  }
+  
+  ## age-sex plot
+  as_plot <- agesex_err_diffs_summ %>%
+    ## rename current error
+    rename_with(~ str_replace(.x, err_metric, 'err'),
+                .cols=starts_with(err_metric)) %>%
+    ggplot(.) +
+    geom_pointrange(aes(x=agegp10, 
+                        ymin=err_ci_low,
+                        ymax=err_ci_high,
+                        y=err)) +
+    facet_wrap(~ sex) +
+    theme_minimal() +
+    xlab("") +
+    expand_limits(y = 0) +
+    hline + 
+    ylab(err_metric_name)
+
+   geo_err_diffs_summ_forplot <- geo_err_diffs_summ %>%
+    ## rename current error
+    rename_with(~ str_replace(.x, err_metric, 'err'),
+                .cols=starts_with(err_metric)) %>%
+     mutate(geo = factor(geo)) %>%
+     mutate(geo = fct_reorder(geo, err))
+   
+   geo_lev_order <- levels(geo_err_diffs_summ_forplot$geo)
+   
+   city_plot <- geo_err_diffs_summ_forplot %>%
+     ggplot(.) +
+     geom_pointrange(aes(x=err, 
+                         xmin=err_ci_low,
+                         xmax=err_ci_high,
+                         y=geo)) +
+     theme_minimal() +
+     xlab(err_metric_name) +
+     expand_limits(x = 0) +
+     symm_x +
+     vline +
+     ylab("")
+   
+   ## summarize errors across bootstrap reps within each city/age/sex gp
+   hm <- geo_agesex_err_diffs_summ %>%
+    ## rename current error
+    rename_with(~ str_replace(.x, err_metric, 'err'),
+                .cols=starts_with(err_metric)) %>%
+     mutate(geo = factor(geo)) %>%
+     mutate(geo = fct_relevel(geo, geo_lev_order)) %>%
+     ggplot(.) +
+     geom_tile(aes(x=agegp10, y=geo, fill=err)) +
+     facet_wrap(~ sex) +
+     theme_minimal() +
+     xlab("") +
+     ylab("") +
+     theme(legend.position = 'bottom') +
+     fill_scale +
+     expand_limits(fill = 0) +
+     #coord_equal() +
+     guides(fill = guide_colorbar(title = err_metric_name,
+                                  title.position="top"))
+     #scale_fill_gradient(low='black', high='red')   
+  
+  # 1 : heatmap
+  # 2 : city agg errs
+  # 3 : age-sex errs
+  design <- "
+    111111111112222
+    111111111112222
+    111111111112222
+    111111111112222
+    111111111112222
+    111111111112222
+    111111111112222
+    111111111112222
+    111111111112222
+    111111111112222
+    111111111112222
+    111111111112222
+    111111111112222
+    111111111112222
+    111111111112222
+    111111111112222
+    111111111112222
+    111111111112222
+    111111111112222
+    111111111112222
+    111111111112222
+    111111111112222
+    111111111112222
+    111111111112222
+    111111111112222
+    111111111112222
+    111111111112222
+    333333333334444
+    333333333334444
+    333333333334444
+    333333333334444
+  "
+  #p1 <- (hm + ggtitle("City, Probability")) + 
+  #      (city_plot + ggtitle("City, Age-specific death rate")) + 
+  #      (as_plot + ggtitle("Region, Probability")) +
+  test <- (hm) + 
+        (city_plot) + 
+        (as_plot) +
+        guide_area() +
+    plot_layout(guides='collect', design=design)   
+  
+  return(test)
+}
+
+```
+
+
+```{r}
+# height / width for saved plots
+pheight <- 10
+pwidth <- 7.5
+```
+
+
+### MARE
+
+Network MARE
+
+```{r}
+err_breakdown_mare_net <- err_breakdown_plot('net_mare', 
+                                             'Network\nMARE')
+
+#saveRDS(err_breakdown_mare_net, 
+#        file.path(comp_out_dir, "err_breakdown_mare_net.rds"))
+ggsave(filename=file.path(comp_out_dir, "err_breakdown_mare_net.pdf"),
+       plot=err_breakdown_mare_net,
+       height=pheight,
+       width=pwidth)
+
+err_breakdown_mare_net
+```
+
+Sibling MARE
+
+```{r}
+err_breakdown_mare_sib <- err_breakdown_plot('sib_mare', 
+                                             'Sibling\nMARE')
+
+#saveRDS(err_breakdown_mare_sib, 
+#        file.path(comp_out_dir, "err_breakdown_mare_sib.rds"))
+ggsave(filename=file.path(comp_out_dir, "err_breakdown_mare_sib.pdf"),
+       plot=err_breakdown_mare_sib,
+       height=pheight,
+       width=pwidth)
+
+err_breakdown_mare_sib
+```
+
+MARE diffs
+
+```{r}
+err_breakdown_mare_diff <- err_breakdown_plot('diff_mare', 
+                                              'Network MARE -\nSibling MARE', 
+                                              diff=TRUE)
+
+#saveRDS(err_breakdown_mare_diff, 
+#        file.path(comp_out_dir, "err_breakdown_mare_diff.rds"))
+ggsave(filename=file.path(comp_out_dir, "err_breakdown_mare_diff.pdf"),
+       plot=err_breakdown_mare_diff,
+       height=pheight,
+       width=pwidth)
+
+err_breakdown_mare_diff
+```
+
+### RMSE
+
+
+Network RMSE
+
+```{r}
+err_breakdown_rmse_net <- err_breakdown_plot('net_rmse', 
+                                             'Network\nRMSE')
+
+#saveRDS(err_breakdown_rmse_net, 
+#        file.path(comp_out_dir, "err_breakdown_rmse_net.rds"))
+ggsave(filename=file.path(comp_out_dir, "err_breakdown_rmse_net.pdf"),
+       plot=err_breakdown_rmse_net,
+       height=pheight,
+       width=pwidth)
+
+err_breakdown_rmse_net
+```
+
+Sibling RMSE
+
+```{r}
+err_breakdown_rmse_sib <- err_breakdown_plot('sib_rmse', 
+                                             'Sibling\nRMSE')
+
+#saveRDS(err_breakdown_rmse_sib, 
+#        file.path(comp_out_dir, "err_breakdown_rmse_sib.rds"))
+ggsave(filename=file.path(comp_out_dir, "err_breakdown_rmse_sib.pdf"),
+       plot=err_breakdown_rmse_sib,
+       height=pheight,
+       width=pwidth)
+
+err_breakdown_rmse_sib
+```
+
+RMSE diffs
+
+```{r}
+err_breakdown_rmse_diff <- err_breakdown_plot('diff_rmse', 
+                                              'Network RMSE -\nSibling RMSE',
+                                              diff=TRUE)
+
+#saveRDS(err_breakdown_mare_diff, 
+#        file.path(comp_out_dir, "err_breakdown_mare_diff.rds"))
+ggsave(filename=file.path(comp_out_dir, "err_breakdown_rmse_diff.pdf"),
+       plot=err_breakdown_rmse_diff,
+       height=pheight,
+       width=pwidth)
+
+err_breakdown_rmse_diff
+```
+
+### Raw errors 
+
+These raw errors could be the basis for estimating bias by
+age and sex group
+
+Network raw errors
+
+```{r}
+err_breakdown_raw_net <- err_breakdown_plot('net_raw', 
+                                            'Network\nError',
+                                            diff=TRUE)
+
+ggsave(filename=file.path(comp_out_dir, "err_breakdown_raw_net.pdf"),
+       plot=err_breakdown_raw_net,
+       height=pheight,
+       width=pwidth)
+
+err_breakdown_raw_net
+```
+
+Sibling raw error
+
+```{r}
+err_breakdown_raw_sib <- err_breakdown_plot('sib_raw', 
+                                            'Sibling\nError',
+                                            diff=TRUE)
+
+ggsave(filename=file.path(comp_out_dir, "err_breakdown_raw_sib.pdf"),
+       plot=err_breakdown_raw_sib,
+       height=pheight,
+       width=pwidth)
+
+err_breakdown_raw_sib
+```
+
+Raw error diffs
+
+```{r}
+err_breakdown_raw_diff <- err_breakdown_plot('diff_raw', 
+                                             'Network error -\nSibling error',
+                                             diff=TRUE)
+
+ggsave(filename=file.path(comp_out_dir, "err_breakdown_raw_diff.pdf"),
+       plot=err_breakdown_raw_diff,
+       height=pheight,
+       width=pwidth)
+
+err_breakdown_raw_diff
+```
+
+### Relative (not absolute) errors
+
+Network rel-not-abs errors
+
+```{r}
+err_breakdown_rel_notabs_net <- err_breakdown_plot('net_rel_notabs', 
+                                                   'Network\nRelative Error (not abs)',
+                                                   diff=TRUE)
+
+ggsave(filename=file.path(comp_out_dir, "err_breakdown_rel_notabs_net.pdf"),
+       plot=err_breakdown_rel_notabs_net,
+       height=pheight,
+       width=pwidth)
+
+err_breakdown_rel_notabs_net
+```
+
+Sibling raw error
+
+```{r}
+err_breakdown_rel_notabs_sib <- err_breakdown_plot('sib_rel_notabs', 
+                                                   'Sibling\nRelative Error (not abs)',
+                                                   diff=TRUE)
+
+ggsave(filename=file.path(comp_out_dir, "err_breakdown_rel_notabs_sib.pdf"),
+       plot=err_breakdown_rel_notabs_sib,
+       height=pheight,
+       width=pwidth)
+
+err_breakdown_rel_notabs_sib
+```
+
+Raw error diffs
+
+```{r}
+err_breakdown_rel_notabs_diff <- err_breakdown_plot('diff_rel_notabs', 
+                                                    'Network relative error (NA)-\nSibling relative error (NA)',
+                                                    diff=TRUE)
+
+ggsave(filename=file.path(comp_out_dir, "err_breakdown_rel_notabs_diff.pdf"),
+       plot=err_breakdown_rel_notabs_diff,
+       height=pheight,
+       width=pwidth)
+
+err_breakdown_rel_notabs_diff
+```
+
+```{r}
+toc()
+```
+
+

@@ -1,0 +1,945 @@
+---
+title: "Plots combining results"
+output: html_notebook
+---
+
+
+```{r}
+library(here)
+library(rmarkdown)
+library(tidyverse)
+library(patchwork)
+library(latex2exp)
+library(glue)
+```
+
+```{r}
+code_dir <- here('code')
+out_dir <- here('out')
+data_dir <- here('data')
+```
+
+
+```{r}
+vr_dir <- file.path(out_dir, 'vr_comparison')
+vradj_dir <- file.path(out_dir, 'vr_adj_comparison')
+
+vr_city_dir <- file.path(vr_dir, 'city')
+vr_region_dir <- file.path(vr_dir, 'region')
+vr_national_dir <- file.path(vr_dir, 'national')
+
+vradj_city_dir <- file.path(vradj_dir, 'city')
+vradj_region_dir <- file.path(vradj_dir, 'region')
+vradj_national_dir <- file.path(vradj_dir, 'national')
+```
+
+```{r}
+# load city info
+cities <- read_csv(file.path(data_dir, "cities.csv"))
+```
+
+### Plot direct comparisons between sibling and network estimates
+
+```{r}
+p1_ca <- readRDS(file.path(vr_city_dir, 'direct_asdr_logged.rds'))
+p1_cp <- readRDS(file.path(vr_city_dir, 'direct_probs_logged.rds'))
+p1_ra <- readRDS(file.path(vr_region_dir, 'direct_asdr_logged.rds'))
+p1_rp <- readRDS(file.path(vr_region_dir, 'direct_probs_logged.rds'))
+p1_na <- readRDS(file.path(vr_national_dir, 'direct_asdr_logged.rds'))
+p1_np <- readRDS(file.path(vr_national_dir, 'direct_probs_logged.rds'))
+```
+
+```{r}
+design <- "
+  1122
+  3344
+  5555
+"
+p1 <- (p1_cp + ggtitle("City, Probability")) + 
+      (p1_ca + ggtitle("City, Age-specific death rate")) + 
+      (p1_rp + ggtitle("Region, Probability")) +
+      (p1_ra + ggtitle("Region, Age-specific death rate")) +
+  plot_layout(guides='collect', design=design) & 
+  theme(text = element_text(size=7),
+        legend.position='bottom',
+        legend.box='vertical',
+        legend.spacing.y=unit(-.3, 'cm')) &
+  guides(color=guide_legend(nrow=2, title="Age"))
+
+ggsave(filename=file.path(out_dir, "direct_estimates.pdf"),
+       p1)
+knitr::plot_crop(file.path(out_dir, "direct_estimates.pdf"))
+
+# for talks, save individual versions of these plots
+p_dim <- 4
+ggsave(filename=file.path(out_dir, "direct_sib_net_city_prob.png"), p1_cp, width=p_dim, height=p_dim)
+ggsave(filename=file.path(out_dir, "direct_sib_net_city_asdr.png"), p1_ca, width=p_dim, height=p_dim)
+ggsave(filename=file.path(out_dir, "direct_sib_net_region_prob.png"), p1_rp, width=p_dim, height=p_dim)
+ggsave(filename=file.path(out_dir, "direct_sib_net_region_asdr.png"), p1_ra, width=p_dim, height=p_dim)
+
+p1
+```
+
+
+### Scatterplot w/ estimates and VR 
+
+```{r}
+p1.5_asdr_c <- readRDS(file.path(vr_city_dir, 'asdr_point_scatter_log.rds'))
+p1.5_asdr_r <- readRDS(file.path(vr_region_dir, 'asdr_point_scatter_log.rds'))
+p1.5_prob_c <- readRDS(file.path(vr_city_dir, 'prob_point_scatter.rds'))
+p1.5_prob_r <- readRDS(file.path(vr_region_dir, 'prob_point_scatter.rds'))
+```
+
+```{r}
+design <- "
+  1122
+  3344
+"
+
+p1.5 <- (((p1.5_prob_c + ggtitle("City, Probability")) 
+          + (p1.5_asdr_c + ggtitle("City, Age-specific death rate"))) / 
+           ((p1.5_prob_r + ggtitle("Region, Probability")) + 
+             p1.5_asdr_r + ggtitle("Region, Age-specific death rate"))) +
+  plot_layout(guides='collect') &
+  theme(text = element_text(size=7),
+        legend.position='bottom',
+        legend.box='vertical',
+        legend.spacing.y=unit(-.3, 'cm')) &
+  guides(color=guide_legend(nrow=2, title="Age"))
+  #plot_layout(guides='collect', design=design) & 
+#  plot_layout(guides='collect', design=design)
+  #theme(text = element_text(size=7),
+  #      legend.position='bottom',
+  #      legend.box='vertical',
+  #      legend.spacing.y=unit(-.3, 'cm')) &
+  #guides(color=guide_legend(nrow=2, title="Age"))
+  #theme(text = element_text(size=7))
+
+ggsave(filename=file.path(out_dir, "est_point_scatter_log.pdf"),
+       p1.5)
+
+# for talks, save individual versions of these plots
+p_dim <- 4
+ggsave(filename=file.path(out_dir, "vr_compare_sib_net_city_prob.png"), p1.5_prob_c, 
+       width=p_dim, height=p_dim)
+ggsave(filename=file.path(out_dir, "vr_compare_sib_net_city_asdr.png"), p1.5_asdr_c, 
+       width=p_dim, height=p_dim)
+ggsave(filename=file.path(out_dir, "vr_compare_sib_net_region_prob.png"), p1.5_prob_r, 
+       width=p_dim, height=p_dim)
+ggsave(filename=file.path(out_dir, "vr_compare_sib_net_region_asdr.png"), p1.5_asdr_r, 
+       width=p_dim, height=p_dim)
+
+p1.5
+```
+### Scatterplot w/ estimates and VR 
+
+```{r}
+p1.6_asdr_c <- readRDS(file.path(vr_city_dir, 'asdr_pointrange_scatter_log.rds'))
+p1.6_asdr_r <- readRDS(file.path(vr_region_dir, 'asdr_pointrange_scatter_log.rds'))
+p1.6_prob_c <- readRDS(file.path(vr_city_dir, 'prob_pointrange_scatter.rds'))
+p1.6_prob_r <- readRDS(file.path(vr_region_dir, 'prob_pointrange_scatter.rds'))
+```
+
+```{r}
+design <- "
+  1122
+  3344
+"
+
+p1.6 <- (((  p1.6_prob_c + ggtitle("City, Probability")) 
+          + (p1.6_asdr_c + ggtitle("City, Age-specific death rate"))) / 
+           ((p1.6_prob_r + ggtitle("Region, Probability")) + 
+             p1.6_asdr_r + ggtitle("Region, Age-specific death rate"))) +
+  plot_layout(guides='collect') &
+  theme(text = element_text(size=7),
+        legend.position='bottom',
+        legend.box='vertical',
+        legend.spacing.y=unit(-.3, 'cm')) &
+  guides(color=guide_legend(nrow=2, title="Age"))
+  #plot_layout(guides='collect', design=design) & 
+#  plot_layout(guides='collect', design=design)
+  #theme(text = element_text(size=7),
+  #      legend.position='bottom',
+  #      legend.box='vertical',
+  #      legend.spacing.y=unit(-.3, 'cm')) &
+  #guides(color=guide_legend(nrow=2, title="Age"))
+  #theme(text = element_text(size=7))
+
+ggsave(filename=file.path(out_dir, "est_pointrange_scatter_log.pdf"),
+       p1.6)
+
+# for talks, save individual versions of these plots
+#p_dim <- 4
+#ggsave(filename=file.path(out_dir, "vr_compare_sib_net_city_prob.png"), p1.5_prob_c, 
+#       width=p_dim, height=p_dim)
+#ggsave(filename=file.path(out_dir, "vr_compare_sib_net_city_asdr.png"), p1.5_asdr_c, 
+#       width=p_dim, height=p_dim)
+#ggsave(filename=file.path(out_dir, "vr_compare_sib_net_region_prob.png"), p1.5_prob_r, 
+#       width=p_dim, height=p_dim)
+#ggsave(filename=file.path(out_dir, "vr_compare_sib_net_region_asdr.png"), p1.5_asdr_r, 
+#       width=p_dim, height=p_dim)
+
+p1.6
+```
+### Bias-variance decomposition (BVD) plot
+
+```{r}
+p_bvd_as_bias <- readRDS(file.path(vr_city_dir, 'bvd_as_bias_plot.rds'))
+
+p_bvd_as_se <- readRDS(file.path(vr_city_dir, 'bvd_as_se_plot.rds'))
+
+p_bvd_as_rmse <- readRDS(file.path(vr_city_dir, 'bvd_as_rmse_plot.rds'))
+```
+
+
+```{r}
+#bvd_as_city <- p_bvd_as_rmse / p_bvd_as_bias / p_bvd_as_se + 
+bvd_as_city <- 
+  p_bvd_as_se +
+  p_bvd_as_bias +
+  p_bvd_as_rmse +
+  plot_layout(guides='collect') &
+  #theme(text = element_text(size=7)) &
+  theme(text = element_text(size=7),
+        legend.position='bottom',
+        legend.box='vertical',
+        legend.spacing.y=unit(-.3, 'cm')) & 
+  #guides(color=guide_legend(nrow=2, title="Age"))
+  guides(color=guide_legend(title="Age"))
+
+ggsave(filename=file.path(out_dir, "bvd_as_city.pdf"),
+       bvd_as_city)
+
+bvd_as_city
+```
+
+### Bias-variance decomposition (BVD) plot from VR sensitivity check
+
+
+```{r}
+p_bvd_as_bias_vrsens <- readRDS(file.path(vradj_city_dir, 'bvd_as_bias_plot.rds'))
+
+p_bvd_as_se_vrsens <- readRDS(file.path(vradj_city_dir, 'bvd_as_se_plot.rds'))
+
+p_bvd_as_rmse_vrsens <- readRDS(file.path(vradj_city_dir, 'bvd_as_rmse_plot.rds'))
+```
+
+
+```{r}
+bvd_as_city_vrsens <- 
+  p_bvd_as_se_vrsens +
+  p_bvd_as_bias_vrsens +
+  p_bvd_as_rmse_vrsens +
+  #p_bvd_as_se /
+  #p_bvd_as_bias /     
+  #p_bvd_as_rmse +
+  plot_layout(guides='collect') &
+  #theme(text = element_text(size=7)) &
+  theme(text = element_text(size=7),
+        legend.position='bottom',
+        legend.box='vertical',
+        legend.spacing.y=unit(-.3, 'cm')) & 
+  #guides(color=guide_legend(nrow=2, title="Age"))
+  guides(color=guide_legend(title="Age"))
+
+ggsave(filename=file.path(out_dir, "bvd_as_city_vrsens.pdf"),
+       bvd_as_city)
+
+bvd_as_city_vrsens
+```
+
+### Error difference pointrange figure
+
+The city asdr boot estimates have the average asdr error across 27 cities for each bootstrap rep (as well as results for prob)
+The region asdr boot estimates have the average region asdr error across 5 regions for each bootstrap rep (as well as results for prob)
+et cetera
+
+```{r}
+errs_cv <- read_csv(file.path(vr_city_dir, 'err_diffs_boot.csv'))
+errs_rv <- read_csv(file.path(vr_region_dir, 'err_diffs_boot.csv'))
+errs_nv <- read_csv(file.path(vr_national_dir, 'err_diffs_boot.csv'))
+
+errs_ca <- read_csv(file.path(vradj_city_dir, 'err_diffs_boot.csv'))
+errs_ra <- read_csv(file.path(vradj_region_dir, 'err_diffs_boot.csv'))
+errs_na <- read_csv(file.path(vradj_national_dir, 'err_diffs_boot.csv'))
+```
+
+### Err diffs boot
+
+```{r}
+err_diffs_boot <- bind_rows(errs_cv,
+                            errs_rv,
+                            errs_nv,
+                            errs_ca,
+                            errs_ra,
+                            errs_na)
+
+err_diffs_summ <- err_diffs_boot %>%
+  group_by(comparison_name, geo_name, qty, loss) %>%
+  summarize(diff_nminuss_mean = mean(err.n.minus.s),
+            diff_nminuss_ci_low = quantile(err.n.minus.s, .025),
+            diff_nminuss_ci_high = quantile(err.n.minus.s, .975),
+            network_err = mean(err.n),
+            network_err_ci_low = quantile(err.n, .025),
+            network_err_ci_high = quantile(err.n, .975),
+            network_err_sd = sd(err.n),
+            network_err_ci_width = quantile(err.n, .975) - quantile(err.n, .025),
+            sibling_err = mean(err.s),
+            sibling_err_ci_low = quantile(err.s, .025),
+            sibling_err_ci_high = quantile(err.s, .975),
+            sibling_err_sd = sd(err.s),
+            sibling_err_ci_width = quantile(err.s, .975) - quantile(err.s, .025),
+            .groups='drop')
+
+err_diffs_summ
+```
+
+
+```{r}
+recode_loss <- c('mare'='MARE', 'mse'='MSE', 'rmse'='RMSE')
+recode_qty <- c('asdr'='Age-specifc\ndeath rates', 'prob'='Probability of\ndying at\nadult ages')
+recode_geo <- c('city'='City-level\nestimates', 
+                'region'='Pooled\nregion-level\nestimates', 
+                'national'='Pooled\nnational-level\nestimates')
+
+scale_linetype_values <- setNames(c("solid", "dashed", "dashed"),
+                                  paste(recode_geo))
+
+scale_shape_values <- setNames(c(19, 1, 1),
+                               paste(recode_geo))
+
+annrelsize <- 3 
+
+mare_prob_annheight <- 0.15
+mare_asdr_annheight <- .22
+
+mse_prob_annheight <- 0.0035
+mse_asdr_annheight <- 8 
+
+rmse_prob_annheight <- .025 
+rmse_asdr_annheight <- 1 
+
+#shade_rect_color <- 'lightgrey'
+shade_rect_color <- '#EEEEEE'
+shade_rect_alpha <- .05
+
+for_pr_plot_base <- err_diffs_summ %>%
+  mutate(loss = dplyr::recode(loss, !!!recode_loss)) %>%
+  mutate(qty= dplyr::recode(qty, !!!recode_qty)) %>%
+  mutate(geo_name= dplyr::recode_factor(geo_name, !!!recode_geo))
+
+for_pr_plot <- for_pr_plot_base %>%
+  filter(comparison_name == 'vr_comparison')
+
+for_pr_vrsens_plot <- for_pr_plot_base %>%
+  filter(comparison_name == 'vr_adj_comparison')
+
+make_pr_plot <- function(for_pr_df) {
+    
+  pr_asdr_mare <- 
+    for_pr_df %>%
+    filter(loss == 'MARE', qty==recode_qty['asdr']) %>%
+    ggplot(.) +
+    geom_hline(aes(yintercept = 0), color='darkgrey') +
+    geom_pointrange(aes(x=geo_name,
+                        y=diff_nminuss_mean,
+                        ymin=diff_nminuss_ci_low,
+                        ymax=diff_nminuss_ci_high,
+                        shape = geo_name,
+                        linetype = geo_name)) +
+    theme_bw() +
+    geom_rect(aes(xmin=1.5,
+                  xmax=Inf,
+                  ymin=-Inf,
+                  ymax=Inf),
+              color=shade_rect_color,
+              alpha=shade_rect_alpha) +
+    #theme_minimal() +
+    ylab("Network MARE- Sibling MARE") +
+    xlab("") +
+    annotate(geom='text', 
+             label="Sibling is better ->", 
+             y=mare_asdr_annheight, 
+             x=0.5, 
+             size=rel(annrelsize),
+             color='red', 
+             angle=90) +
+    annotate(geom='text', 
+             label="<- Network is better ", 
+             y=-mare_asdr_annheight, 
+             x=0.5, 
+             size=rel(annrelsize),
+             color='red', 
+             angle=90) +
+    scale_y_continuous(labels = scales::percent_format(),
+                       limits = c(-.45, .45)) +
+    scale_linetype_manual(values=scale_linetype_values, guide = "none") +
+    scale_shape_manual(values=scale_shape_values, guide = "none") +
+    NULL
+  
+  pr_prob_mare <- 
+    for_pr_df %>%
+    filter(loss == 'MARE', qty==recode_qty['prob']) %>%
+    ggplot(.) +
+    geom_hline(aes(yintercept = 0), color='darkgrey') +
+    geom_pointrange(aes(x=geo_name,
+                        y=diff_nminuss_mean,
+                        ymin=diff_nminuss_ci_low,
+                        ymax=diff_nminuss_ci_high,
+                        shape = geo_name,
+                        linetype=geo_name)) +
+    theme_bw() +
+    geom_rect(aes(xmin=1.5,
+                  xmax=Inf,
+                  ymin=-Inf,
+                  ymax=Inf),
+              color=shade_rect_color,
+              alpha=shade_rect_alpha) +
+    #theme_minimal() +
+    ylab("Network MARE- Sibling MARE") +
+    xlab("") +
+    annotate(geom='text', 
+             label="Sibling is better ->", 
+             y=mare_prob_annheight, 
+             x=0.5, 
+             size=rel(annrelsize),
+             color='red', 
+             angle=90) +
+    annotate(geom='text', 
+             label="<- Network is better ", 
+             y=-mare_prob_annheight, 
+             x=0.5, 
+             size=rel(annrelsize),
+             color='red', 
+             angle=90) +
+    scale_y_continuous(labels = scales::percent_format(),
+                       limits=c(-.3, .3)) +
+    scale_shape_manual(values=scale_shape_values, guide = "none") +
+    scale_linetype_manual(values=scale_linetype_values, guide = "none") +
+    NULL
+    
+  pr_prob_mse <- 
+    for_pr_df %>%
+    filter(loss == 'MSE', qty==recode_qty['prob']) %>%
+    ggplot(.) +
+    geom_hline(aes(yintercept = 0), color='darkgrey') +
+    geom_pointrange(aes(x=geo_name,
+                        y=diff_nminuss_mean,
+                        ymin=diff_nminuss_ci_low,
+                        ymax=diff_nminuss_ci_high,
+                        shape = geo_name,
+                        linetype=geo_name)) +
+    theme_bw() +
+    geom_rect(aes(xmin=1.5,
+                  xmax=Inf,
+                  ymin=-Inf,
+                  ymax=Inf),
+              color=shade_rect_color,
+              alpha=shade_rect_alpha) +
+    #theme_minimal() +
+    ylab("Network MSE - Sibling MSE") +
+    xlab("") +
+    annotate(geom='text', 
+             label="Sibling is better ->", 
+             y=mse_prob_annheight, 
+             x=0.5, 
+             size=rel(annrelsize),
+             color='red', 
+             angle=90) +
+    annotate(geom='text', 
+             label="<- Network is better ", 
+             y=-mse_prob_annheight, 
+             x=0.5, 
+             size=rel(annrelsize),
+             color='red', 
+             angle=90) +
+    scale_y_continuous(limits=c(-.008, .008)) +
+    scale_shape_manual(values=scale_shape_values, guide = "none") +
+    scale_linetype_manual(values=scale_linetype_values, guide = "none") +
+    NULL
+    
+  pr_asdr_mse <- 
+    for_pr_df %>%
+    filter(loss == 'MSE', qty==recode_qty['asdr']) %>%
+    ggplot(.) +
+    geom_hline(aes(yintercept = 0), color='darkgrey') +
+    geom_pointrange(aes(x=geo_name,
+                        y=diff_nminuss_mean,
+                        ymin=diff_nminuss_ci_low,
+                        ymax=diff_nminuss_ci_high,
+                        shape = geo_name,
+                        linetype=geo_name)) +
+    theme_bw() +
+    geom_rect(aes(xmin=1.5,
+                  xmax=Inf,
+                  ymin=-Inf,
+                  ymax=Inf),
+              color=shade_rect_color,
+              alpha=shade_rect_alpha) +
+    #theme_minimal() +
+    ylab("Network MSE - Sibling MSE") +
+    xlab("") +
+    annotate(geom='text', 
+             label="Sibling is better ->", 
+             y=mse_asdr_annheight, 
+             x=0.5, 
+             size=rel(annrelsize),
+             color='red', 
+             angle=90) +
+    annotate(geom='text', 
+             label="<- Network is better ", 
+             y=-mse_asdr_annheight, 
+             x=0.5, 
+             size=rel(annrelsize),
+             color='red', 
+             angle=90) +
+    scale_y_continuous(limits=c(-15, 15)) +
+    scale_shape_manual(values=scale_shape_values, guide = "none") +
+    scale_linetype_manual(values=scale_linetype_values, guide = "none") +
+    NULL
+  
+  pr_prob_rmse <- 
+    for_pr_df %>%
+    filter(loss == 'RMSE', qty==recode_qty['prob']) %>%
+    ggplot(.) +
+    geom_hline(aes(yintercept = 0), color='darkgrey') +
+    geom_pointrange(aes(x=geo_name,
+                        y=diff_nminuss_mean,
+                        ymin=diff_nminuss_ci_low,
+                        ymax=diff_nminuss_ci_high,
+                        shape = geo_name,
+                        linetype=geo_name)) +
+    theme_bw() +
+    geom_rect(aes(xmin=1.5,
+                  xmax=Inf,
+                  ymin=-Inf,
+                  ymax=Inf),
+              color=shade_rect_color,
+              alpha=shade_rect_alpha) +
+    #theme_minimal() +
+    ylab("Network RMSE - Sibling RMSE") +
+    xlab("") +
+    annotate(geom='text', 
+             label="Sibling is better ->", 
+             y=rmse_prob_annheight, 
+             x=0.5, 
+             size=rel(annrelsize),
+             color='red', 
+             angle=90) +
+    annotate(geom='text', 
+             label="<- Network is better ", 
+             y=-rmse_prob_annheight, 
+             x=0.5, 
+             size=rel(annrelsize),
+             color='red', 
+             angle=90) +
+    scale_y_continuous(limits=c(-.05, .05)) +
+    scale_linetype_manual(values=scale_linetype_values, guide = "none") +
+    scale_shape_manual(values=scale_shape_values, guide = "none") +
+    NULL
+  
+  pr_asdr_rmse <- 
+    for_pr_df %>%
+    filter(loss == 'RMSE', qty==recode_qty['asdr']) %>%
+    ggplot(.) +
+    geom_hline(aes(yintercept = 0), color='darkgrey') +
+    geom_pointrange(aes(x=geo_name,
+                        y=diff_nminuss_mean,
+                        ymin=diff_nminuss_ci_low,
+                        ymax=diff_nminuss_ci_high,
+                        shape = geo_name,
+                        linetype=geo_name)) +
+    theme_bw() +
+    geom_rect(aes(xmin=1.5,
+                  xmax=Inf,
+                  ymin=-Inf,
+                  ymax=Inf),
+              color=shade_rect_color,
+              alpha=shade_rect_alpha) +
+    #theme_minimal() +
+    ylab("Network RMSE - Sibling RMSE") +
+    xlab("") +
+    annotate(geom='text', 
+             label="Sibling is better ->", 
+             y=rmse_asdr_annheight, 
+             x=0.5, 
+             size=rel(annrelsize),
+             color='red', 
+             angle=90) +
+    annotate(geom='text', 
+             label="<- Network is better ", 
+             y=-rmse_asdr_annheight, 
+             x=0.5, 
+             size=rel(annrelsize),
+             color='red', 
+             angle=90) +
+    scale_y_continuous(limits=c(-2, 2)) +
+    scale_shape_manual(values=scale_shape_values, guide = "none") +
+    scale_linetype_manual(values=scale_linetype_values, guide = "none") +
+    NULL
+    
+  #pr_asdr_mare
+  #pr_prob_mare
+  #pr_prob_mse
+  #pr_asdr_mse
+  #pr_prob_rmse
+  #pr_asdr_rmse
+  
+  meta_layout <- "
+  #cccddd
+  aeeefff
+  bggghhh
+  "
+  
+  row1_title <- ggplot() + annotate(geom='text', 
+                                    x=1,y=1, 
+                                    label='bold(underline(ASDR))', 
+                                    angle=90,
+                                    parse=TRUE) +  theme_void()
+  row2_title <- ggplot() + annotate(geom='text', 
+                                    x=1,y=1, 
+                                    label='bold(underline(Probability~of~Death))', 
+                                    angle=90,
+                                    parse=TRUE) + theme_void()
+  col1_title <- ggplot() + annotate(geom='text', 
+                                    x=1,y=1, 
+                                    label='bold(underline(MARE))',
+                                    parse=TRUE) + theme_void()
+  col2_title <- ggplot() + annotate(geom='text', 
+                                    x=1,y=1, 
+                                    #label='bold(underline(MSE))',
+                                    label='bold(underline(RMSE))',
+                                    parse=TRUE) + theme_void()
+  
+  plotlist <- list(a=row1_title,
+                   b=row2_title,
+                   c=col1_title,
+                   d=col2_title,
+                   e=pr_asdr_mare,
+                   #f=pr_asdr_mse,
+                   f=pr_asdr_rmse,
+                   g=pr_prob_mare,
+                   h=pr_prob_rmse)
+                   #h=pr_prob_mse)
+    
+  final_plot <- wrap_plots(
+       plotlist,
+       guides='collect',
+       design=meta_layout,
+       widths=c(2,10,10),
+       heights=c(2,10,10))
+    
+  
+  return(final_plot)
+}
+
+final_err_compare <- make_pr_plot(for_pr_plot)
+  
+saveRDS(final_err_compare, file.path(out_dir, "err_compare_all.rds"))
+fec.size <- 8 
+ggsave(filename=file.path(out_dir, "err_compare_all.pdf"),
+       plot=final_err_compare,
+       height=fec.size,
+       width=fec.size)
+ggsave(filename=file.path(out_dir, "err_compare_all.png"),
+       plot=final_err_compare,
+       height=fec.size,
+       width=fec.size)
+
+final_err_compare
+```
+
+## VR sensitivity version of figure above
+
+```{r}
+vrsens_err_compare <- make_pr_plot(for_pr_vrsens_plot)
+  
+saveRDS(vrsens_err_compare, file.path(out_dir, "err_compare_all_vrsens.rds"))
+fec.size <- 8 
+ggsave(filename=file.path(out_dir, "err_compare_all_vrsens.pdf"),
+       plot=vrsens_err_compare,
+       height=fec.size,
+       width=fec.size)
+ggsave(filename=file.path(out_dir, "err_compare_all_vrsens.png"),
+       plot=vrsens_err_compare,
+       height=fec.size,
+       width=fec.size)
+
+vrsens_err_compare
+```
+
+
+# Confidence Interval width
+
+
+```{r}
+ci_city <- readRDS(file.path(vr_city_dir, 'ci_width.rds')) %>%
+  mutate(geo_name = 'city')
+ci_region <- readRDS(file.path(vr_region_dir, 'ci_width.rds')) %>%
+  mutate(geo_name = 'region')
+ci_national <- readRDS(file.path(vr_national_dir, 'ci_width.rds')) %>%
+  mutate(geo_name = 'national')
+
+ci_df <- bind_rows(ci_city,
+                   ci_region,
+                   ci_national)
+
+ci_df
+```
+
+
+```{r}
+ci_df_wide <- ci_df %>%
+  pivot_wider(names_from = 'geo_name',
+              values_from = c(mean_ci_width_sibling,
+                              mean_ci_width_network,
+                              avg_sibci_over_netci,
+                              pct_over_1,
+                              mean_rel_ci_width_sibling,
+                              mean_rel_ci_width_network,
+                              avg_rel_sibci_over_netci,
+                              pct_rel_over_1),
+              names_glue = "{.value}_{geo_name}") %>%
+  mutate(ci_width_region_over_city_sibling = mean_ci_width_sibling_region / mean_ci_width_sibling_city,
+         ci_width_region_over_city_network = mean_ci_width_network_region / mean_ci_width_network_city
+         )
+
+saveRDS(ci_df_wide, file.path(out_dir, "ci_df_wide.rds"))
+
+ci_df_wide
+```
+
+Four-panel plot with histogram of CI width ratios
+
+```{r}
+ci_ratio_asdr_c <- readRDS(file.path(vr_city_dir,   'asdr_ci_width.rds')) + 
+  expand_limits(x=c(0,13)) + ggtitle("City, Age-specific death rate")
+ci_ratio_prob_c <- readRDS(file.path(vr_city_dir,   'prob_ci_width.rds')) + 
+  expand_limits(x=c(0,5)) + ggtitle("City, Probability")
+ci_ratio_asdr_r <- readRDS(file.path(vr_region_dir, 'asdr_ci_width.rds')) + 
+  expand_limits(x=c(0,13)) + ggtitle("Region, Age-specific death rate")
+ci_ratio_prob_r <- readRDS(file.path(vr_region_dir, 'prob_ci_width.rds')) + 
+  expand_limits(x=c(0,5)) + ggtitle("Region, Probability")
+ci_ratio_asdr_n <- readRDS(file.path(vr_national_dir, 'asdr_ci_width.rds')) + 
+  expand_limits(x=c(0,13)) + ggtitle("National, Age-specific death rate")
+ci_ratio_prob_n <- readRDS(file.path(vr_national_dir, 'prob_ci_width.rds')) + 
+  expand_limits(x=c(0,5)) + ggtitle("National, Probability")
+```
+
+```{r}
+ci_ratio_hists <- ((ci_ratio_prob_c + ci_ratio_asdr_c) / 
+                   (ci_ratio_prob_r + ci_ratio_asdr_r) / 
+                   (ci_ratio_prob_n + ci_ratio_asdr_n )) &
+  theme(text = element_text(size=7))
+
+ggsave(filename=file.path(out_dir, "ci_width_ratio_hists.pdf"),
+       ci_ratio_hists)
+
+ci_ratio_hists
+```
+
+
+Four-panel plot with CI coverage 
+
+Note: since there's only one national estimate here, we don't use national-level
+results to estimate CI coverage
+
+```{r}
+ci_ratio_c <- readRDS(file.path(vr_city_dir,   'comp_ci_coverage.rds'))
+ci_ratio_r <- readRDS(file.path(vr_region_dir, 'comp_ci_coverage.rds'))
+
+ci_ratio_df <- bind_rows(ci_ratio_c,
+                         ci_ratio_r)
+```
+
+
+
+```{r}
+recode_qty <- c('asdr'='Age-specifc\ndeath rates', 'prob'='Probability of\ndying at\nadult ages')
+recode_geo <- c('city'='City level estimates', 'region'='Region level estimates')
+recode_method <- c('network'='Network', 'sibling'='Sibling')
+
+ci_coverage_plot_ignz <-
+  ci_ratio_df %>%
+  mutate(qty = dplyr::recode(qty, !!!recode_qty)) %>%
+  mutate(geo = dplyr::recode_factor(geo, !!!recode_geo)) %>%
+  ggplot(.) +
+  geom_point(aes(x=sex,
+                 y=empirical_ci_coverage_ignorezero,
+                 color=method,
+                 shape=geo),
+             position=position_dodge(width=.25)) +
+  facet_grid(~ qty) +
+  scale_color_viridis_d("Method") +
+  scale_shape_discrete(name='Geography') +
+  scale_y_continuous(labels=scales::percent) +
+  expand_limits(y=c(0,1)) +
+  theme_minimal(base_size=6) +
+  xlab("") +
+  ylab("Approximate Empirical 95% CI Coverage\n(Ignoring zero estimates)") +
+  theme(legend.position='bottom')
+
+ci_coverage_plot <-
+  ci_ratio_df %>%
+  mutate(qty = dplyr::recode(qty, !!!recode_qty)) %>%
+  mutate(geo = dplyr::recode_factor(geo, !!!recode_geo)) %>%
+  ggplot(.) +
+  geom_point(aes(x=sex,
+                 y=empirical_ci_coverage,
+                 color=method,
+                 shape=geo),
+             position=position_dodge(width=.25)) +
+  facet_grid(~ qty) +
+  scale_color_viridis_d("Method") +
+  scale_shape_discrete(name='Geography') +
+  scale_y_continuous(labels=scales::percent) +
+  expand_limits(y=c(0,1)) +
+  theme_minimal(base_size=6) +
+  xlab("") +
+  ylab("Approximate Empirical 95% CI Coverage") +
+  theme(legend.position='bottom')
+
+ggsave(filename=file.path(out_dir, "ci_coverage_plot_ignorezero.pdf"),
+       ci_coverage_plot_ignz)
+ggsave(filename=file.path(out_dir, "ci_coverage_plot.pdf"),
+       ci_coverage_plot)
+
+ci_coverage_plot_ignz
+ci_coverage_plot
+
+ci_coverage_plot_both <- (ci_coverage_plot / ci_coverage_plot_ignz) +
+  plot_layout(guides='collect') &
+  theme(legend.position='bottom')
+
+ggsave(filename=file.path(out_dir, "ci_coverage_plot_both.pdf"),
+       ci_coverage_plot_both)
+
+ci_coverage_plot_both
+```
+
+
+## Deaths per interview
+
+```{r}
+ni <- read_csv(file.path(out_dir, "num_interviews.csv"))
+dpi_sib <- read_csv(file.path(out_dir, "num_deaths_unweighted_sibling.csv"))
+dpi_net <- read_csv(file.path(out_dir, "num_deaths_unweighted_network.csv"))
+```
+
+```{r}
+nd <- bind_rows(dpi_sib, dpi_net) %>%
+  left_join(cities %>% select(state_abbrev, region)) %>%
+  left_join(ni) %>%
+  mutate(deaths_per_interview = num_reported_deaths / num_interviews)
+
+nd_wide <- nd %>%
+  select(state_abbrev, method, num_reported_deaths) %>%
+  pivot_wider(names_from = 'method',
+              values_from = 'num_reported_deaths') %>%
+  mutate(sib7_over_net = sibling_7yr / network,
+         net_over_sib7= network / sibling_7yr)
+
+nd_wide_dpi <- nd %>%
+  pivot_wider(id_cols = c('state_abbrev', 'region'),
+              names_from = 'method',
+              values_from = 'deaths_per_interview')
+
+nd_region <- nd %>%
+  group_by(region, method) %>%
+  summarize(num_reported_deaths = sum(num_reported_deaths))
+
+nd_region_wide <- nd_region %>%
+  select(region, method, num_reported_deaths) %>%
+  pivot_wider(names_from = 'method',
+              values_from = 'num_reported_deaths') %>%
+  mutate(sib7_over_net = sibling_7yr / network,
+         net_over_sib7= network / sibling_7yr)
+
+nd_national <- nd %>%
+  group_by(method) %>%
+  summarize(num_reported_deaths = sum(num_reported_deaths))
+
+nd_national_wide <- nd_national %>%
+  select(method, num_reported_deaths) %>%
+  pivot_wider(names_from = 'method',
+              values_from = 'num_reported_deaths') %>%
+  mutate(sib7_over_net = sibling_7yr / network,
+         net_over_sib7= network / sibling_7yr)
+```
+
+Some calculations for the text
+
+```{r}
+avg_city_net_over_sib7 <- mean(nd_wide$net_over_sib7)
+
+glue::glue("Across all cities, on average the network method produced {round(avg_city_net_over_sib7,2)} more deaths than the 7-year sibling method. (This weights each city equally.)")
+```
+
+```{r}
+avg_sib7_over_sib1 <- sum(nd_wide$sibling_7yr)/sum(nd_wide$sibling_12mo)
+avg_net_over_sib7 <- sum(nd_wide$network)/sum(nd_wide$sibling_7yr)
+avg_net_over_sib1 <- sum(nd_wide$network)/sum(nd_wide$sibling_12mo)
+
+glue::glue("Over all respondents, the 7-year sibling method produced {round(avg_sib7_over_sib1,2)} more deaths than the 1-year sibling method. (This weights each respondent equally.)")
+
+glue::glue("Over all respondents, the network method produced {round(avg_net_over_sib1,2)} more deaths than the 1-year sibling method. (This weights each respondent equally.)")
+
+glue::glue("Over all respondents, the network method produced {round(avg_net_over_sib7,2)} more deaths than the 7-year sibling method. (This weights each respondent equally.)")
+```
+
+
+```{r}
+method_pretty_names <- c('network'='Network\n(12 months)',
+                         'sibling_7yr' = 'Sibling\n(7 years)',
+                         'sibling_12mo' = 'Sibling\n(12 months)')
+
+dpi_bar_data <- nd %>%
+  left_join(ni) %>%
+  group_by(method) %>%
+  summarize(dpi = sum(num_reported_deaths) / sum(num_interviews)) %>%
+  mutate(method = fct_reorder(method, -dpi)) 
+
+dpi_bar <- dpi_bar_data %>%
+  mutate(method = recode_factor(method, !!!method_pretty_names)) %>%
+  ggplot(.) +
+  geom_bar(aes(x=method, y=dpi), stat='identity') +
+  theme_bw() +
+  xlab("") + ylab("Average number of adult deaths\nreported per interview")
+  
+ggsave(filename=file.path(out_dir, "deaths_reported_perinterview.pdf"),
+       height=4, width=4,
+       dpi_bar)
+ggsave(filename=file.path(out_dir, "deaths_reported_perinterview.png"),
+       height=4, width=4,
+       dpi_bar)
+
+dpi_bar
+```
+
+
+```{r}
+deaths_reported_bycity <- nd_wide_dpi %>%
+  ggplot(.) +
+  #geom_abline(intercept=0, slope = 10, lty='dotted') +
+  geom_text(aes(x=sibling_7yr, 
+                y=network,
+                label=state_abbrev)) +
+  theme_bw() +
+  #xlim(0,.8) + ylim(0, .8) + 
+  #coord_equal() +
+  xlab("Number of deaths reported among siblings\n(Over 7 years before interview)") +
+  ylab("Number of deaths reported in network\n(Over 12 months before interview)")
+
+glue::glue("Across cities, the 7-year sibling method dpi was correlated with the network dpi at rho =  {round(cur_cor,2)}",
+           cur_cor = with(nd_wide_dpi, cor(sibling_7yr, network)))
+
+ggsave(filename=file.path(out_dir, "deaths_reported_bycity.pdf"),
+       height=4, width=4,
+       deaths_reported_bycity)
+
+deaths_reported_bycity
+```
+
+
+
+

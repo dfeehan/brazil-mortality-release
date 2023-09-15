@@ -1,0 +1,221 @@
+---
+title: "Rough numbers used in writing"
+output: html_document
+date: "2023-04-24"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+library(tidyverse)
+library(wpp2022)
+
+library(here)
+```
+
+## Sample size table
+
+Make a table with the sample size for each city
+
+```{r setup-directories}
+data_dir <- here('data')
+survey_data_dir <- file.path(data_dir, 'survey')
+vr_dir <- file.path(data_dir, 'vr_prepped')
+
+out_dir <- here('out')
+```
+
+# Load the data
+
+```{r load-data}
+# load individual data
+ind.dat <- read_csv(file.path(survey_data_dir, "individual.csv"))
+
+city.dat <- read_csv(file.path(data_dir, "cities.csv"))
+city.target.dat <- read_csv(file.path(data_dir, "capital-design.csv"))
+
+# load city-level estimates
+
+```
+
+```{r}
+    gs_asdrs <- read_csv(file.path(vr_dir, 
+                                   "vr_asdrs.csv")) %>%
+      rename(geo = state_abbrev)
+    
+    gs_probs <- read_csv(file.path(vr_dir, 
+                                   "vr_47q18.csv")) %>%
+      rename(geo = state_abbrev)
+    
+  net_asdrs <- read_csv(file.path(out_dir, 
+                                  'net_design_asdrs.csv')) %>%
+    rename(geo = state_abbrev)
+  
+  net_probs <- read_csv(file.path(out_dir, 
+                                  'net_design_probs.csv')) %>%
+    rename(geo = state_abbrev)
+  
+  net_asdrs_boot <- read_csv(file.path(out_dir, 
+                                       'net_design_asdrs_boot.csv')) %>% 
+    mutate(method='net_design') %>%
+    rename(geo = state_abbrev)
+  
+  net_probs_boot <- read_csv(file.path(out_dir, 
+                                       'net_design_probs_boot.csv')) %>% 
+    mutate(method='net_design') %>%
+    rename(geo = state_abbrev,
+           q.47.18 = q.47.18.mean)
+
+  sib_asdrs <- read_csv(file.path(out_dir, 
+                                  'sib_design_asdrs.csv')) %>%
+    rename(geo = state_abbrev)
+  
+  sib_probs <- read_csv(file.path(out_dir, 
+                                  'sib_design_probs.csv')) %>%
+    rename(geo = state_abbrev)
+  
+  sib_asdrs_boot <- read_csv(file.path(out_dir, 
+                                       'sib_design_asdrs_boot.csv')) %>%
+    rename(geo = state_abbrev)
+  
+  sib_probs_boot <- read_csv(file.path(out_dir, 
+                                       'sib_design_probs_boot.csv')) %>%
+    rename(geo = state_abbrev)
+  
+est_asdrs <- bind_rows(sib_asdrs,
+                       net_asdrs) %>%
+  filter(agegp10 != '[65,75)') %>%
+  mutate(method = recode(method,
+                         'sib_design'='Sibling',
+                         'net_design'='Network')) %>%
+  mutate(sex = recode(sex,
+                      'male'='Male',
+                      'female'='Female'))
+
+est_asdrs_boot <- bind_rows(sib_asdrs_boot,
+                            net_asdrs_boot) %>%
+  filter(agegp10 != '[65,75)') %>%
+  mutate(method = recode(method,
+                         'sib_design'='Sibling',
+                         'net_design'='Network')) %>%
+  mutate(sex = recode(sex,
+                      'male'='Male',
+                      'female'='Female'))
+
+est_probs <- bind_rows(sib_probs,
+                       net_probs) %>%
+  mutate(method = recode(method,
+                         'sib_design'='Sibling',
+                         'net_design'='Network')) %>%
+  mutate(sex = recode(sex,
+                      'male'='Male',
+                      'female'='Female'))
+
+est_probs_boot <- bind_rows(sib_probs_boot,
+                            net_probs_boot) %>%
+  mutate(method = recode(method,
+                         'sib_design'='Sibling',
+                         'net_design'='Network')) %>%
+  mutate(sex = recode(sex,
+                      'male'='Male',
+                      'female'='Female'))
+```
+
+
+## Sample size table
+
+```{r}
+sampsize.table <- ind.dat %>%
+  group_by(state_abbrev) %>%
+  summarize(num_interviews = n()) %>%
+  left_join(city.dat %>%
+              select(state_abbrev, state_name, region, city_name=municipio),
+            by='state_abbrev') %>%
+  left_join(city.target.dat %>%
+              select(state_abbrev, target_interviews=num_interviews),
+            by='state_abbrev') %>%
+  select(region, state_abbrev, state_name, city_name, target_interviews, num_interviews)
+
+sampsize.table
+```
+
+```{r}
+sampsize.table.rendered <- pander::pandoc.table.return(sampsize.table,
+               col.names = c('Region', 'State\ncode', 'State\nname', 'City', 'Target\nsample size', 'Number of\nInterviews'),
+               big.mark=',',
+               #split.cells=c(1, 1, 25, 25, 10, 10),
+               split.cells=c(1, 1, 15, 15, 10, 10),
+               split.table=Inf,
+               justify=c('center', 'center', 'left', 'left', 'right', 'right'),
+               caption="Number of interviews conducted in each of the 27 cities in our sample. (\\#tab:sampsize)")
+
+cat(sampsize.table.rendered,
+    file=file.path(out_dir,
+                   'sample_size.md'))
+cat(sampsize.table.rendered)
+```
+
+
+## UNPD WPP numbers for examples
+
+Pull some rough numbers from the UNPD World Population Prospects to use as
+illustrations in the writing
+
+We want to give a sense for the range in values that death rates between
+ages 15 and 65 can take
+
+```{r}
+data(mx1dt)
+```
+
+```{r}
+mx_data <- mx1dt %>% 
+  filter(year == 2023) %>%
+  filter(age %in% 15:65) %>%
+  pivot_longer(cols=c(mxM, mxF, mxB),
+               names_to='sex',
+               values_to='mx') %>%
+  mutate(mx1000 = mx * 1000) %>%
+  mutate(sex = case_match(sex,
+                          'mxM' ~ 'Male',
+                          'mxF' ~ 'Female',
+                          'mxB' ~ 'Both')) 
+```
+
+```{r}
+mx_data %>%
+  arrange(desc(mx1000))
+```
+
+```{r}
+mx_data %>%
+  arrange(mx1000)
+```
+
+
+## Estimated standard errors for MDE calculations
+
+We use these for the back of the envelope calculations in the MDE appendix
+
+```{r}
+est_probs %>%
+  group_by(method) %>%
+  summarize(mean_sd = mean(post_sd_q))
+```
+
+```{r}
+mean(gs_probs$q.47.18)
+```
+
+
+## Estimated net size and num sibs
+
+
+```{r}
+
+```
+
+
+
