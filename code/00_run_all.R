@@ -31,11 +31,6 @@ rmd_files <- list.files(path=code.dir, pattern=".Rmd")
 
 ## remove 99_vr_comparison.Rmd (which is a helper file)
 rmd_files <- purrr::discard(rmd_files, .p=~stringr::str_detect(.x,'99_vr_comparison'))
-rmd_files <- purrr::discard(rmd_files, .p=~stringr::str_detect(.x,'99_writing'))
-## remove 00_other_survey_sample_sizes.Rmd (we don't re-run because it requires the AfroBarometer survey data)
-rmd_files <- purrr::discard(rmd_files, .p=~stringr::str_detect(.x,'00_other'))
-## remove 00_check_ci.Rmd (this shouldn't be included in the code release)
-rmd_files <- purrr::discard(rmd_files, .p=~stringr::str_detect(.x,'00_check_ci'))
 
 
 for (cur_file in rmd_files) {
