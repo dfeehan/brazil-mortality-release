@@ -1633,7 +1633,8 @@ print(cor(
   direct_comp_all_asdrs_df %>% 
       select(Sibling, Network, VR) %>% 
       mutate(across(everything(),log)) %>%
-      filter(if_all(everything(), ~ is.finite(.x)))
+      #filter(if_all(everything(), ~ is.finite(.x)))
+      filter_all(all_vars(is.finite(.)))  
     ))
 ```
 
