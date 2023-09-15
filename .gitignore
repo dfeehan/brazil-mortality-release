@@ -4,6 +4,7 @@ out
 out-copy
 *.html
 *.tex
+*.swp
 data
 code/comparison*
 data-zipped
