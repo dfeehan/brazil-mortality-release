@@ -1,0 +1,65 @@
+Type: Compendium
+Package: Brazil Mortality Paper
+Title: Replication code for Brazil mortailty analysis 
+Version: 0.0.1
+Authors@R: 
+    person(given = "Dennis",
+           family = "Feehan",
+           role = c("aut", "cre"),
+           email = "feehan@berkeley.edu")
+Description: Code for Brazil Mortality Paper
+License: MIT + file LICENSE 
+Depends: 
+    broom,
+    colorspace,
+    dplyr,
+    drlib,
+    forcats,
+    furrr,
+    future,
+    geofacet,
+    ggforce,
+    ggplotify,
+    ggrepel,
+    glue,
+    gtable,
+    here,
+    httr,
+    janitor,
+    kableExtra,
+    knitr,
+    latex2exp,
+    lemon,
+    networkreporting,
+    pander,
+    patchwork,
+    purrr,
+    read.dbc,
+    readxl,
+    ribge,
+    rmarkdown,
+    rnaturalearth,
+    rnaturalearthdata,
+    rnaturalearthhires,
+    scales,
+    sf,
+    siblingsurvival,
+    surveybootstrap,
+    tictoc,
+    tidyr,
+    tidyverse,
+    tune,
+    units
+Remotes: 
+    dfeehan/surveybootstrap@1dda0de,
+    dfeehan/siblingsurvival@5a23c07,
+    dfeehan/networkreporting@27acedc,
+    dgrtwo/drlib,
+    haozhu233/kableExtra,
+    r-quantities/units@b6c9ab7,
+    r-spatial/sf@8ea9051,
+    tbrugz/ribge,
+    ropensci/rnaturalearthdata,
+    ropensci/rnaturalearthhires
+Encoding: UTF-8
+LazyData: true
