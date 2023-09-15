@@ -25,6 +25,10 @@ For replication, this file is not supposed to be run directly; it is run by anot
 notebook.
 
 ```{r}
+options(knitr.duplicate.label = "allow")
+```
+
+```{r}
 library(tidyverse)
 library(geofacet)
 #devtools::install_github("dgrtwo/drlib")

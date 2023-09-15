@@ -49,7 +49,8 @@ Depends:
     tidyr,
     tidyverse,
     tune,
-    units
+    units,
+    wpp2022
 Remotes: 
     dfeehan/surveybootstrap@1dda0de,
     dfeehan/siblingsurvival@5a23c07,
@@ -60,6 +61,7 @@ Remotes:
     r-spatial/sf@8ea9051,
     tbrugz/ribge,
     ropensci/rnaturalearthdata,
-    ropensci/rnaturalearthhires
+    ropensci/rnaturalearthhires,
+    PPgp/wpp2022@a45518a
 Encoding: UTF-8
 LazyData: true

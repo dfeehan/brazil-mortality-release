@@ -8,7 +8,6 @@ which looks like it might be a lighter alternative to Docker
 
 # TODO
 
-* LEFT OFF: need packages lemon and tune
 * need a way to get data into image; created data.zip, trying to work with that
 - be sure capital-design.csv only has columns we need
 - figure out exactly what should start in the data/ zip file
