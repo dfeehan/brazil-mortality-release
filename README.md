@@ -6,12 +6,9 @@ output: html_document
 NOTE: Matt likes the [groundhog package](https://groundhogr.com/using/)
 which looks like it might be a lighter alternative to Docker
 
-# TODO
+# TODO - FINAL CHECKLIST
 
-* need a way to get data into image; created data.zip, trying to work with that
-- be sure capital-design.csv only has columns we need
-- figure out exactly what should start in the data/ zip file
-  -> not sure we need data/vr_prepped; I think these get created by 01_vr_completeness?
+* be sure that the data in the zipfile are what we want, and find a way (other than dropbox) to distribute 
   
 
 # Brazil sibling/network mortality analysis
@@ -22,15 +19,26 @@ and network methods, and then compares those estimates to the vital registration
 It is organized into subdirectories:
 
 * `code` - has R scripts  
+  * `00_run_all.R` - a script that downloads the data and runs everything
   * `00_sample_map.Rmd` - create the map showing the cities in our sample
   * `01_vr_completeness.Rmd` - TODO
   * `02_get_vr_estimates.Rmd` - calculate VR death rates for each city and region 
-  * `03_network_estimates.Rmd` - TODO
-  * `04_sibling_estimates.Rmd` - TODO
-  * `05_vr_comparison.Rmd` - TODO
-* `data` - has the data used in the analysis
-  * `vr_raw` - raw vital registration data
-  * `vr_prepped` - VR data after being prepared for comparison
+  * `03_network_estimates.Rmd` - calculate network estimates 
+  * `04_sibling_estimates.Rmd` - calculate sibling estimates
+  * `05_run_comparison.Rmd` - run comparisons between estimates and the vital registration
+  * `06_plots.Rmd` - make several plots
+* `data` - has the data used in the analysis; this will be downloaded by `00_run_all.R`
+  * `cities.csv` - data on the cities in our study
+  * `ibge-capture-recapture` - results from IBGE's capture-recapture study
+  * `survey` - data from the survey
+    - `bootstrap_weights_1k.csv` - bootstrap resampling weights that account for our survey's complex sample design
+    - `individual.csv` - data on the respondents to the survey
+    - `network_reports.csv` - data on deaths reported in the network part of the survey (one row per reported death)
+    - `sibling_reports.csv` - data on siblings reported in the sibling module (one row per reported sib)
+  * `vr` - raw vital registration data
+    - `deaths` - data on deaths
+    - `popn` - data on popn size
+  * `vr_prepped` - VR data after being prepared for comparison (created by script)
   
 
 ## DOCKER
@@ -50,9 +58,9 @@ To use Docker
    This step will likely take a little time, as Docker builds your image (including installing various R packages)
 1. Run the docker image
    `docker run -d --rm -p 8888:8787 -e PASSWORD=pass --name brazil brazil-replication`
-   OR [TODO FIGURE OUT WHICH IS BETTER]
+   OR, to mount a local drive, you will need something like:
    `docker run -d --rm -p 8888:8787 -e PASSWORD=pass --name brazil -v $(pwd):/home/rstudio/  brazil-replication`
 1. Open a web browser and point it to localhost:8888
 1. Log onto Rstudio with username 'rstudio' and password 'pass'
 1. Open the file `brazil-mortality-release/code/00-run-all.r`
-1. Running the file should replicate everything. 
+1. Running the file should download the data and replicate everything. 
