@@ -1,3 +1,5 @@
+setwd("brazil-mortality-release")
+
 con <- file("run_all.log")
 sink(con, append=TRUE, split=TRUE)
 

@@ -295,6 +295,7 @@ err_diffs_summ
 ```
 
 
+
 ```{r}
 recode_loss <- c('mare'='MARE', 'mse'='MSE', 'rmse'='RMSE')
 recode_qty <- c('asdr'='Age-specifc\ndeath rates', 'prob'='Probability of\ndying at\nadult ages')
