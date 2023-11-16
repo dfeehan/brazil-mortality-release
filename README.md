@@ -1,15 +1,11 @@
 ---
-title: "README"
+title: "Brazil mortality replication code"
 output: html_document
 ---
-
-NOTE: Matt likes the [groundhog package](https://groundhogr.com/using/)
-which looks like it might be a lighter alternative to Docker
 
 # TODO - FINAL CHECKLIST
 
 * be sure that the data in the zipfile are what we want, and find a way (other than dropbox) to distribute 
-  
 
 # Brazil sibling/network mortality analysis
 
@@ -21,12 +17,13 @@ It is organized into subdirectories:
 * `code` - has R scripts  
   * `00_run_all.R` - a script that downloads the data and runs everything
   * `00_sample_map.Rmd` - create the map showing the cities in our sample
-  * `01_vr_completeness.Rmd` - TODO
+  * `01_vr_completeness.Rmd` - summarize estimated VR completeness by city
   * `02_get_vr_estimates.Rmd` - calculate VR death rates for each city and region 
   * `03_network_estimates.Rmd` - calculate network estimates 
   * `04_sibling_estimates.Rmd` - calculate sibling estimates
   * `05_run_comparison.Rmd` - run comparisons between estimates and the vital registration
   * `06_plots.Rmd` - make several plots
+  * `99_vr_comparison.Rmd` - has the code that compares estimates to VR; only to be run by `00_run_all.R`
 * `data` - has the data used in the analysis; this will be downloaded by `00_run_all.R`
   * `cities.csv` - data on the cities in our study
   * `ibge-capture-recapture` - results from IBGE's capture-recapture study
@@ -62,5 +59,5 @@ To use Docker
    `docker run -d --rm -p 8888:8787 -e PASSWORD=pass --name brazil -v $(pwd):/home/rstudio/  brazil-replication`
 1. Open a web browser and point it to localhost:8888
 1. Log onto Rstudio with username 'rstudio' and password 'pass'
-1. Open the file `brazil-mortality-release/code/00-run-all.r`
+1. Open the file `brazil-mortality-release/code/00_run_all.r`
 1. Running the file should download the data and replicate everything. 
