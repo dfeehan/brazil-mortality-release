@@ -3,6 +3,7 @@
 .DS_Store
 
 out
+out.zip
 out-copy
 *.html
 *.tex
