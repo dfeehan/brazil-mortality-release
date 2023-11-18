@@ -1956,8 +1956,8 @@ spatial_res_mse_as <- map_dfr(mse_as_moran_I,
 ```
 
 ```{r}
-moran_I_df <- bind_rows(spatial_res_mare,
-                        spatial_res_mare_as,
+moran_I_df <- bind_rows(#spatial_res_mare,
+                        #spatial_res_mare_as,
                         spatial_res_mse,
                         spatial_res_mse_as)
 
