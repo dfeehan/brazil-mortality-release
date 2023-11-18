@@ -977,6 +977,73 @@ geo_err_vr_comp
 }
 ```
 
+Plot the difference between the two methods (MSE) against the estimated completeness
+
+```{r comp-errs-mse-vrcompleteness, fig.height=3.5, fig.width=3.5}
+## NB: only have completeness at the state level...
+if(geo_name == 'city') {
+
+# difference in MSE
+comp_df <- comp_asdrs_bygeo_wide
+
+comp_df_withvr <- comp_df %>%
+  left_join(ibge_vr_completeness %>%
+              select(geo, ibge_est_vrcov = mean_sim_cov_pct))
+
+biggestdiff <- max(abs(comp_df_withvr$n.minus.s))
+xrange <- c(-biggestdiff, biggestdiff)
+
+## controls how far out annotations go
+annscale <- .6
+
+geo_err_mse_vr_comp <-
+  comp_df_withvr %>%
+        mutate(geo = fct_reorder(geo, n.minus.s)) %>%
+  ggplot(.) +
+  geom_text(aes(y=n.minus.s,
+                x=ibge_est_vrcov,
+                label=geo)) +
+  #geom_vline(xintercept=0, color='dark grey') +
+  #geom_point(aes(y=state_abbrev, x=n.minus.s)) +
+  theme_minimal() +
+  ylab("Network estimate MSE - Sibling estimate MSE") +
+  xlab("Estimated VR completeness") +
+  expand_limits(y=xrange) +
+  annotate(geom='text',
+           label="<- Network is better ",
+           #x='SE',
+           x=100,
+           y=-biggestdiff*annscale,
+           size=rel(3),
+           color='red',
+           angle=90) +
+  annotate(geom='text',
+           label="Sibling is better ->",
+           #x='SE',
+           x=100,
+           y=biggestdiff*annscale,
+           size=rel(3),
+           color='red',
+           angle=90) +
+  theme(axis.title.x=element_text(size=rel(.8))) +
+  ## see
+  ## https://stackoverflow.com/questions/12409960/ggplot2-annotate-outside-of-plot
+  ## for how this helps plot not clip annotations
+  coord_cartesian(clip='off') +
+  NULL
+
+
+ggsave(filename=file.path(comp_out_dir, "geo_err_summ_mse_vrsens.pdf"),
+       plot=geo_err_mse_vr_comp,
+       height=3.5,
+       width=3.5)
+knitr::plot_crop(file.path(comp_out_dir, "geo_err_summ_mse_vrsens.pdf"))
+
+geo_err_mse_vr_comp
+
+}
+```
+
 
 Scatter plot with all death rates
 

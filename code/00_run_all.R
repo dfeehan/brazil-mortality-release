@@ -19,6 +19,7 @@ dir.create(out.dir, showWarnings=FALSE)
 
 ###################
 ## download the survey data 
+#httr::timeout(100)
 httr::GET(url = survey_url,
           httr::write_disk(file.path(root.dir, 'data.zip'),
                            overwrite = TRUE))
