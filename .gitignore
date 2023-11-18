@@ -2,6 +2,8 @@
 .Rhistory
 .DS_Store
 
+code/00_sample_map_files/
+
 out
 out.zip
 out-copy
