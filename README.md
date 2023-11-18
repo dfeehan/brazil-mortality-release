@@ -9,6 +9,33 @@ output: html_document
 
 # Brazil sibling/network mortality analysis
 
+
+## Replication using Docker
+
+It is likely that you have different versions of R and specific R packages than we did
+when we wrote our code.  Thus, we recommend using Docker to replicate our results.
+Using Docker will ensure that you have exactly the same computing environment that we did
+when we conducted our analyses.
+
+To use Docker
+
+1. [Install Docker Desktop](https://www.docker.com/get-started) (if you don't already have it)
+1. Clone this repository
+1. Be sure that your current working directory is the one that you downloaded the repository into. It's probably called `brazil-mortality-release/`
+1. Build the docker image.
+   `docker build --rm -t brazil-replication .`
+   This step will likely take a little time, as Docker builds your image (including installing various R packages)
+1. Run the docker image
+   `docker run -d --rm -p 8888:8787 -e PASSWORD=pass --name brazil brazil-replication`
+   OR, to mount a local drive, you will need something like:
+   `docker run -d --rm -p 8888:8787 -e PASSWORD=pass --name brazil -v $(pwd):/home/rstudio/  brazil-replication`
+1. Open a web browser and point it to localhost:8888
+1. Log onto Rstudio with username 'rstudio' and password 'pass'
+1. Open the file `brazil-mortality-release/code/00_run_all.r`
+1. Running the file should download the data and replicate everything. 
+
+## Files
+
 This directory contains the files that produce estimates from the sibling
 and network methods, and then compares those estimates to the vital registration data.
 
@@ -38,26 +65,3 @@ It is organized into subdirectories:
   * `vr_prepped` - VR data after being prepared for comparison (created by script)
   
 
-## DOCKER
-
-It is likely that you have different versions of R and specific R packages than we did
-when we wrote our code.  Thus, we recommend using Docker to replicate our results.
-Using Docker will ensure that you have exactly the same computing environment that we did
-when we conducted our analyses.
-
-To use Docker
-
-1. [Install Docker Desktop](https://www.docker.com/get-started) (if you don't already have it)
-1. Clone this repository
-1. Be sure that your current working directory is the one that you downloaded the repository into. It's probably called `brazil-mortality-release/`
-1. Build the docker image.
-   `docker build --rm -t brazil-replication .`
-   This step will likely take a little time, as Docker builds your image (including installing various R packages)
-1. Run the docker image
-   `docker run -d --rm -p 8888:8787 -e PASSWORD=pass --name brazil brazil-replication`
-   OR, to mount a local drive, you will need something like:
-   `docker run -d --rm -p 8888:8787 -e PASSWORD=pass --name brazil -v $(pwd):/home/rstudio/  brazil-replication`
-1. Open a web browser and point it to localhost:8888
-1. Log onto Rstudio with username 'rstudio' and password 'pass'
-1. Open the file `brazil-mortality-release/code/00_run_all.r`
-1. Running the file should download the data and replicate everything. 
