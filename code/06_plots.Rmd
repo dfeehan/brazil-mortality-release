@@ -105,7 +105,7 @@ p1.5 <- (((p1.5_prob_c + ggtitle("City, Probability"))
         legend.position='bottom',
         legend.box='vertical',
         legend.spacing.y=unit(-.3, 'cm')) &
-  guides(color=guide_legend(nrow=2, title="Age"))
+  guides(color=guide_legend(nrow=2, title="Age", override.aes=list(alpha=1)))
   #plot_layout(guides='collect', design=design) & 
 #  plot_layout(guides='collect', design=design)
   #theme(text = element_text(size=7),
