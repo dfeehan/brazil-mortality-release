@@ -31,6 +31,13 @@ capital.coords <- read_csv(file.path(data_dir, "cities.csv"))
 ```
 
 ```{r}
+#map_pal <- 'Set3'
+#map_pal <- 'Accent'
+map_pal <- 'Set1'
+```
+
+
+```{r}
 # see
 # https://github.com/ropenscilabs/rnaturalearth
 #devtools::install_github("ropensci/rnaturalearthdata@352e548")
@@ -104,7 +111,8 @@ region_map <-
   ggplot(data=brne) + 
     geom_sf(aes(fill=region), linetype=2) +
     #scale_fill_viridis_d(name='Region') +
-    scale_fill_brewer(palette = "Set3") +
+    #scale_fill_brewer(palette = "Set3") +
+    scale_fill_brewer(palette = map_pal) +
     guides(fill = guide_legend("Region")) +
     remove_background
 
@@ -119,7 +127,8 @@ sample_map <-
             linetype='dotted', 
             alpha=.8) +
     #scale_fill_viridis_d(name='Region') +
-    scale_fill_brewer(palette = "Set3") +
+    #scale_fill_brewer(palette = "Set3") +
+    scale_fill_brewer(palette = map_pal) +
     remove_background +
   geom_sf(data=capitals) +
   geom_text_repel(data=capitals,
@@ -170,7 +179,8 @@ sample_hexmap <- ggplot(data=br_state_hexgrid) +
     geom_sf(aes(fill=region), 
             linetype='dotted', 
             alpha=.8) +
-    scale_fill_brewer(palette = "Set3") +
+    #scale_fill_brewer(palette = "Set3") +
+    scale_fill_brewer(palette = map_pal) +
     remove_background +
     geom_text(aes(label=postal,
                   x=V1, y=V2)) +
@@ -213,7 +223,8 @@ sample_region_hexmap <- ggplot(data=br_region_hexgrid) +
     geom_sf(aes(fill=region), 
             linetype='solid', 
             alpha=.8) +
-    scale_fill_brewer(palette = "Set3") +
+    #scale_fill_brewer(palette = "Set3") +
+    scale_fill_brewer(palette = map_pal) +
     # uncomment to get faint lines along state hex boundaries
     #geom_sf(aes(fill=NA),
     #        alpha=.1,
