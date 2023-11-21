@@ -64,7 +64,7 @@ p1 <- (p1_cp + ggtitle("City, Probability")) +
         legend.position='bottom',
         legend.box='vertical',
         legend.spacing.y=unit(-.3, 'cm')) &
-  guides(color=guide_legend(nrow=2, title="Age"), override.aes=list(alpha=1))
+  guides(color=guide_legend(nrow=2, title="Age", override.aes=list(alpha=1)))
 
 ggsave(filename=file.path(out_dir, "direct_estimates.pdf"),
        p1)

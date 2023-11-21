@@ -27,8 +27,10 @@ To use Docker
    This step will likely take a little time, as Docker builds your image (including installing various R packages)
 1. Run the docker image
    `docker run -d --rm -p 8888:8787 -e PASSWORD=pass --name brazil brazil-replication`
-   OR, to mount a local drive, you will need something like:
-   `docker run -d --rm -p 8888:8787 -e PASSWORD=pass --name brazil -v $(pwd):/home/rstudio/  brazil-replication`
+   OR, to mount a local drive, you will need something like:  
+
+   `docker run -d --rm -p 8888:8787 -e PASSWORD=pass --name brazil -v $(pwd):/home/rstudio/  brazil-replication`  
+
 1. Open a web browser and point it to localhost:8888
 1. Log onto Rstudio with username 'rstudio' and password 'pass'
 1. Open the file `brazil-mortality-release/code/00_run_all.r`
