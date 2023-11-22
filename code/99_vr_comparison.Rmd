@@ -2255,9 +2255,9 @@ err_breakdown_plot <- function(err_metric,
   #p1 <- (hm + ggtitle("City, Probability")) + 
   #      (city_plot + ggtitle("City, Age-specific death rate")) + 
   #      (as_plot + ggtitle("Region, Probability")) +
-  test <- (hm) + 
-        (city_plot) + 
-        (as_plot) +
+  test <- (hm + ggtitle("A")) + 
+        (city_plot + ggtitle("B")) + 
+        (as_plot + ggtitle("C")) +
         guide_area() +
     plot_layout(guides='collect', design=design)   
   

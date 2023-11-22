@@ -147,9 +147,9 @@ p_bvd_as_rmse <- readRDS(file.path(vr_city_dir, 'bvd_as_rmse_plot.rds'))
 ```{r}
 #bvd_as_city <- p_bvd_as_rmse / p_bvd_as_bias / p_bvd_as_se + 
 bvd_as_city <- 
-  p_bvd_as_se +
-  p_bvd_as_bias +
-  p_bvd_as_rmse +
+  (p_bvd_as_se + ggtitle("A")) +
+  (p_bvd_as_bias + ggtitle("B")) +
+  (p_bvd_as_rmse + ggtitle("C")) +
   plot_layout(guides='collect') &
   #theme(text = element_text(size=7)) &
   theme(text = element_text(size=7),
