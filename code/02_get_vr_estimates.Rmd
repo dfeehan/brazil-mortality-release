@@ -650,15 +650,6 @@ city.asdr <- munipop12_tosave %>%
 city.asdr
 ```
 
-```{r}
-ggplot(city.asdr) +
-  geom_line(aes(x=agegp10, y=asdr, color=state_abbrev,
-                group=interaction(state_abbrev, sex))) +
-  facet_grid(~ sex) +
-  theme_minimal()
-```
-
-
 ```{r calculate-ffqf}
 city.47q18 <- city.asdr %>%
   filter(agegp10 %in% c('[18,25)', '[25,35)', '[35,45)', '[45,55)', '[55,65)')) %>%
@@ -701,13 +692,6 @@ region.asdr <-
 region.asdr
 ```
 
-```{r}
-ggplot(region.asdr) +
-  geom_line(aes(x=agegp10, y=asdr, color=region,
-                group=interaction(region, sex))) +
-  facet_grid(~ sex) +
-  theme_minimal()
-```
 
 
 ```{r calculate-ffqf-region}
@@ -741,13 +725,6 @@ national.asdr <-
 national.asdr
 ```
 
-```{r}
-ggplot(national.asdr) +
-  geom_line(aes(x=agegp10, y=asdr,
-                group=sex)) +
-  facet_grid(~ sex) +
-  theme_minimal()
-```
 
 
 ```{r calculate-ffqf-national}
@@ -808,14 +785,7 @@ city.asdr.adj <- city.asdr %>%
 city.asdr.adj
 ```
 
-Double-check
 
-```{r}
-ggplot(city.asdr.adj) +
-  geom_point(aes(x=vr_asdr, y=asdr, color=state_abbrev)) +
-  geom_abline(intercept=0, slope=1) +
-  theme_minimal()
-```
 
 
 ```{r calculate-ffqf-adj}
@@ -853,14 +823,6 @@ region.asdr.adj <-
 region.asdr.adj
 ```
 
-Double-check
-
-```{r}
-ggplot(region.asdr.adj) +
-  geom_point(aes(x=vr_asdr, y=asdr, color=region)) +
-  geom_abline(intercept=0, slope=1) +
-  theme_minimal()
-```
 
 
 
@@ -884,12 +846,6 @@ Double check
 ```{r}
 chk_region_47q18 <- region.47q18.adj %>%
   left_join(region.47q18 %>% select(region, sex, q.47.18.vr = q.47.18)) 
-
-chk_region_47q18 %>%
-  ggplot(.) +
-  geom_point(aes(x=q.47.18.vr, y=q.47.18, color=region)) +
-  geom_abline(intercept=0, slope=1) +
-  theme_minimal()
 ```
 
 
