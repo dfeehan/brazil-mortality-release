@@ -22,6 +22,8 @@ To use Docker
 1. [Install Docker Desktop](https://www.docker.com/get-started) (if you don't already have it)
 1. Clone this repository
 1. Be sure that your current working directory is the one that you downloaded the repository into. It's probably called `brazil-mortality-release/`
+1. If you are using a recent Mac (with Apple silicon), then you might need to type
+  `export DOCKER_DEFAULT_PLATFORM=linux/amd64`
 1. Build the docker image.
    `docker build --rm -t brazil-replication .`
    This step will likely take a little time, as Docker builds your image (including installing various R packages)
@@ -66,4 +68,11 @@ It is organized into subdirectories:
     - `popn` - data on popn size
   * `vr_prepped` - VR data after being prepared for comparison (created by script)
   
+A small part of our results are not produced by the code included here, because
+they depend on data that we cannot release (because they have identifiers).
+These results include:
+
+* The response rates presented in Table S2
+* The numbers shown in Figure S2
+* The numbers shown in Figure S3
 
