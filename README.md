@@ -3,10 +3,6 @@ title: "Brazil mortality replication code"
 output: html_document
 ---
 
-# TODO - FINAL CHECKLIST
-
-* be sure that the data in the zipfile are what we want, and find a way (other than dropbox) to distribute 
-
 # Brazil sibling/network mortality analysis
 
 
