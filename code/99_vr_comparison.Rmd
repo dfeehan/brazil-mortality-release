@@ -1201,19 +1201,21 @@ knitr::plot_crop(file.path(comp_out_dir, "asdr_pointrange_log.pdf"))
 
 asdr_point_plot_log_multipage <- asdr_point_plot + 
   facet_grid_paginate(geo ~ sex, 
-                      ncol=2, nrow=3) +
+                      ncol=3, nrow=3) +
   scale_y_log10()
 
 
 pdf(file.path(comp_out_dir, "asdr_pointrange_log_multipage.pdf"), onefile = TRUE)
 for (i in 1:n_pages(asdr_point_plot_log_multipage)) {
-    asdr_point_plot + 
+    tmp <- asdr_point_plot_log_multipage + 
     facet_grid_paginate(geo ~ sex, 
-                        ncol=2, nrow=3,
+                        ncol=3, nrow=3,
                         page=i) +
     scale_y_log10() 
+    print(tmp)
 }
 dev.off()
+knitr::plot_crop(file.path(comp_out_dir, "asdr_pointrange_log_multipage.pdf"))
 
 asdr_point_plot_log_onepage
 ```
