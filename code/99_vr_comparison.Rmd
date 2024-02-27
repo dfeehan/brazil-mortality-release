@@ -41,6 +41,8 @@ library(ggforce) # for paginating faceted output
 library(latex2exp)
 library(broom)
 
+library(gridExtra)
+
 library(ggrepel)
 library(patchwork)
 library(tictoc)
@@ -1137,6 +1139,85 @@ saveRDS(prob_point_scatter,
 
 prob_point_scatter
 ```
+
+
+### Estimates from both sources + VR values
+
+
+```{r plot-asdrs-ref, fig.width=3.5, fig.height=10}
+
+rel.point.size <- .3
+point.stroke <- .2
+
+asdr_point_plot <- 
+  est_asdrs %>%
+  left_join(gs_asdrs) %>% 
+  group_by(sex, geo) %>%
+  # order facets by state difficulty
+  mutate(delta = post_mean_asdr - asdr,
+         state_difficulty = sum(abs(delta))) %>%
+  ungroup() %>%
+  mutate(geo = as_factor(geo),
+         geo = forcats::fct_reorder(geo, state_difficulty)) %>%
+         #geo = drlib::reorder_within(geo, state_difficulty, sex)) %>%
+  # end new 
+  ggplot(.) +
+  theme_bw(base_size=5) +
+  geom_pointrange(aes(x=agegp10, 
+                      y=post_mean_asdr, 
+                      ymin=post_ci_low_asdr,
+                      ymax=post_ci_high_asdr,
+                      color=method,
+                      shape=method),
+                  position=position_dodge(width=.5),
+                  size=rel(rel.point.size),
+                  stroke=point.stroke) +
+  geom_point(aes(x=agegp10,
+                 y=asdr,
+                 color='Vital registration',
+                 shape='Vital registration'),
+             size=rel(rel.point.size),
+             stroke=1) +
+  ylab("Age-specific death rate") +
+  xlab("") +
+  theme(strip.background=element_rect(fill=NA)) +
+  guides(color=guide_legend(title='Method', override.aes=list(linetype=c(1,1,0))),
+  #guides(color=guide_legend(title='Method'),
+         shape=guide_legend(title='Method')) +
+  scale_shape_manual(values=c('Sibling'=shape_sib, 'Network'=shape_net, 'Vital registration'=shape_gs))+
+  scale_color_manual(values=c('Sibling'=color_sib, 'Network'=color_net, 'Vital registration'=color_gs)) +
+  theme(legend.position='bottom',
+        legend.direction='horizontal')
+   
+asdr_point_plot_log_onepage <- asdr_point_plot + 
+  facet_grid(geo ~ sex) +
+  scale_y_log10()
+
+ggsave(filename=file.path(comp_out_dir, "asdr_pointrange_log.pdf"),
+       plot=asdr_point_plot_log_onepage,
+       height=10,
+       width=3.5)
+knitr::plot_crop(file.path(comp_out_dir, "asdr_pointrange_log.pdf"))
+
+asdr_point_plot_log_multipage <- asdr_point_plot + 
+  facet_grid_paginate(geo ~ sex, 
+                      ncol=2, nrow=3) +
+  scale_y_log10()
+
+
+pdf(file.path(comp_out_dir, "asdr_pointrange_log_multipage.pdf"), onefile = TRUE)
+for (i in 1:n_pages(asdr_point_plot_log_multipage)) {
+    asdr_point_plot + 
+    facet_grid_paginate(geo ~ sex, 
+                        ncol=2, nrow=3,
+                        page=i) +
+    scale_y_log10() 
+}
+dev.off()
+
+asdr_point_plot_log_onepage
+```
+
 
 ### Minimum detectable effects
 

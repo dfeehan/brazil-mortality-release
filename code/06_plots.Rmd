@@ -601,6 +601,20 @@ ggsave(filename=file.path(out_dir, "err_compare_all.png"),
        height=fec.size,
        width=fec.size)
 
+tmp_rmse <- for_pr_plot %>% filter(qty=="Age-specifc\ndeath rates", 
+                                   loss=="RMSE", 
+                                   geo_name == "City-level\nestimates")
+tmp_mare <- for_pr_plot %>% filter(qty=="Age-specifc\ndeath rates", 
+                                   loss=="MARE", 
+                                   geo_name == "City-level\nestimates")
+
+glue::glue("
+           
+           On average, network estimates were about {tmp_rmse$diff_nminuss_mean} RMSE units better than sibling estimates.  
+           This difference is {tmp_mare$diff_nminuss_mean} percent using MARE.
+           
+           ")
+
 final_err_compare
 ```
 
