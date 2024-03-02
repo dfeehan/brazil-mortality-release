@@ -3,6 +3,9 @@ title: "Plots combining results"
 output: html_notebook
 ---
 
+TODO
+
+- add plot with var and bias scatterplots combined
 
 ```{r}
 library(here)
@@ -165,6 +168,26 @@ ggsave(filename=file.path(out_dir, "bvd_as_city.pdf"),
 bvd_as_city
 ```
 
+```{r}
+#bvd_as_city <- p_bvd_as_rmse / p_bvd_as_bias / p_bvd_as_se + 
+vd_as_city <- 
+  (p_bvd_as_se + ggtitle("A")) +
+  (p_bvd_as_bias + ggtitle("B")) +
+  plot_layout(guides='collect') &
+  #theme(text = element_text(size=7)) &
+  theme(text = element_text(size=7),
+        legend.position='bottom',
+        legend.box='vertical',
+        legend.spacing.y=unit(-.3, 'cm')) & 
+  #guides(color=guide_legend(nrow=2, title="Age"))
+  guides(color=guide_legend(title="Age"))
+
+ggsave(filename=file.path(out_dir, "vd_as_city.pdf"),
+       height=6,
+       vd_as_city)
+
+vd_as_city
+```
 
 ### Bias-variance decomposition (BVD) plot from VR sensitivity check
 
@@ -247,8 +270,6 @@ err_diffs_summ <- err_diffs_boot %>%
 
 err_diffs_summ
 ```
-
-
 
 ```{r}
 recode_loss <- c('mare'='MARE', 'mse'='MSE', 'rmse'='RMSE')
@@ -617,6 +638,49 @@ glue::glue("
 
 final_err_compare
 ```
+
+
+Simple barplot with RMSE comparison at city level
+
+```{r}
+barplot_asdr_rmse_df <- 
+    for_pr_plot %>%
+    filter(loss == 'RMSE', str_detect(geo_name, 'City-level'), qty==recode_qty['asdr']) %>%
+  select(comparison_name, geo_name, qty, loss, network_err, sibling_err) %>%
+  pivot_longer(cols=c('network_err', 'sibling_err'),
+               names_to='method',
+               values_to='RMSE') %>%
+  mutate(method = recode(method,
+                         network_err='Network', 
+                         sibling_err='Sibling'))
+
+barplot_asdr_rmse <- barplot_asdr_rmse_df %>%
+  ggplot(.) +
+  geom_bar(aes(x=method, y=RMSE), stat='identity') +
+  theme_minimal() +
+  xlab("") +
+  ylab("Root Mean Squared Error")
+
+saveRDS(barplot_asdr_rmse, file.path(out_dir, "rmse_barplot.rds"))
+fec.size <- 3
+ggsave(filename=file.path(out_dir, "rmse_barplot.pdf"),
+       plot=barplot_asdr_rmse,
+       height=fec.size,
+       width=fec.size)
+ggsave(filename=file.path(out_dir, "rmse_barplot.png"),
+       plot=barplot_asdr_rmse,
+       height=fec.size,
+       width=fec.size)
+
+net_rmse_tot <- barplot_asdr_rmse_df %>% filter(method=='Network') %>% pull(RMSE)
+sib_rmse_tot <- barplot_asdr_rmse_df %>% filter(method=='Sibling') %>% pull(RMSE)
+
+glue::glue("
+           Sibling RMSE is {round(100 * (sib_rmse_tot - net_rmse_tot)/net_rmse_tot,3)} percent higher than network RMSE
+           Network RMSE is {round(100*  (net_rmse_tot - sib_rmse_tot)/sib_rmse_tot,3)} percent lower than sibling RMSE
+           ")
+```
+
 
 ## VR sensitivity version of figure above
 

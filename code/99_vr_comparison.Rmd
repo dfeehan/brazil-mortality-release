@@ -973,6 +973,7 @@ splom_sn <- direct_comp_all_asdrs_df %>%
   theme_bw() 
 
 
+
 splom_vn <- direct_comp_all_asdrs_df %>%
   ggplot(.) +
   geom_abline(intercept=0, slope=1) +
@@ -1077,6 +1078,22 @@ ggsave(filename=file.path(comp_out_dir, "splom_asdr.png"),
        height=fig_height,
        width=fig_width)
 final_splom
+
+# the network/sib comparison alone
+# scale saved figure by this amount
+lone_fac <- 0.5
+splom_sn_tosave <- splom_sn + ggtitle("")
+saveRDS(splom_sn_tosave, file.path(comp_out_dir, "net_vs_sib_asdr.rds"))
+ggsave(filename=file.path(comp_out_dir, "net_vs_sib_asdr.pdf"),
+       plot=splom_sn_tosave,
+       height=fig_height*lone_fac,
+       width=fig_width*lone_fac)
+ggsave(filename=file.path(comp_out_dir, "net_vs_sib_asdr.png"),
+       plot=splom_sn_tosave,
+       height=fig_height*lone_fac,
+       width=fig_width*lone_fac)
+final_splom
+
 
 ```
 
@@ -1559,6 +1576,49 @@ ggsave(file.path(comp_out_dir, "bvd_as_rmse.pdf"),
        bvd_as_rmse_plot,
        width=5, height=4)
 
+## symbol size and font size for 'alone' plots
+alone_size <- 4
+alone_text_size <- 14
+alone_fig_size <- 6
+
+# NB: this one is used
+bvd_as_rmse_plot_alone <- bvd_check_long %>%
+  #filter(qty %in% c('bias', 'var')) %>%
+  filter(qty == 'mse') %>%
+  group_by(sex, agegp10) %>%
+  # we take the average of the MSE; when we plot,
+  # we'll take the square root to make it a little more interpretable - but
+  # the quantity being averaged is the MS E
+  summarize(Network = mean(Network),
+            Sibling=mean(Sibling)) %>%
+  ggplot(.) +
+  geom_abline(intercept=0, slope=1, color='grey', lty=2) +
+  geom_point(aes(x=sqrt(Network), y=sqrt(Sibling), color=agegp10, shape=sex), size = alone_size) +
+  guides(color=guide_legend(override.aes=list(alpha=1),
+                            title='Age'),
+         shape=guide_legend(override.aes=list(alpha=1),
+                            title='')) +
+  xlab("Square root of\nNetwork average MSE") +
+  ylab("Square root of\nSibling average MSE") +
+  expand_limits(x=0, y=0) +
+  #coord_equal() +
+  tune::coord_obs_pred() +
+  age_scale_color +
+  theme_minimal() + 
+  theme(legend.position='right',
+        text=element_text(size=alone_text_size))
+
+
+ggsave(file.path(comp_out_dir, "bvd_as_rmse_alone.pdf"),
+       bvd_as_rmse_plot_alone,
+       width=alone_fig_size, height=alone_fig_size)
+
+         #guides(color=guide_legend(nrow=2,byrow=TRUE)) +
+         #theme(legend.position='bottom', 
+        #       legend.direction='horizontal',
+        #       legend.box='vertical',
+        #       legend.margin=margin()),
+
 bvd_as_rmse_plot
 ```
 
@@ -1598,6 +1658,41 @@ ggsave(file.path(comp_out_dir, "bvd_as_se.pdf"),
        bvd_as_se_plot,
        width=5, height=4)
 
+bvd_as_se_plot_alone <- bvd_check_long %>%
+  #filter(qty %in% c('bias', 'var')) %>%
+  filter(qty == 'var') %>%
+  group_by(sex, agegp10) %>%
+  ## we average the variance across cities,
+  ## then we take the square root to make it easier to read
+  ## but the quantity being averaged is the variance
+  summarize(Network = mean(Network),
+            Sibling=mean(Sibling)) %>%
+  ggplot(.) +
+  geom_abline(intercept=0, slope=1, color='grey', lty=2) +
+  geom_point(aes(x=sqrt(Network), y=sqrt(Sibling), color=agegp10, shape=sex), size=alone_size) +
+  guides(color=guide_legend(override.aes=list(alpha=1),
+                            title='Age'),
+         shape=guide_legend(override.aes=list(alpha=1),
+                            title='')) +
+  #xlab("Network variance") + ylab("Sibling variance") +
+  #xlab(TeX(r'(Network average $\sqrt{var}$)')) + 
+  #ylab(TeX(r'(Sibling average $\sqrt{var}$)')) + 
+  xlab("Square root of\nNetwork average variance") +
+  ylab("Square root of\nSibling average variance") +
+  #coord_equal() +
+  tune::coord_obs_pred() +
+  theme_minimal() +
+  age_scale_color +
+  expand_limits(x = 0, y = 0) +
+  theme(legend.position='right',
+        text=element_text(size=alone_text_size))
+
+# NB: this one is used
+saveRDS(bvd_as_se_plot_alone, file.path(comp_out_dir, "bvd_as_se_plot_alone.rds"))
+ggsave(file.path(comp_out_dir, "bvd_as_se_alone.pdf"),
+       bvd_as_se_plot_alone,
+       width=alone_fig_size, height=alone_fig_size)
+
 bvd_as_se_plot
 ```
 
@@ -1633,6 +1728,38 @@ saveRDS(bvd_as_bias_plot, file.path(comp_out_dir, "bvd_as_bias_plot.rds"))
 ggsave(file.path(comp_out_dir, "bvd_as_bias.pdf"),
        bvd_as_bias_plot,
        width=5, height=4)
+
+bvd_as_bias_plot_alone <- bvd_check_long %>%
+  #filter(qty %in% c('bias', 'var')) %>%
+  filter(qty == 'bias') %>%
+  group_by(sex, agegp10) %>%
+  summarize(Network = mean(Network),
+            Sibling=mean(Sibling)) %>%
+  ggplot(.) +
+  #geom_abline(intercept=0, slope=1, color='grey', linetype=2) +
+  geom_vline(xintercept=0, color='grey') +
+  geom_hline(yintercept=0, color='grey') +
+  geom_point(aes(x=Network, y=Sibling, color=agegp10, shape=sex), size=alone_size) +
+  guides(color=guide_legend(override.aes=list(alpha=1),
+                            title='Age'),
+         shape=guide_legend(override.aes=list(alpha=1),
+                            title='')) +
+  xlab("Network bias") + ylab("Sibling bias") +
+  #coord_equal() +
+  tune::coord_obs_pred() +
+  lemon::scale_y_symmetric(mid=0) +
+  lemon::scale_x_symmetric(mid=0) +
+  age_scale_color +
+  theme_minimal() +
+  theme(legend.position='right',
+        text=element_text(size=alone_text_size))
+
+# NB: this one is used
+saveRDS(bvd_as_bias_plot_alone, file.path(comp_out_dir, "bvd_as_bias_plot_alone.rds"))
+
+ggsave(file.path(comp_out_dir, "bvd_as_bias_alone.pdf"),
+       bvd_as_bias_plot_alone,
+       width=alone_fig_size, height=alone_fig_size)
 
 bvd_as_bias_plot
 ```
