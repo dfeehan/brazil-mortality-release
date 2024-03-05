@@ -630,7 +630,8 @@ tmp_mare <- for_pr_plot %>% filter(qty=="Age-specifc\ndeath rates",
                                    geo_name == "City-level\nestimates")
 
 glue::glue("
-           
+           Average network RMSE: {tmp_rmse$network_err}
+           Average sibling RMSE: {tmp_rmse$sibling_err}
            On average, network estimates were about {tmp_rmse$diff_nminuss_mean} RMSE units better than sibling estimates.  
            This difference is {tmp_mare$diff_nminuss_mean} percent using MARE.
            
