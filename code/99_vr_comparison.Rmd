@@ -43,6 +43,8 @@ library(broom)
 
 library(gridExtra)
 
+library(demogR)
+
 library(ggrepel)
 library(patchwork)
 library(tictoc)
@@ -1235,6 +1237,221 @@ dev.off()
 knitr::plot_crop(file.path(comp_out_dir, "asdr_pointrange_log_multipage.pdf"))
 
 asdr_point_plot_log_onepage
+```
+
+```{r}
+asdr_point_plot_opp <- asdr_point_plot + 
+  ggforce::facet_grid_paginate(geo ~ sex, ncol=2, nrow=1)
+
+np <- n_pages(asdr_point_plot_opp)
+
+pdf(file.path(comp_out_dir, "asdr_pointrange_opp.pdf"),
+    width=7, height=3.5)
+for(i in 1:np) {
+  print(asdr_point_plot + ggforce::facet_grid_paginate(geo ~ sex, ncol=2, nrow=1, page=i))
+}
+dev.off()
+
+asdr_point_plot_opp <- asdr_point_plot + 
+   ggforce::facet_grid_paginate(geo ~ sex, ncol=2, nrow=1) +
+  scale_y_log10()
+
+np <- n_pages(asdr_point_plot_opp)
+
+pdf(file.path(comp_out_dir, "asdr_pointrange_log_opp.pdf"),
+    width=7, height=3.5)
+for(i in 1:np) {
+  print(asdr_point_plot + 
+          ggforce::facet_grid_paginate(geo ~ sex, ncol=2, nrow=1, page=i) +
+          scale_y_log10())
+}
+dev.off()
+```
+
+```{r}
+if(params$geo_name == 'city') {
+  
+## get Coale-Demeny model life table values
+## (these come from the demogR package)
+
+cd.f.raw <- cdmltw(sex='F')
+cd.m.raw <- cdmltw(sex='M')
+
+cd <- purrr::map_dfr(1:25,
+              function(idx) {
+                cur_level_f <- tibble(sex='f',
+                                      level.idx=idx,
+                                      age=cd.f.raw$age,
+                                      width=cd.f.raw$width,
+                                      e10=cd.f.raw$e10[idx],
+                                      lx=cd.f.raw$lx[idx,],
+                                      nqx=cd.f.raw$nqx[idx,],
+                                      nax=cd.f.raw$nax[idx,],
+                                      ndx=cd.f.raw$ndx[idx,],
+                                      nLx=cd.f.raw$nLx[idx,],
+                                      nmx=cd.f.raw$nmx[idx,],
+                                      Tx=cd.f.raw$Tx[idx,],
+                                      ex=cd.f.raw$ex[idx,])
+                
+                cur_level_m <- tibble(sex='m',
+                                      level.idx=idx,
+                                      age=cd.m.raw$age,
+                                      width=cd.m.raw$width,
+                                      e10=cd.m.raw$e10[idx],
+                                      lx=cd.m.raw$lx[idx,],
+                                      nqx=cd.m.raw$nqx[idx,],
+                                      nax=cd.m.raw$nax[idx,],
+                                      ndx=cd.m.raw$ndx[idx,],
+                                      nLx=cd.m.raw$nLx[idx,],
+                                      nmx=cd.m.raw$nmx[idx,],
+                                      Tx=cd.m.raw$Tx[idx,],
+                                      ex=cd.m.raw$ex[idx,])
+                                         
+                return(bind_rows(cur_level_f, cur_level_m))
+              })
+
+grab_cd_comparison <- function(level) {
+  
+ cd_forcomp_fine <- cd %>% 
+  filter(level.idx==level) %>% 
+  filter(age >=15, age < 65)
+
+cd_forcomp <- cd_forcomp_fine %>%
+  group_by(sex) %>%
+  ## for age 15, we'll make this into age gp 18-19 by:
+  ##    * taking .75d1 + .25d2 where d1 is 15-19 asdr and d2 is 20-24 asdr
+  ##    * changing 'width' of age gp to 2
+  ##    * renaming age gp '18'
+  mutate(nLx = case_when(
+    age==15 ~ .75*nLx + .25*nLx[age==20],
+    TRUE ~ nLx
+  )) %>%
+  mutate(ndx = case_when(
+    age==15 ~ .75*ndx + .25*ndx[age==20],
+    TRUE ~ ndx
+  )) %>%
+  mutate(width = case_when(
+    age==15 ~ 2,
+    TRUE    ~ width
+  )) %>%
+  mutate(age = case_when(
+    age==15 ~ 18,
+    TRUE    ~ age
+  ))
+
+cd_forcomp <- cd_forcomp %>%
+  group_by(sex) %>%
+  mutate(agg.asdr = case_when(
+    age == 18 ~ (ndx + ndx[age==20])/(nLx + nLx[age==20]),
+    age == 25 ~ (ndx + ndx[age==30])/(nLx + nLx[age==30]),
+    age == 35 ~ (ndx + ndx[age==40])/(nLx + nLx[age==40]),
+    age == 45 ~ (ndx + ndx[age==50])/(nLx + nLx[age==50]),
+    age == 55 ~ (ndx + ndx[age==60])/(nLx + nLx[age==60]),
+    TRUE ~ NA_real_
+  ))  
+
+cd_forcomp <- cd_forcomp %>%
+  filter(!is.na(agg.asdr))
+
+cd_forcomp <- cd_forcomp %>%
+  mutate(agegp10=paste(cut(as.numeric(age),
+                           breaks=c(18,25,35,45,55,65,75,Inf),
+                           right=FALSE,
+                           include.lowest=TRUE)))
+
+return(cd_forcomp)
+
+}
+
+cd_level23_raw <- grab_cd_comparison(level=23) %>%
+  select(sex, agegp10, post_mean_asdr = agg.asdr) %>%
+  mutate(sex = case_when(sex == 'f' ~ 'Female',
+                         TRUE ~ 'Male')) %>%
+  mutate(geo = 'CD')
+
+cd_comparison <-
+  bind_rows(cd_level23_raw %>% mutate(method='Network'),
+            cd_level23_raw %>% mutate(method='Sibling'))
+
+}
+```
+
+
+Plot with plausibility comparison: asdrs for sib/net side by side
+
+
+```{r plot-asdrs-plaus, fig.width=6, fig.height=6}
+if(params$geo_name == 'city') {
+  
+
+rel.point.size <- .3
+point.stroke <- .2
+
+spec_geo <- "RJ"
+spec_geo_df <- est_asdrs %>% filter(geo == spec_geo)
+
+asdr_plaus_plot <- 
+  est_asdrs %>%
+  ggplot(.) +
+  theme_bw(base_size=5) +
+  geom_line(aes(x=agegp10, 
+                y=post_mean_asdr,
+                group=interaction(method,sex,geo)),
+            alpha=.5) +  
+    geom_line(aes(x=agegp10, 
+                y=post_mean_asdr,
+                group=interaction(method,sex,geo)),
+            alpha=.5,
+            data = spec_geo_df,
+            color='red',
+            lwd=1.5) +  
+  geom_text_repel(aes(x=agegp10, 
+                y=post_mean_asdr,
+                group=interaction(method,sex,geo),
+                label=geo),
+                data = spec_geo_df %>% filter(agegp10 == "[55,65)"),
+                color='red',
+                nudge_x=2,
+                size=1.5) +  
+ geom_line(aes(x=agegp10, 
+                y=post_mean_asdr,
+                group=interaction(method,sex,geo)),
+            alpha=.5,
+            data = cd_comparison,
+            color='blue',
+            lwd=1.5) +    
+  geom_text_repel(aes(x=agegp10, 
+                y=post_mean_asdr,
+                group=interaction(method,sex,geo),
+                label=geo),
+                data = cd_comparison %>% filter(agegp10 == "[55,65)"),
+                color='blue',
+                nudge_x=2,
+                size=1.5) +
+  facet_grid(sex ~ method) +
+  #scale_y_log10() +
+  ylab("Age-specific death rate") +
+  xlab("") +k
+  theme(strip.background=element_rect(fill=NA))
+
+asdr_plaus_plot_log <- asdr_plaus_plot + scale_y_log10() + ylab("Log(Age-specific death rate)") +
+
+ggsave(filename=file.path(comp_out_dir, "asdr_plaus.pdf"),
+       plot=asdr_plaus_plot,
+       height=4,
+       width=4)
+knitr::plot_crop(file.path(comp_out_dir, "asdr_plaus.pdf"))
+
+ggsave(filename=file.path(comp_out_dir, "asdr_plaus_log.pdf"),
+       plot=asdr_plaus_plot_log,
+       height=4,
+       width=4)
+knitr::plot_crop(file.path(comp_out_dir, "asdr_plaus_log.pdf"))
+
+
+asdr_plaus_plot
+
+}
 ```
 
 

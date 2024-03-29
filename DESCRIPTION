@@ -12,6 +12,7 @@ License: MIT + file LICENSE
 Depends: 
     broom,
     colorspace,
+    demogR,
     dplyr,
     drlib,
     forcats,
