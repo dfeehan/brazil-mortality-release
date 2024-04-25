@@ -24,3 +24,5 @@ __MACOSX/
 
 run_all.log
 .Rproj.user
+
+.rstudio-old
