@@ -1239,6 +1239,70 @@ knitr::plot_crop(file.path(comp_out_dir, "asdr_pointrange_log_multipage.pdf"))
 asdr_point_plot_log_onepage
 ```
 
+Specific example used in paper
+
+```{r}
+# TODO
+if(params$geo_name == 'city') {
+  
+  spec_geo <- 'RJ'
+  
+  asdr_point_example <- 
+  est_asdrs %>%
+  left_join(gs_asdrs) %>% 
+  #group_by(sex, geo) %>%
+  # order facets by state difficulty
+  #mutate(delta = post_mean_asdr - asdr,
+  #       state_difficulty = sum(abs(delta))) %>%
+  #ungroup() %>%
+  #mutate(geo = as_factor(geo),
+  #       geo = forcats::fct_reorder(geo, state_difficulty)) %>%
+         #geo = drlib::reorder_within(geo, state_difficulty, sex)) %>%
+  # end new 
+  filter(geo == spec_geo) %>%
+  ggplot(.) +
+  theme_bw(base_size=5) +
+  geom_pointrange(aes(x=agegp10, 
+                      y=post_mean_asdr, 
+                      ymin=post_ci_low_asdr,
+                      ymax=post_ci_high_asdr,
+                      color=method,
+                      shape=method),
+                  position=position_dodge(width=.5),
+                  size=rel(rel.point.size),
+                  stroke=point.stroke) +
+  geom_point(aes(x=agegp10,
+                 y=asdr,
+                 color='Vital registration',
+                 shape='Vital registration'),
+             size=rel(rel.point.size),
+             stroke=1) +
+  ylab("Log(Age-specific death rate)") +
+  xlab("") +
+  theme(strip.background=element_rect(fill=NA)) +
+  guides(color=guide_legend(title='Method', override.aes=list(linetype=c(1,1,0))),
+  #guides(color=guide_legend(title='Method'),
+         shape=guide_legend(title='Method')) +
+  scale_shape_manual(values=c('Sibling'=shape_sib, 'Network'=shape_net, 'Vital registration'=shape_gs))+
+  scale_color_manual(values=c('Sibling'=color_sib, 'Network'=color_net, 'Vital registration'=color_gs)) +
+  theme(legend.position='bottom',
+        legend.direction='horizontal') +
+  scale_y_log10() +
+  #facet_grid(. ~ sex)
+  facet_grid(sex ~ .)
+  
+  
+  ggsave(filename=file.path(comp_out_dir, "asdr_pointrange_example.pdf"),
+       plot=asdr_point_example,
+       height=6,
+       width=3)
+   knitr::plot_crop(file.path(comp_out_dir, "asdr_pointrange_example.pdf"))
+ 
+  asdr_point_example 
+}
+```
+
+
 ```{r}
 asdr_point_plot_opp <- asdr_point_plot + 
   ggforce::facet_grid_paginate(geo ~ sex, ncol=2, nrow=1)
@@ -1431,7 +1495,7 @@ asdr_plaus_plot <-
   facet_grid(sex ~ method) +
   #scale_y_log10() +
   ylab("Age-specific death rate") +
-  xlab("") +k
+  xlab("") +
   theme(strip.background=element_rect(fill=NA))
 
 asdr_plaus_plot_log <- asdr_plaus_plot + scale_y_log10() + ylab("Log(Age-specific death rate)") +
