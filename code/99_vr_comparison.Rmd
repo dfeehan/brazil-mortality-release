@@ -1100,6 +1100,54 @@ final_splom
 ```
 
 
+Version of the direct ASDR comparison between network + sibling,
+faceted by age/sex group
+
+```{r}
+cur_range <- with(direct_comp_all_asdrs_df,
+                  range(log(Sibling),
+                        log(Network),
+                        log(VR),
+                        finite=TRUE))
+
+
+alpha.val <- 1
+
+splom_sn_faceted <- direct_comp_all_asdrs_df %>%
+  ggplot(.) +
+  geom_abline(intercept=0, slope=1) +
+  geom_point(aes(x=log(Sibling), 
+                 y=log(Network),
+                 color=agegp10,
+                 shape=sex), 
+             alpha=alpha.val) +
+  coord_equal() +
+  xlim(cur_range) + ylim(cur_range) +
+  guides(color=guide_legend(override.aes=list(alpha=1),
+                            title='Age'),
+         shape=guide_legend(override.aes=list(alpha=1),
+                            title='')) +
+  xlab("log(Sibling death rate est.)") +
+  ylab("log(Network death rate est.)") +
+  age_scale_color +
+  theme_bw() +
+  facet_grid(sex ~ agegp10) +
+  theme(legend.position='bottom',
+        legend.box='vertical')
+
+fig_height <- 4 
+fig_width <- 8
+
+saveRDS(splom_sn_faceted, file.path(comp_out_dir, "net_vs_sib_asdr_faceted.rds"))
+ggsave(filename=file.path(comp_out_dir, "net_vs_sib_asdr_faceted.pdf"),
+       plot=splom_sn_faceted,
+       height=fig_height,
+       width=fig_width)
+
+splom_sn_faceted
+```
+
+
 # Direct comparison - probs
 
 
@@ -1902,6 +1950,48 @@ ggsave(file.path(comp_out_dir, "bvd_as_rmse_alone.pdf"),
 
 bvd_as_rmse_plot
 ```
+
+Same as above, but as a bar plot
+
+```{r}
+
+bvd_as_rmse_bar_plot <- bvd_check_long %>%
+  #filter(qty %in% c('bias', 'var')) %>%
+  filter(qty == 'mse') %>%
+  group_by(sex, agegp10) %>%
+  # we take the average of the MSE; when we plot,
+  # we'll take the square root to make it a little more interpretable - but
+  # the quantity being averaged is the MS E
+  summarize(Network = mean(Network),
+            Sibling=mean(Sibling)) %>%
+  pivot_longer(cols=c('Network', 'Sibling'), names_to='estimator', values_to='mse') %>%
+  ggplot(.) +
+  geom_bar(aes(y=agegp10, x=1000*sqrt(mse), fill=estimator), stat='identity', position='dodge') +
+  #geom_abline(intercept=0, slope=1, color='grey', lty=2) +
+  #geom_point(aes(x=sqrt(Network), y=sqrt(Sibling), color=agegp10, shape=sex)) +
+  #guides(color=guide_legend(override.aes=list(alpha=1),
+  #                          title='Age'),
+  #       shape=guide_legend(override.aes=list(alpha=1),
+  #                          title='')) +
+  ##xlab("Network variance") + ylab("Sibling variance") +
+  #xlab("Square root of\nNetwork average MSE") +
+  #ylab("Square root of\nSibling average MSE") +
+  #expand_limits(x=0, y=0) +
+  ##coord_equal() +
+  #tune::coord_obs_pred() +
+  #age_scale_color +
+  xlab("RMSE") + ylab("") +
+  facet_wrap(~ sex) +
+  theme_minimal() 
+
+
+ggsave(file.path(comp_out_dir, "bvd_as_rmse_bar.pdf"),
+       bvd_as_rmse_bar_plot,
+       width=6, height=6)
+
+bvd_as_rmse_bar_plot
+```
+
 
 Sqrt of the variance
 
