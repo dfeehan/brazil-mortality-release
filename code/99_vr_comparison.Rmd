@@ -1351,6 +1351,8 @@ if(params$geo_name == 'city') {
 ```
 
 
+
+
 ```{r}
 asdr_point_plot_opp <- asdr_point_plot + 
   ggforce::facet_grid_paginate(geo ~ sex, ncol=2, nrow=1)
@@ -1502,49 +1504,79 @@ point.stroke <- .2
 spec_geo <- "RJ"
 spec_geo_df <- est_asdrs %>% filter(geo == spec_geo)
 
+est_lty <- 'solid'
+mlt_lty <- 'twodash' 
+
+est_color <- 'black'
+mlt_color <- 'blue'
+
+est_alpha <- 0.3
+mlt_alpha <- 0.6 
+
 asdr_plaus_plot <- 
   est_asdrs %>%
   ggplot(.) +
   theme_bw(base_size=5) +
+  ###
+  ## ESTIMATES
+  ###
   geom_line(aes(x=agegp10, 
                 y=post_mean_asdr,
+                color=est_color,
+                linetype=est_lty,
                 group=interaction(method,sex,geo)),
-            alpha=.5) +  
-    geom_line(aes(x=agegp10, 
+            alpha=est_alpha) +  
+  #geom_line(aes(x=agegp10, 
+  #              y=post_mean_asdr,
+  #              group=interaction(method,sex,geo)),
+  #          alpha=.5,
+  #          data = spec_geo_df,
+  #          color=est_color,
+  #          lty=est_lty,
+  #          lwd=1.5) +  
+  #geom_text_repel(aes(x=agegp10, 
+  #              y=post_mean_asdr,
+  #              group=interaction(method,sex,geo),
+  #              label=geo),
+  #              data = spec_geo_df %>% filter(agegp10 == "[55,65)"),
+  #              color=est_color,
+  #              nudge_x=2,
+  #              size=1.5) +  
+  ###
+  ## MODEL LIFE TABLE
+  ###
+  geom_line(aes(x=agegp10, 
                 y=post_mean_asdr,
+                color=mlt_color,
+                lty=mlt_lty,
                 group=interaction(method,sex,geo)),
-            alpha=.5,
-            data = spec_geo_df,
-            color='red',
-            lwd=1.5) +  
-  geom_text_repel(aes(x=agegp10, 
-                y=post_mean_asdr,
-                group=interaction(method,sex,geo),
-                label=geo),
-                data = spec_geo_df %>% filter(agegp10 == "[55,65)"),
-                color='red',
-                nudge_x=2,
-                size=1.5) +  
- geom_line(aes(x=agegp10, 
-                y=post_mean_asdr,
-                group=interaction(method,sex,geo)),
-            alpha=.5,
+            #alpha=.5,
             data = cd_comparison,
-            color='blue',
+            #color=mlt_color,
+            #lty = mlt_lty,
             lwd=1.5) +    
-  geom_text_repel(aes(x=agegp10, 
-                y=post_mean_asdr,
-                group=interaction(method,sex,geo),
-                label=geo),
-                data = cd_comparison %>% filter(agegp10 == "[55,65)"),
-                color='blue',
-                nudge_x=2,
-                size=1.5) +
+  #geom_text_repel(aes(x=agegp10, 
+  #              y=post_mean_asdr,
+  #              group=interaction(method,sex,geo),
+  #              label=geo),
+  #              data = cd_comparison %>% filter(agegp10 == "[55,65)"),
+  #              color='blue',
+  #              nudge_x=2,
+  #              size=1.5) +
   facet_grid(sex ~ method) +
+  scale_color_identity(guide = 'legend',
+                       name = "",
+                       breaks = c(mlt_color, est_color),
+                       labels = c("Model Life Table", "Estimate"))  +
+  scale_linetype_identity(guide = 'legend',
+                          name = "",
+                          breaks = c(mlt_lty, est_lty),
+                          labels = c("Model Life Table", "Estimate"))  +
   #scale_y_log10() +
   ylab("Age-specific death rate") +
   xlab("") +
-  theme(strip.background=element_rect(fill=NA))
+  theme(strip.background=element_rect(fill=NA),
+        legend.position='bottom')
 
 asdr_plaus_plot_log <- asdr_plaus_plot + scale_y_log10() + ylab("Log(Age-specific death rate)") +
 
@@ -1565,6 +1597,98 @@ asdr_plaus_plot
 
 }
 ```
+
+NEW VERSION OF THE EXAMPLE PLOT
+
+```{r spec-geo-valid-plot}
+# TODO
+if(params$geo_name == 'city') {
+  
+  #gs_lty <- 'dotted'
+  gs_lty <- 'solid'
+  est_lty <- 'dotdash' 
+  #est_lty <- 'solid' 
+  mlt_lty <- 'longdash' 
+  
+  gs_color <- 'red'
+  est_color <- 'black'
+  mlt_color <- 'blue'
+  
+  gs_alpha <- 1
+  est_alpha <- 0.5
+  mlt_alpha <- 0.5
+  
+  
+  spec_geo <- 'RJ'
+  
+  spec_geo_df <- est_asdrs %>% filter(geo == spec_geo)
+  
+  asdr_rj_example <- 
+    est_asdrs %>%
+    left_join(gs_asdrs) %>% 
+    filter(geo == spec_geo) %>%
+    ggplot(.) +    
+    theme_bw(base_size=12) +
+    ##########
+    ## vital registration/gold standard
+    ##########
+    geom_line(aes(x=agegp10, 
+                  y=asdr,
+                  group=interaction(method,sex,geo),
+                  linetype=gs_lty,
+                  color=gs_color),
+              alpha=gs_alpha,
+              lwd=1.5) +  
+    #geom_point(aes(x=agegp10, 
+    #              y=asdr,
+    #              color=gs_color,
+    #              group=interaction(method,sex,geo))) +  
+    ##########
+    ## survey-based estimates
+    ##########
+    geom_line(aes(x=agegp10, 
+                  y=post_mean_asdr,
+                  color=est_color,
+                  linetype=est_lty,
+                  group=interaction(method,sex,geo)),
+            alpha=est_alpha,
+            data = spec_geo_df,
+            lwd=1) +  
+    geom_pointrange(aes(x=agegp10, 
+                        y=post_mean_asdr,
+                        color=est_color,
+                        ymin=post_ci_low_asdr,
+                        ymax=post_ci_high_asdr),
+                    key_glyph = draw_key_blank,
+            alpha=est_alpha,
+            data = spec_geo_df) +  
+    facet_grid(sex ~ method) +
+    scale_y_log10() +
+    ylab("Log(Age-specific death rate)") +
+    xlab("") +
+    theme(strip.background=element_rect(fill=NA)) +
+    # see
+    # https://aosmith.rbind.io/2020/07/09/ggplot2-override-aes/
+    scale_color_identity(guide = 'legend',
+                         name = "",
+                         breaks = c(gs_color, est_color),
+                         labels = c("Vital Registration", "Estimate")) +
+    scale_linetype_identity(guide = 'legend',
+                         name = "",
+                         breaks = c(gs_lty, est_lty),
+                         labels = c("Vital Registration", "Estimate"))  +    
+    theme(legend.position = 'bottom')
+  
+  ggsave(filename=file.path(comp_out_dir, "asdr_vr_rj_example.pdf"),
+       plot=asdr_rj_example,
+       height=6,
+       width=6)
+   knitr::plot_crop(file.path(comp_out_dir, "asdr_vr_rj_example.pdf"))
+ 
+   asdr_rj_example 
+}
+```
+
 
 
 ### Minimum detectable effects
@@ -1921,7 +2045,7 @@ bvd_as_rmse_plot_alone <- bvd_check_long %>%
   summarize(Network = mean(Network),
             Sibling=mean(Sibling)) %>%
   ggplot(.) +
-  geom_abline(intercept=0, slope=1, color='grey', lty=2) +
+  geom_abline(intercept=0, slope=1, color='grey', lty=2, lwd=1.5) +
   geom_point(aes(x=sqrt(Network), y=sqrt(Sibling), color=agegp10, shape=sex), size = alone_size) +
   guides(color=guide_legend(override.aes=list(alpha=1),
                             title='Age'),
@@ -1933,7 +2057,8 @@ bvd_as_rmse_plot_alone <- bvd_check_long %>%
   #coord_equal() +
   tune::coord_obs_pred() +
   age_scale_color +
-  theme_minimal() + 
+  #theme_minimal() + 
+  theme_bw() + 
   theme(legend.position='right',
         text=element_text(size=alone_text_size))
 
@@ -1948,7 +2073,7 @@ ggsave(file.path(comp_out_dir, "bvd_as_rmse_alone.pdf"),
         #       legend.box='vertical',
         #       legend.margin=margin()),
 
-bvd_as_rmse_plot
+bvd_as_rmse_plot_alone
 ```
 
 Same as above, but as a bar plot
@@ -1983,7 +2108,6 @@ bvd_as_rmse_bar_plot <- bvd_check_long %>%
   xlab("RMSE") + ylab("") +
   facet_wrap(~ sex) +
   theme_minimal() 
-
 
 ggsave(file.path(comp_out_dir, "bvd_as_rmse_bar.pdf"),
        bvd_as_rmse_bar_plot,
@@ -2039,7 +2163,7 @@ bvd_as_se_plot_alone <- bvd_check_long %>%
   summarize(Network = mean(Network),
             Sibling=mean(Sibling)) %>%
   ggplot(.) +
-  geom_abline(intercept=0, slope=1, color='grey', lty=2) +
+  geom_abline(intercept=0, slope=1, color='grey', lty=2, lwd=1.5) +
   geom_point(aes(x=sqrt(Network), y=sqrt(Sibling), color=agegp10, shape=sex), size=alone_size) +
   guides(color=guide_legend(override.aes=list(alpha=1),
                             title='Age'),
@@ -2052,7 +2176,8 @@ bvd_as_se_plot_alone <- bvd_check_long %>%
   ylab("Square root of\nSibling average variance") +
   #coord_equal() +
   tune::coord_obs_pred() +
-  theme_minimal() +
+  #theme_minimal() +
+  theme_bw() +
   age_scale_color +
   expand_limits(x = 0, y = 0) +
   theme(legend.position='right',
@@ -2064,7 +2189,7 @@ ggsave(file.path(comp_out_dir, "bvd_as_se_alone.pdf"),
        bvd_as_se_plot_alone,
        width=alone_fig_size, height=alone_fig_size)
 
-bvd_as_se_plot
+bvd_as_se_plot_alone
 ```
 
 Bias
@@ -2121,7 +2246,8 @@ bvd_as_bias_plot_alone <- bvd_check_long %>%
   lemon::scale_y_symmetric(mid=0) +
   lemon::scale_x_symmetric(mid=0) +
   age_scale_color +
-  theme_minimal() +
+  #theme_minimal() +
+  theme_bw() +
   theme(legend.position='right',
         text=element_text(size=alone_text_size))
 
@@ -2132,7 +2258,56 @@ ggsave(file.path(comp_out_dir, "bvd_as_bias_alone.pdf"),
        bvd_as_bias_plot_alone,
        width=alone_fig_size, height=alone_fig_size)
 
-bvd_as_bias_plot
+bvd_as_bias_plot_alone
+```
+
+
+Same as above, but as a bar plot
+
+```{r}
+
+bvd_as_bias_bar_plot <- bvd_check_long %>%
+  filter(qty == 'bias') %>%
+  group_by(sex, agegp10) %>%
+  summarize(Network = mean(Network),
+            Sibling=mean(Sibling)) %>%
+  pivot_longer(cols=c('Network', 'Sibling'), names_to='estimator', values_to='bias') %>%
+  ggplot(.) +
+  #### vertical version
+  #geom_bar(aes(y=agegp10, x=bias, fill=estimator), stat='identity', position='dodge') +
+  #lemon::scale_x_symmetric(mid=0) +
+  #geom_vline(xintercept=0) +
+  #xlab("Bias") + ylab("") +
+  #facet_wrap(~ sex) +
+  #### horizontal version
+  geom_bar(aes(x=agegp10, y=bias, fill=estimator, pattern=estimator), stat='identity', position='dodge') +
+  lemon::scale_y_symmetric(mid=0) +
+  geom_hline(yintercept=0) +
+  ylab("Average Bias\n(Estimate - Gold Standard)") + xlab("") +
+  #annotate("text",
+  #         #label = "Estimate is too high -->",
+  #         label = "Estimate is\ntoo high -->",
+  #         x=5.5, y=0.001,
+  #         size=3,
+  #         hjust=0,
+  #         col='red',
+  #         angle = 90) +
+  facet_grid(sex ~ .) +
+  scale_fill_manual(breaks=c('Network', 'Sibling'),
+                    values = c(color_net, color_sib)) +
+  guides(fill = guide_legend(title="")) +
+  theme_bw() +
+  theme(strip.background =element_rect(fill="white"))
+  #theme_minimal() 
+
+
+saveRDS(bvd_as_bias_bar_plot, file.path(comp_out_dir, "bvd_as_bias_bar_plot.rds"))
+ggsave(file.path(comp_out_dir, "bvd_as_bias_bar_alone.pdf"),
+       bvd_as_bias_bar_plot,
+       #width=6, height=8)
+       width=8, height=5)
+
+bvd_as_bias_bar_plot
 ```
 
 Count number of age/sex groups for which magnitude of net bias is bigger
