@@ -1504,16 +1504,19 @@ point.stroke <- .2
 spec_geo <- "RJ"
 spec_geo_df <- est_asdrs %>% filter(geo == spec_geo)
 
-est_lty <- 'dotted'
+est_lty <- 'solid'
 mlt_lty <- 'solid' 
 #est_lty <- 'solid'
 #mlt_lty <- 'twodash' 
 
 est_color <- 'black'
-mlt_color <- 'blue'
+mlt_color <- 'black'
 
-est_alpha <- 0.5
-mlt_alpha <- 0.5 
+est_alpha <- 0.3
+mlt_alpha <- 0.8
+
+est_shape <- 1 
+mlt_shape <- 4 
 
 asdr_plaus_plot <- 
   est_asdrs %>%
@@ -1524,9 +1527,20 @@ asdr_plaus_plot <-
   ###
   geom_line(aes(x=agegp10, 
                 y=post_mean_asdr,
-                color=mlt_color,
-                lty=mlt_lty,
+                #color=mlt_color,
+                shape=mlt_shape,
+                #lty=mlt_lty,
                 group=interaction(method,sex,geo)),
+            #alpha=.5,
+            data = cd_comparison,
+            #color=mlt_color,
+            #lty = mlt_lty,
+            lwd=1.5) +    
+  geom_point(aes(x=agegp10, 
+                y=post_mean_asdr,
+                #color=mlt_color,
+                shape=mlt_shape),
+                #lty=mlt_lty
             #alpha=.5,
             data = cd_comparison,
             #color=mlt_color,
@@ -1545,9 +1559,16 @@ asdr_plaus_plot <-
   ###
   geom_line(aes(x=agegp10, 
                 y=post_mean_asdr,
-                color=est_color,
-                linetype=est_lty,
+                #color=est_color,
+                #linetype=est_lty,
+                #shape=est_shape,
                 group=interaction(method,sex,geo)),
+            alpha=est_alpha) +  
+  geom_point(aes(x=agegp10, 
+                 y=post_mean_asdr,
+                 #color=est_color,
+                 #linetype=est_lty,
+                 shape=est_shape),
             alpha=est_alpha) +  
   #geom_line(aes(x=agegp10, 
   #              y=post_mean_asdr,
@@ -1566,14 +1587,18 @@ asdr_plaus_plot <-
   #              nudge_x=2,
   #              size=1.5) +  
   facet_grid(sex ~ method) +
-  scale_color_identity(guide = 'legend',
+  #scale_color_identity(guide = 'legend',
+  #                     name = "",
+  #                     breaks = c(mlt_color, est_color),
+  #                     labels = c("Model Life Table", "Estimate"))  +
+  scale_shape_identity(guide = 'legend',
                        name = "",
-                       breaks = c(mlt_color, est_color),
+                       breaks = c(mlt_shape, est_shape),
                        labels = c("Model Life Table", "Estimate"))  +
-  scale_linetype_identity(guide = 'legend',
-                          name = "",
-                          breaks = c(mlt_lty, est_lty),
-                          labels = c("Model Life Table", "Estimate"))  +
+  #scale_linetype_identity(guide = 'legend',
+  #                        name = "",
+  #                        breaks = c(mlt_lty, est_lty),
+  #                        labels = c("Model Life Table", "Estimate"))  +
   #scale_y_log10() +
   ylab("Age-specific death rate") +
   xlab("") +
@@ -1621,7 +1646,7 @@ if(params$geo_name == 'city') {
   est_alpha <- 0.8
   mlt_alpha <- 0.5
   
-  est_shape <- 16
+  est_shape <- 4 
   gs_shape <- 1
   
   spec_geo <- 'RJ'
@@ -1641,8 +1666,8 @@ if(params$geo_name == 'city') {
                   y=asdr,
                   #group=interaction(method,sex,geo),
                   #linetype=gs_lty,
-                  shape=gs_shape,
-                  color=gs_color),
+                  shape=gs_shape),
+                  #color=gs_color),
               alpha=gs_alpha,
               lwd=3) +  
     #geom_line(aes(x=agegp10, 
@@ -1661,21 +1686,30 @@ if(params$geo_name == 'city') {
     ##########
     geom_line(aes(x=agegp10, 
                   y=post_mean_asdr,
-                  color=est_color,
-                  linetype=est_lty,
+                  #color=est_color,
+                  #linetype=est_lty,
                   group=interaction(method,sex,geo)),
             alpha=est_alpha,
             data = spec_geo_df,
             lwd=1) +  
     geom_linerange(aes(x=agegp10, 
                         #y=post_mean_asdr,
-                        color=est_color,
-                        lty = est_lty,
+                        #color=est_color,
+                        #lty = est_lty,
                         ymin=post_ci_low_asdr,
                         ymax=post_ci_high_asdr),
                     key_glyph = draw_key_blank,
             alpha=est_alpha,
             data = spec_geo_df) +  
+    geom_point(aes(x=agegp10, 
+                  y=post_mean_asdr,
+                  shape=est_shape),
+                  #color=est_color,
+                  #linetype=est_lty,
+                  #group=interaction(method,sex,geo)),
+            alpha=est_alpha,
+            data = spec_geo_df,
+            lwd=1) +  
     facet_grid(sex ~ method) +
     scale_y_log10() +
     ylab("Log(Age-specific death rate)") +
@@ -1687,14 +1721,14 @@ if(params$geo_name == 'city') {
                          name = "",
                          breaks = c(gs_shape),
                          labels = c("Vital Registration")) +
-    scale_color_identity(guide = 'legend',
-                         name = "",
-                         breaks = c(gs_color, est_color),
-                         labels = c("Vital Registration", "Estimate")) +
-    scale_linetype_identity(guide = 'legend',
-                         name = "",
-                         breaks = c(gs_lty, est_lty),
-                         labels = c("Vital Registration", "Estimate"))  +    
+    #scale_color_identity(guide = 'legend',
+    #                     name = "",
+    #                     breaks = c(gs_color, est_color),
+    #                     labels = c("Vital Registration", "Estimate")) +
+    #scale_linetype_identity(guide = 'legend',
+    #                     name = "",
+    #                     breaks = c(gs_lty, est_lty),
+    #                     labels = c("Vital Registration", "Estimate"))  +    
     theme(legend.position = 'bottom')
   
   ggsave(filename=file.path(comp_out_dir, "asdr_vr_rj_example.pdf"),
