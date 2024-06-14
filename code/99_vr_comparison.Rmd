@@ -1504,19 +1504,42 @@ point.stroke <- .2
 spec_geo <- "RJ"
 spec_geo_df <- est_asdrs %>% filter(geo == spec_geo)
 
-est_lty <- 'solid'
-mlt_lty <- 'twodash' 
+est_lty <- 'dotted'
+mlt_lty <- 'solid' 
+#est_lty <- 'solid'
+#mlt_lty <- 'twodash' 
 
 est_color <- 'black'
 mlt_color <- 'blue'
 
-est_alpha <- 0.3
-mlt_alpha <- 0.6 
+est_alpha <- 0.5
+mlt_alpha <- 0.5 
 
 asdr_plaus_plot <- 
   est_asdrs %>%
   ggplot(.) +
   theme_bw(base_size=5) +
+  ###
+  ## MODEL LIFE TABLE
+  ###
+  geom_line(aes(x=agegp10, 
+                y=post_mean_asdr,
+                color=mlt_color,
+                lty=mlt_lty,
+                group=interaction(method,sex,geo)),
+            #alpha=.5,
+            data = cd_comparison,
+            #color=mlt_color,
+            #lty = mlt_lty,
+            lwd=1.5) +    
+  #geom_text_repel(aes(x=agegp10, 
+  #              y=post_mean_asdr,
+  #              group=interaction(method,sex,geo),
+  #              label=geo),
+  #              data = cd_comparison %>% filter(agegp10 == "[55,65)"),
+  #              color='blue',
+  #              nudge_x=2,
+  #              size=1.5) +
   ###
   ## ESTIMATES
   ###
@@ -1542,27 +1565,6 @@ asdr_plaus_plot <-
   #              color=est_color,
   #              nudge_x=2,
   #              size=1.5) +  
-  ###
-  ## MODEL LIFE TABLE
-  ###
-  geom_line(aes(x=agegp10, 
-                y=post_mean_asdr,
-                color=mlt_color,
-                lty=mlt_lty,
-                group=interaction(method,sex,geo)),
-            #alpha=.5,
-            data = cd_comparison,
-            #color=mlt_color,
-            #lty = mlt_lty,
-            lwd=1.5) +    
-  #geom_text_repel(aes(x=agegp10, 
-  #              y=post_mean_asdr,
-  #              group=interaction(method,sex,geo),
-  #              label=geo),
-  #              data = cd_comparison %>% filter(agegp10 == "[55,65)"),
-  #              color='blue',
-  #              nudge_x=2,
-  #              size=1.5) +
   facet_grid(sex ~ method) +
   scale_color_identity(guide = 'legend',
                        name = "",
@@ -1606,7 +1608,8 @@ if(params$geo_name == 'city') {
   
   #gs_lty <- 'dotted'
   gs_lty <- 'solid'
-  est_lty <- 'dotdash' 
+  #est_lty <- 'dotdash' 
+  est_lty <- 'dotted' 
   #est_lty <- 'solid' 
   mlt_lty <- 'longdash' 
   
@@ -1615,9 +1618,11 @@ if(params$geo_name == 'city') {
   mlt_color <- 'blue'
   
   gs_alpha <- 1
-  est_alpha <- 0.5
+  est_alpha <- 0.8
   mlt_alpha <- 0.5
   
+  est_shape <- 16
+  gs_shape <- 1
   
   spec_geo <- 'RJ'
   
@@ -1632,13 +1637,21 @@ if(params$geo_name == 'city') {
     ##########
     ## vital registration/gold standard
     ##########
-    geom_line(aes(x=agegp10, 
+    geom_point(aes(x=agegp10, 
                   y=asdr,
-                  group=interaction(method,sex,geo),
-                  linetype=gs_lty,
+                  #group=interaction(method,sex,geo),
+                  #linetype=gs_lty,
+                  shape=gs_shape,
                   color=gs_color),
               alpha=gs_alpha,
-              lwd=1.5) +  
+              lwd=3) +  
+    #geom_line(aes(x=agegp10, 
+    #              y=asdr,
+    #              group=interaction(method,sex,geo),
+    #              linetype=gs_lty,
+    #              color=gs_color),
+    #          alpha=gs_alpha,
+    #          lwd=1.5) +  
     #geom_point(aes(x=agegp10, 
     #              y=asdr,
     #              color=gs_color,
@@ -1654,9 +1667,10 @@ if(params$geo_name == 'city') {
             alpha=est_alpha,
             data = spec_geo_df,
             lwd=1) +  
-    geom_pointrange(aes(x=agegp10, 
-                        y=post_mean_asdr,
+    geom_linerange(aes(x=agegp10, 
+                        #y=post_mean_asdr,
                         color=est_color,
+                        lty = est_lty,
                         ymin=post_ci_low_asdr,
                         ymax=post_ci_high_asdr),
                     key_glyph = draw_key_blank,
@@ -1669,6 +1683,10 @@ if(params$geo_name == 'city') {
     theme(strip.background=element_rect(fill=NA)) +
     # see
     # https://aosmith.rbind.io/2020/07/09/ggplot2-override-aes/
+    scale_shape_identity(guide = 'legend',
+                         name = "",
+                         breaks = c(gs_shape),
+                         labels = c("Vital Registration")) +
     scale_color_identity(guide = 'legend',
                          name = "",
                          breaks = c(gs_color, est_color),
