@@ -1669,7 +1669,7 @@ if(params$geo_name == 'city') {
                   shape=gs_shape),
                   #color=gs_color),
               alpha=gs_alpha,
-              lwd=3) +  
+              lwd=2) +  
     #geom_line(aes(x=agegp10, 
     #              y=asdr,
     #              group=interaction(method,sex,geo),
@@ -1689,7 +1689,9 @@ if(params$geo_name == 'city') {
                   #color=est_color,
                   #linetype=est_lty,
                   group=interaction(method,sex,geo)),
-            alpha=est_alpha,
+            #alpha=est_alpha,
+            #alpha=0.7,
+            color='grey',
             data = spec_geo_df,
             lwd=1) +  
     geom_linerange(aes(x=agegp10, 
@@ -1704,12 +1706,12 @@ if(params$geo_name == 'city') {
     geom_point(aes(x=agegp10, 
                   y=post_mean_asdr,
                   shape=est_shape),
+               lwd=2.5,
                   #color=est_color,
                   #linetype=est_lty,
                   #group=interaction(method,sex,geo)),
             alpha=est_alpha,
-            data = spec_geo_df,
-            lwd=1) +  
+            data = spec_geo_df) +  
     facet_grid(sex ~ method) +
     scale_y_log10() +
     ylab("Log(Age-specific death rate)") +
@@ -1719,8 +1721,8 @@ if(params$geo_name == 'city') {
     # https://aosmith.rbind.io/2020/07/09/ggplot2-override-aes/
     scale_shape_identity(guide = 'legend',
                          name = "",
-                         breaks = c(gs_shape),
-                         labels = c("Vital Registration")) +
+                         breaks = c(gs_shape, est_shape),
+                         labels = c("Vital Registration", "Estimate")) +
     #scale_color_identity(guide = 'legend',
     #                     name = "",
     #                     breaks = c(gs_color, est_color),
