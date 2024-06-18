@@ -1515,7 +1515,8 @@ mlt_color <- 'black'
 est_alpha <- 0.3
 mlt_alpha <- 0.8
 
-est_shape <- 1 
+#est_shape <- 1 
+est_shape <- 16
 mlt_shape <- 4 
 
 asdr_plaus_plot <- 
@@ -1535,7 +1536,7 @@ asdr_plaus_plot <-
             data = cd_comparison,
             #color=mlt_color,
             #lty = mlt_lty,
-            lwd=1.5) +    
+            lwd=1) +    
   geom_point(aes(x=agegp10, 
                 y=post_mean_asdr,
                 #color=mlt_color,
@@ -1545,7 +1546,7 @@ asdr_plaus_plot <-
             data = cd_comparison,
             #color=mlt_color,
             #lty = mlt_lty,
-            lwd=1.5) +    
+            lwd=3) +    
   #geom_text_repel(aes(x=agegp10, 
   #              y=post_mean_asdr,
   #              group=interaction(method,sex,geo),
@@ -1646,7 +1647,7 @@ if(params$geo_name == 'city') {
   est_alpha <- 0.8
   mlt_alpha <- 0.5
   
-  est_shape <- 4 
+  est_shape <- 16 
   gs_shape <- 1
   
   spec_geo <- 'RJ'
