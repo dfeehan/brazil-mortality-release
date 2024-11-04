@@ -21,6 +21,8 @@ data.zip
 .rstudio/
 __MACOSX/
 
+.rstudio*
+
 .wget-hsts
 
 run_all.log
