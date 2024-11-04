@@ -3,10 +3,6 @@ title: "Plots combining results"
 output: html_notebook
 ---
 
-TODO
-
-- add plot with var and bias scatterplots combined
-
 ```{r}
 library(here)
 library(rmarkdown)
