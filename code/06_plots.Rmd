@@ -54,12 +54,13 @@ design <- "
   3344
   5555
 "
-p1 <- (p1_cp + ggtitle("City, Probability")) + 
-      (p1_ca + ggtitle("City, Age-specific death rate")) + 
-      (p1_rp + ggtitle("Region, Probability")) +
-      (p1_ra + ggtitle("Region, Age-specific death rate")) +
+p1 <- (p1_cp + ggtitle("      City, Probability")) + 
+      (p1_ca + ggtitle("      City, Age-specific death rate")) + 
+      (p1_rp + ggtitle("      Region, Probability")) +
+      (p1_ra + ggtitle("      Region, Age-specific death rate")) +
   plot_layout(guides='collect', design=design) & 
   theme(text = element_text(size=7),
+        axis.title = element_text(size=6),
         legend.position='bottom',
         legend.box='vertical',
         legend.spacing.y=unit(-.3, 'cm')) &
@@ -697,6 +698,14 @@ ggsave(filename=file.path(out_dir, "err_compare_all_vrsens.png"),
 
 vrsens_err_compare
 ```
+## Who reports whom and age-related plots
+
+
+
+
+
+
+
 
 
 
