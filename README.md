@@ -31,6 +31,8 @@ To use Docker
 
 1. Open a web browser and point it to localhost:8888
 1. Log onto Rstudio with username 'rstudio' and password 'pass'
+  [NOTE: if you receive an 'Error durring transmission' message when trying to log into RStudio, try renaming the `.rstudio` folder, as suggested here: <https://forum.posit.co/t/rstudio-server-error-occurred-during-transmission/84258>]
+
 1. Open the file `brazil-mortality-release/code/00_run_all.r`
 1. Running the file should download the data and replicate everything. 
 

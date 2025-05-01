@@ -1510,14 +1510,21 @@ mlt_lty <- 'solid'
 #mlt_lty <- 'twodash' 
 
 est_color <- 'black'
-mlt_color <- 'black'
+mlt_color <- 'blue'
+#mlt_color <- 'white'
 
-est_alpha <- 0.3
-mlt_alpha <- 0.8
+#bg_color <- 'light grey'
+bg_color <- 'white'
+
+est_alpha <- 0.2
+#mlt_alpha <- 0.8
 
 #est_shape <- 1 
 est_shape <- 16
 mlt_shape <- 4 
+
+legend_override_aes <- list(alpha = c(1,est_alpha),
+                            color = c(mlt_color, est_color))
 
 asdr_plaus_plot <- 
   est_asdrs %>%
@@ -1528,13 +1535,14 @@ asdr_plaus_plot <-
   ###
   geom_line(aes(x=agegp10, 
                 y=post_mean_asdr,
-                #color=mlt_color,
-                shape=mlt_shape,
+                color=mlt_color,
+                #shape=mlt_shape,
                 #lty=mlt_lty,
                 group=interaction(method,sex,geo)),
             #alpha=.5,
             data = cd_comparison,
-            #color=mlt_color,
+            color=mlt_color,
+            show.legend = TRUE,
             #lty = mlt_lty,
             lwd=1) +    
   geom_point(aes(x=agegp10, 
@@ -1544,17 +1552,9 @@ asdr_plaus_plot <-
                 #lty=mlt_lty
             #alpha=.5,
             data = cd_comparison,
-            #color=mlt_color,
+            color=mlt_color,
             #lty = mlt_lty,
             lwd=3) +    
-  #geom_text_repel(aes(x=agegp10, 
-  #              y=post_mean_asdr,
-  #              group=interaction(method,sex,geo),
-  #              label=geo),
-  #              data = cd_comparison %>% filter(agegp10 == "[55,65)"),
-  #              color='blue',
-  #              nudge_x=2,
-  #              size=1.5) +
   ###
   ## ESTIMATES
   ###
@@ -1564,29 +1564,16 @@ asdr_plaus_plot <-
                 #linetype=est_lty,
                 #shape=est_shape,
                 group=interaction(method,sex,geo)),
+            show.legend = TRUE,
+            color=est_color,
             alpha=est_alpha) +  
   geom_point(aes(x=agegp10, 
                  y=post_mean_asdr,
                  #color=est_color,
                  #linetype=est_lty,
                  shape=est_shape),
+             color=est_color,#
             alpha=est_alpha) +  
-  #geom_line(aes(x=agegp10, 
-  #              y=post_mean_asdr,
-  #              group=interaction(method,sex,geo)),
-  #          alpha=.5,
-  #          data = spec_geo_df,
-  #          color=est_color,
-  #          lty=est_lty,
-  #          lwd=1.5) +  
-  #geom_text_repel(aes(x=agegp10, 
-  #              y=post_mean_asdr,
-  #              group=interaction(method,sex,geo),
-  #              label=geo),
-  #              data = spec_geo_df %>% filter(agegp10 == "[55,65)"),
-  #              color=est_color,
-  #              nudge_x=2,
-  #              size=1.5) +  
   facet_grid(sex ~ method) +
   #scale_color_identity(guide = 'legend',
   #                     name = "",
@@ -1596,6 +1583,11 @@ asdr_plaus_plot <-
                        name = "",
                        breaks = c(mlt_shape, est_shape),
                        labels = c("Model Life Table", "Estimate"))  +
+  #guides(line = guide_legend())
+  #scale_line_identity(guide = 'legend',
+  #                     name = "",
+  #                     breaks = c(1,1),
+  #                     labels = c("Model Life Table", "Estimate"))  +
   #scale_linetype_identity(guide = 'legend',
   #                        name = "",
   #                        breaks = c(mlt_lty, est_lty),
@@ -1603,7 +1595,22 @@ asdr_plaus_plot <-
   #scale_y_log10() +
   ylab("Age-specific death rate") +
   xlab("") +
+  #guides(line = guide_legend(override.aes=list(alpha=c(1,0)))) +
+  guides(line = guide_legend(override.aes=legend_override_aes),
+         shape = guide_legend(override.aes=legend_override_aes)) +
+  #theme(
+  #panel.background = element_rect(fill = "lightblue",
+  #                              colour = "lightblue",
+  #                              size = 0.5, linetype = "solid"),
+  #panel.grid.major = element_line(size = 0.5, linetype = 'solid',
+  #                              colour = "white"), 
+  #panel.grid.minor = element_line(size = 0.25, linetype = 'solid',
+  #                              colour = "white")
+  #)
   theme(strip.background=element_rect(fill=NA),
+        panel.background = element_rect(fill = bg_color,
+                                        colour = bg_color,
+                                        size = 0.5, linetype = "solid"),
         legend.position='bottom')
 
 asdr_plaus_plot_log <- asdr_plaus_plot + scale_y_log10() + ylab("Log(Age-specific death rate)") +
@@ -1621,7 +1628,7 @@ ggsave(filename=file.path(comp_out_dir, "asdr_plaus_log.pdf"),
 knitr::plot_crop(file.path(comp_out_dir, "asdr_plaus_log.pdf"))
 
 
-asdr_plaus_plot
+asdr_plaus_plot_log
 
 }
 ```
@@ -1668,6 +1675,7 @@ if(params$geo_name == 'city') {
                   #group=interaction(method,sex,geo),
                   #linetype=gs_lty,
                   shape=gs_shape),
+                  size=5,
                   #color=gs_color),
               alpha=gs_alpha,
               lwd=2) +  
@@ -1723,6 +1731,7 @@ if(params$geo_name == 'city') {
     scale_shape_identity(guide = 'legend',
                          name = "",
                          breaks = c(gs_shape, est_shape),
+                         #guide = guide_legend(override.aes = list(size = c(6,1))),
                          labels = c("Vital Registration", "Estimate")) +
     #scale_color_identity(guide = 'legend',
     #                     name = "",
@@ -1732,6 +1741,7 @@ if(params$geo_name == 'city') {
     #                     name = "",
     #                     breaks = c(gs_lty, est_lty),
     #                     labels = c("Vital Registration", "Estimate"))  +    
+    guides(shape=guide_legend(override.aes = list(size=c(4,2)))) +
     theme(legend.position = 'bottom')
   
   ggsave(filename=file.path(comp_out_dir, "asdr_vr_rj_example.pdf"),
