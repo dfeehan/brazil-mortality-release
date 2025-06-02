@@ -268,6 +268,7 @@ err_diffs_summ <- err_diffs_boot %>%
 err_diffs_summ
 ```
 
+
 ```{r}
 recode_loss <- c('mare'='MARE', 'mse'='MSE', 'rmse'='RMSE')
 recode_qty <- c('asdr'='Age-specifc\ndeath rates', 'prob'='Probability of\ndying at\nadult ages')
@@ -652,6 +653,17 @@ barplot_asdr_rmse_df <-
                          network_err='Network', 
                          sibling_err='Sibling'))
 
+barplot_q_rmse_df <- 
+    for_pr_plot %>%
+    filter(loss == 'RMSE', str_detect(geo_name, 'City-level'), qty==recode_qty['prob']) %>%
+  select(comparison_name, geo_name, qty, loss, network_err, sibling_err) %>%
+  pivot_longer(cols=c('network_err', 'sibling_err'),
+               names_to='method',
+               values_to='RMSE') %>%
+  mutate(method = recode(method,
+                         network_err='Network', 
+                         sibling_err='Sibling'))
+
 barplot_asdr_rmse <- barplot_asdr_rmse_df %>%
   ggplot(.) +
   geom_bar(aes(x=method, y=RMSE), stat='identity') +
@@ -673,10 +685,37 @@ ggsave(filename=file.path(out_dir, "rmse_barplot.png"),
 net_rmse_tot <- barplot_asdr_rmse_df %>% filter(method=='Network') %>% pull(RMSE)
 sib_rmse_tot <- barplot_asdr_rmse_df %>% filter(method=='Sibling') %>% pull(RMSE)
 
+net_q_tot <- barplot_q_rmse_df %>% filter(method=='Network') %>% pull(RMSE)
+sib_q_tot <- barplot_q_rmse_df %>% filter(method=='Sibling') %>% pull(RMSE)
+
 glue::glue("
-           Sibling RMSE is {round(100 * (sib_rmse_tot - net_rmse_tot)/net_rmse_tot,3)} percent higher than network RMSE
-           Network RMSE is {round(100*  (net_rmse_tot - sib_rmse_tot)/sib_rmse_tot,3)} percent lower than sibling RMSE
+           Sibling ASDR RMSE is {round(100 * (sib_rmse_tot - net_rmse_tot)/net_rmse_tot,3)} percent higher than network RMSE
+           Network ASDR RMSE is {round(100*  (net_rmse_tot - sib_rmse_tot)/sib_rmse_tot,3)} percent lower than sibling RMSE
+           
+           Sibling 47q18 RMSE is {round(100 * (sib_q_tot - net_q_tot)/net_q_tot,3)} percent higher than network RMSE
+           Network 47q18 RMSE is {round(100*  (net_q_tot - sib_q_tot)/sib_q_tot,3)} percent lower than sibling RMSE
+           
            ")
+```
+
+
+20250501 - CI for the 15% figure
+
+QUICK SUMMARY: I think if you look at the plot, that's basically what we see here
+The ASDR RMSE shows that network estimates are about 15% more accurate, but the CI includes 0
+The 47q18 RMSE - which is more aggregated - shows that network estimates are about 
+
+
+```{r}
+for_pr_plot %>%
+  filter(loss == 'RMSE',
+         geo_name == 'City-level\nestimates',
+         qty == 'Age-specifc\ndeath rates') %>% glimpse()
+
+```
+
+```{r}
+
 ```
 
 

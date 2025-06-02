@@ -2015,6 +2015,165 @@ if(geo_name %in% c('national', 'region')) {
 
 ## Bias-Variance Decomposition
 
+
+Get uncertainty around BVD ests
+
+```{r}
+tmp <- comp_asdrs_boot %>%
+  ## for each method,
+  ## aggregating across the cities w/in each age/sex group + bootstrap rep
+  group_by(sex, agegp10, boot_idx, method) %>%
+  summarize(bias = mean(delta),
+            var = var(delta),
+            mse = mean(delta2)) %>%
+  ungroup() %>%
+  group_by(method, sex, agegp10) %>%
+  summarize(bias_mean = mean(bias),
+            bias_ci_low = quantile(bias, .025),
+            bias_ci_high = quantile(bias, .975),
+            var_mean = mean(var),
+            var_ci_low = quantile(var, .025),
+            var_ci_high = quantile(var, .975),
+            mse_mean = mean(mse),
+            mse_ci_low = quantile(mse, .025),
+            mse_ci_high = quantile(mse, .975))
+```
+
+```{r}
+tmp <- comp_asdrs_boot %>%
+  ## for each method,
+  ## aggregating across the cities w/in each age/sex group + bootstrap rep
+  group_by(sex, agegp10, boot_idx, method) %>%
+  summarize(bias = mean(delta),
+            var = var(delta),
+            mse = mean(delta2),
+            rmse = sqrt(mean(delta2))) %>%
+  ungroup() %>%
+  pivot_wider(names_from = 'method',
+              values_from = c('bias', 'var', 'mse', 'rmse'))
+
+
+#enter <- colMeans(tmp[,c('var_Network', 'var_Sibling')])
+#cov_matrix <- cov(tmp[,c('var_Network', 'var_Sibling')])
+
+#ggplot(tmp) +
+#  geom_point(aes(x=var_Network,
+#                 y=var_Sibling)) +
+#  geom_ellipse(aes(x0 = center['var_Network'],
+#                   y0 = center['var_Sibling'],
+#                   a = sqrt(cov_matrix[1,1]) * 1.96,  # semi-major axis
+#                   b = sqrt(cov_matrix[2,2]) * 1.96,  # semi-minor axis
+#                   angle = atan2(2 * cov_matrix[1,2], cov_matrix[1,1] - cov_matrix[2,2]) / 2),
+#    color = "blue",
+#    fill = NA,
+#    linewidth = 1
+#  )  
+
+```
+
+```{r}
+# MSE
+tmp_agg <-
+  tmp %>%
+  group_by(agegp10, sex) %>%
+  summarize(mean_rmse_Network = mean(rmse_Network),
+            mean_rmse_Sibling = mean(rmse_Sibling),
+            ci_low_rmse_Network = quantile(rmse_Network, .025),
+            ci_high_rmse_Network = quantile(rmse_Network, .975),
+            ci_low_rmse_Sibling = quantile(rmse_Sibling, .025),
+            ci_high_rmse_Sibling = quantile(rmse_Sibling, .975))
+
+## TODO PLOT OVERALL DIFF W/ CI
+
+tmp %>%
+  ggplot(.) +
+  geom_abline(intercept=0,slope=1) +
+  geom_point(aes(x=rmse_Network,
+                 y=rmse_Sibling,
+                 color=agegp10),
+             alpha=.02) +
+  geom_point(data=tmp_agg,
+             aes(x=mean_rmse_Network,
+                 y=mean_rmse_Sibling,
+                 color=agegp10)) +
+  #stat_ellipse(aes(x=rmse_Network,
+  geom_density_2d(aes(x=rmse_Network,
+                      y=rmse_Sibling,
+                      group=agegp10,
+                      color=agegp10),
+                  contour=TRUE) + 
+                      #group=sex,
+                      #color=sex)) +
+  theme_minimal() +
+  xlab("RMSE Network") +
+  ylab("RMSE Sibling") +
+  xlim(0,12) + ylim(0,12) +
+  facet_wrap(~sex) +
+  coord_obs_pred() 
+```
+
+```{r}
+# VAR
+tmp_agg <-
+  tmp %>%
+  group_by(agegp10, sex) %>%
+  summarize(mean_var_Network = mean(var_Network),
+            mean_var_Sibling = mean(var_Sibling),
+            mean_sqrt_var_sibling = mean(sqrt(var_Sibling)),
+            mean_sqrt_var_network = mean(sqrt(var_Network)),
+            ci_low_var_Network = quantile(var_Network, .025),
+            ci_high_var_Network = quantile(var_Network, .975),
+            ci_low_var_Sibling = quantile(var_Sibling, .025),
+            ci_high_var_Sibling = quantile(var_Sibling, .975))
+
+tmp %>%
+  ggplot(.) +
+  geom_abline(intercept=0,slope=1) +
+  geom_point(aes(x=sqrt(var_Network),
+                 y=sqrt(var_Sibling),
+                 color=agegp10),
+             alpha=.05) +
+  geom_point(data=tmp_agg,
+             #aes(x=sqrt(mean_var_Network),
+             #    y=sqrt(mean_var_Sibling),
+             aes(x=mean_sqrt_var_network,
+                 y=mean_sqrt_var_sibling,
+                 color=agegp10)) +
+  #stat_ellipse(aes(x=rmse_Network,
+  geom_density_2d(aes(x=rmse_Network,
+                      y=rmse_Sibling,
+                      group=interaction(sex,agegp10),
+                      color=agegp10),
+               level=0.95) + 
+  theme_minimal() +
+  xlab("Root Variance Network") +
+  ylab("Root Variance Sibling") +
+  xlim(0,50) + ylim(0,50) +
+  facet_wrap(~sex) +
+  coord_obs_pred(xlim=c(0,10), ylim=c(0,10)) 
+```
+
+```{r}
+tmp %>%
+  ggplot(.) +
+  geom_pointrange(aes(x=agegp10,
+                      #y=var_mean,
+                      #ymin=var_ci_low,
+                      #ymax=var_ci_high,
+                      #y=bias_mean,
+                      #ymin=bias_ci_low,
+                      #ymax=bias_ci_high,
+                      y=mse_mean,
+                      ymin=mse_ci_low,
+                      ymax=mse_ci_high,
+                      color=method,
+                      shape=sex),
+                  position=position_dodge(width=.5)) +
+  theme_minimal()
+```
+
+
+
 Check bias-variance decomposition w/in city/age/sex group:
 MSE = bias^2 + var
 
@@ -2028,9 +2187,14 @@ bvd_check <- comp_asdrs_boot %>%
   summarize(estimand = mean(post_mean_asdr),
             gs = mean(gs_asdr),
             mse = mean((post_mean_asdr - gs_asdr)^2),
+            mse_ci_low = quantile((post_mean_asdr - gs_asdr)^2, .025),
+            mse_ci_high = quantile((post_mean_asdr - gs_asdr)^2, .975),
             # NB: the mse var in comp_asdrs_boot is based on delta = (est - truth)*1000
             #mse = mean(delta2/(1000^2)),
             bias = mean(post_mean_asdr - gs_asdr),
+            bias_ci_low = quantile((post_mean_asdr - gs_asdr), .025),
+            bias_ci_high = quantile((post_mean_asdr - gs_asdr), .025),
+            ## TODO - ADD CI HERE...
             var = var(post_mean_asdr)) %>%
             #var = fp.var(post_mean_asdr)) %>%
             #var = mean((post_mean_asdr - estimand)^2)) %>%
