@@ -26,8 +26,7 @@ To use Docker
 1. Run the docker image
    `docker run -d --rm -p 8888:8787 -e PASSWORD=pass --name brazil brazil-replication`
    OR, to mount a local drive, you will need something like:  
-
-   `docker run -d --rm -p 8888:8787 -e PASSWORD=pass --name brazil -v $(pwd):/home/rstudio/  brazil-replication`  
+   `docker run -d --rm -p 8888:8787 -e PASSWORD=pass --name brazil -v $(pwd):/home/rstudio/ brazil-replication`  
 
 1. Open a web browser and point it to localhost:8888
 1. Log onto Rstudio with username 'rstudio' and password 'pass'

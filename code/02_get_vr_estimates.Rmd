@@ -745,13 +745,13 @@ national.47q18
 # Save reference values
 
 ```{r save-ref-vals}
-write_csv(city.asdr %>% ungroup() %>% select(state_abbrev, sex, agegp10, asdr),
+write_csv(city.asdr %>% ungroup() %>% select(state_abbrev, sex, agegp10, asdr, num_deaths, popn),
           file.path(data_out_dir, "vr_asdrs.csv"))
 
-write_csv(region.asdr %>% ungroup() %>% select(region, sex, agegp10, asdr),
+write_csv(region.asdr %>% ungroup() %>% select(region, sex, agegp10, asdr, num_deaths=tot_deaths, popn=tot_popn),
           file.path(data_out_dir, "vr_region_asdrs.csv"))
 
-write_csv(national.asdr %>% ungroup() %>% select(sex, agegp10, asdr),
+write_csv(national.asdr %>% ungroup() %>% select(sex, agegp10, asdr, num_deaths=tot_deaths, popn=tot_popn),
           file.path(data_out_dir, "vr_national_asdrs.csv"))
 
 write_csv(city.47q18 %>% ungroup() %>% select(state_abbrev, sex, q.47.18),
@@ -913,13 +913,13 @@ chk_national_47q18 %>%
 # Save adjusted reference values
 
 ```{r save-ref-vals-adj}
-write_csv(city.asdr.adj %>% ungroup() %>% select(state_abbrev, sex, agegp10, asdr),
+write_csv(city.asdr.adj %>% ungroup() %>% select(state_abbrev, sex, agegp10, asdr, num_deaths, popn),
           file.path(data_out_dir, "vr_asdrs_adj.csv"))
 
-write_csv(region.asdr.adj %>% ungroup() %>% select(region, sex, agegp10, asdr),
+write_csv(region.asdr.adj %>% ungroup() %>% select(region, sex, agegp10, asdr, num_deaths=tot_deaths, popn=tot_popn),
           file.path(data_out_dir, "vr_region_asdrs_adj.csv"))
 
-write_csv(national.asdr.adj %>% ungroup() %>% select(sex, agegp10, asdr),
+write_csv(national.asdr.adj %>% ungroup() %>% select(sex, agegp10, asdr, num_deaths=tot_deaths, popn=tot_popn),
           file.path(data_out_dir, "vr_national_asdrs_adj.csv"))
 
 write_csv(city.47q18.adj %>% ungroup() %>% select(state_abbrev, sex, q.47.18),

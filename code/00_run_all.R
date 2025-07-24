@@ -5,7 +5,8 @@ con <- file("run_all.log")
 sink(con, append=TRUE, split=TRUE)
 
 # temporary URL for our survey data
-survey_url <- "https://www.dropbox.com/s/sfrmpx7pgmg9445/data.zip?dl=1"
+#survey_url <- "https://www.dropbox.com/s/sfrmpx7pgmg9445/data.zip?dl=1"
+survey_url <- "https://www.dropbox.com/scl/fi/zdlxm8u9dgcpmv47uaul3/data.zip?rlkey=c0l3gxh9erpxojyxtarfn79bf&dl=0"
 
 #root.dir <- "brazil-mortality-release"
 root.dir <- "."

@@ -37,16 +37,21 @@ set.seed(10101010)
 
 ```{r}
 parallel <- TRUE
+#parallel <- FALSE
 
 num.cores <- 6 
+#num.cores <- 2
 
 if(parallel) {
   ## this is needed to avoid running out of memory errors w/ future package
   ## see
   ## https://github.com/HenrikBengtsson/future/issues/185
   #options(future.globals.maxSize = 768 * 1024^2)
-  options(future.globals.maxSize = 999 * 1024^2)
+  #options(future.globals.maxSize = 999 * 1024^2)
+  options(future.globals.maxSize = 2000 * 1024^2)
 }
+options(future.globals.maxSize = 2000 * 1024^2)
+options(expressions = 10000)
 ```
 
 # Load the data
@@ -59,7 +64,12 @@ sib.dat <- read_csv(file.path(survey_data_dir, "sibling_reports.csv"))
 ego.dat <- read_csv(file.path(survey_data_dir, "individual.csv"))
 
 # load bootstrap weights
-boot.weights <- read_csv(file.path(survey_data_dir, "bootstrap_weights_1k.csv"))
+#boot.weights <- read_csv(file.path(survey_data_dir, "bootstrap_weights_1k.csv"))
+#boot.weights <- read_csv(file.path(survey_data_dir, "bootstrap_weights_10k.csv.gz"))
+#boot.weights <- readRDS(file.path(survey_data_dir, "bootstrap_weights_10k.rds"))
+#boot.weights.fn <- "bootstrap_weights_5k.rds"
+boot.weights.fn <- "bootstrap_weights_10k.rds"
+boot.weights <- readRDS(file.path(survey_data_dir, boot.weights.fn))
 
 # load city info
 state.dat <- read_csv(file.path(data_dir, "cities.csv"))
@@ -370,7 +380,7 @@ sib_summs_res
 ```
 
 
-```{r}
+```{r, eval=FALSE}
 # rename agegroups
 sib_7yr_num_sibs <- sib.7yr.forwrw %>%
   filter(sib.occ > 0) %>%
@@ -399,7 +409,7 @@ sib_7yr_num_sibs_bycity <-
 ```
 
 
-```{r avg-sibs-bycity}
+```{r avg-sibs-bycity, eval=FALSE}
 sib_by_ego <- sib.dat %>%
   group_by(ego.id) %>%
   summarize(num_sib = n(),
@@ -418,6 +428,8 @@ This is coming from the individual estimator (which we're not interested in here
 NB: 100 bootstrap reps takes about 
 NB: 1000 bootstrap reps takes about 6 minutes
 
+NB: 5000 bootstrap reps takes about 24 minutes w/ return.boot = FALSE; (using 6 cores) now re-running w/ return.boot = TRUE
+    ... same!
 
 ```{r sibling-estimates-with-bootstrap}
 tic("Running sibling estimates for states...")
@@ -430,10 +442,28 @@ if(parallel) {
 sib.asdr <- furrr::future_imap_dfr(city.sib.dat,
                                       function(cur.sib.dat, state) {
                                         
-                                        cat(glue::glue("Starting {state}...\n\n"))
+                                        tic(glue::glue("Starting {state}...\n\n"))
                                                                        
                                         cur.bw <- city.boot.weights[[state]]
                                         
+                                       #tmp_bw <- readRDS(file.path(survey_data_dir, boot.weights.fn)) 
+                                       #
+                                       ### reload these weights to avoid memory errors in future... 
+                                       # city.tmp_bw <- setNames(map(all.states,
+                                       #                                   function(state) {
+                                       #                                     cbw <- boot.weights %>% 
+                                       #                                       filter(state_abbrev==state) %>% 
+                                       #                                       select(-state_abbrev) %>%
+                                       #                                       ## we need the id in the bootstrap data to line up with the id in the
+                                       #                                       ## sibling reports
+                                       #                                       rename(ego.id = id)
+                                       #                                     return(cbw)
+                                       #                                   }),
+                                       #                               all.states)
+                                       #                                
+                                       # cur.bw <- city.tmp_bw[[state]]
+                                        
+                                        #tic("Time for one state (RO)")
                                         cur.ests <- 
                                           sibling_estimator(sib.dat = cur.sib.dat,
                                           ego.id = 'ego.id',           # column with the respondent id
@@ -444,7 +474,10 @@ sib.asdr <- furrr::future_imap_dfr(city.sib.dat,
                                           cell.config=cc,              # cell configuration we created above
                                           weights='ego.weight',        # column with the respondents' sampling weights
                                           boot.weights=cur.bw,         # bootstrap weights
-                                          return.boot=TRUE)           # not returning full bootstrap results for now
+                                          #return.boot=FALSE)          # not returning full bootstrap results for now
+                                          return.boot=TRUE)           
+                                        
+                                        toc()
                                           
                                         cur.ests <- cur.ests$boot.asdr.agg
                                         cur.ests$state_abbrev <- state
@@ -783,6 +816,20 @@ sib.asdr.12mo <- furrr::future_imap_dfr(city.sib.dat,
                                       function(cur.sib.dat, state) {
                                         
                                         cat(glue::glue("Starting {state}...\n\n"))
+                                       boot.weights <- readRDS(file.path(survey_data_dir, boot.weights.fn)) 
+                                       
+                                       ## reload these weights to avoid memory errors in future... 
+                                        city.boot.weights <- setNames(map(all.states,
+                                                                          function(state) {
+                                                                            cbw <- boot.weights %>% 
+                                                                              filter(state_abbrev==state) %>% 
+                                                                              select(-state_abbrev) %>%
+                                                                              ## we need the id in the bootstrap data to line up with the id in the
+                                                                              ## sibling reports
+                                                                              rename(ego.id = id)
+                                                                            return(cbw)
+                                                                          }),
+                                                                      all.states)
                                                                        
                                         cur.bw <- city.boot.weights[[state]]
                                         
@@ -825,8 +872,8 @@ sib.asdr.agg.12mo <- sib.asdr.12mo %>%
   group_by(sex, agegp10, time.period, state_abbrev) %>%
   summarize(asdr.hat = mean(asdr),
             asdr.hat.sd = sd(asdr),
-            asdr.hat.ci.low = quantile(asdr, .025),
-            asdr.hat.ci.high = quantile(asdr, .975))
+            asdr.hat.ci.low = quantile(asdr, .025, na.rm=TRUE),
+            asdr.hat.ci.high = quantile(asdr, .975, na.rm=TRUE))
 ```
 
 Calculate 47q18, ie cond prob of death between 18 and 65 
@@ -846,8 +893,8 @@ sib.47q18.summ.12mo <- sib.47q18.12mo %>%
   group_by(time.period, state_abbrev, sex) %>%
   summarize(q.47.18.mean = mean(q.47.18),
             q.47.18.sd = sd(q.47.18),
-            q.47.18.ci.low = quantile(q.47.18, .025),
-            q.47.18.ci.high = quantile(q.47.18, .975))
+            q.47.18.ci.low = quantile(q.47.18, .025, na.rm=TRUE),
+            q.47.18.ci.high = quantile(q.47.18, .975, na.rm=TRUE))
 ```
 
 

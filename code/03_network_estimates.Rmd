@@ -32,7 +32,11 @@ ego.dat <- read_csv(file.path(survey_data_dir, "individual.csv"))
 nr.deaths.dat <- read_csv(file.path(survey_data_dir, "network_reports.csv"))
 
 # load bootstrap weights
-boot.weights <- read_csv(file.path(survey_data_dir, "bootstrap_weights_1k.csv"))
+#boot.weights <- read_csv(file.path(survey_data_dir, "bootstrap_weights_1k.csv"))
+#boot.weights <- read_csv(file.path(survey_data_dir, "bootstrap_weights_10k.csv.gz"))
+boot.weights <- readRDS(file.path(survey_data_dir, "bootstrap_weights_10k.rds"))
+#boot.weights <- read_csv(file.path(survey_data_dir, "bootstrap_weights_5k.csv.gz"))
+#boot.weights <- readRDS(file.path(survey_data_dir, "bootstrap_weights_5k.rds"))
 
 # load frame population sizes
 state.dat <- read_csv(file.path(data_dir, "cities.csv"))

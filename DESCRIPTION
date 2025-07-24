@@ -54,7 +54,7 @@ Depends:
     wpp2022
 Remotes: 
     dfeehan/surveybootstrap@1dda0de,
-    dfeehan/siblingsurvival@5a23c07,
+    dfeehan/siblingsurvival@41748b0ad588e31baf09512db995bff25bec3390,
     dfeehan/networkreporting@27acedc,
     dgrtwo/drlib,
     haozhu233/kableExtra@da55010,
