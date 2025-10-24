@@ -65,11 +65,17 @@ ego.dat <- read_csv(file.path(survey_data_dir, "individual.csv"))
 
 # load bootstrap weights
 #boot.weights <- read_csv(file.path(survey_data_dir, "bootstrap_weights_1k.csv"))
+
+#boot.weights <- read_csv(file.path(survey_data_dir, "bootstrap_weights_jab1k.csv.gz"))
+boot.weights <- read_csv(file.path(survey_data_dir, "bootstrap_weights_jab10k.csv.gz"))
+
 #boot.weights <- read_csv(file.path(survey_data_dir, "bootstrap_weights_10k.csv.gz"))
 #boot.weights <- readRDS(file.path(survey_data_dir, "bootstrap_weights_10k.rds"))
 #boot.weights.fn <- "bootstrap_weights_5k.rds"
-boot.weights.fn <- "bootstrap_weights_10k.rds"
-boot.weights <- readRDS(file.path(survey_data_dir, boot.weights.fn))
+
+#boot.weights.fn <- "bootstrap_weights_10k.rds"
+
+#boot.weights <- readRDS(file.path(survey_data_dir, boot.weights.fn))
 
 # load city info
 state.dat <- read_csv(file.path(data_dir, "cities.csv"))

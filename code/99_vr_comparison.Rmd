@@ -2091,6 +2091,8 @@ acrossboot_city_res <- comp_asdrs_boot %>%
 
 ### New - aggregating across boot reps within each age/sex/city group
 
+I think this approach is estimating uncertainty over repeated applications of our design; ie, if we conducted this study in these 27 cities again, selecting a different random sample, what would our results show?
+
 ```{r}
 across_boot_long_res <- comp_asdrs_boot %>%
   ## for each method,
@@ -2128,6 +2130,7 @@ across_boot_city_avg_res <- across_boot_res %>%
                    list(mean = mean)))
 ```
 
+#### Share of MSE that is bias2 and variance
 
 Plot the share of MSE that is bias2 and variance for each method
 
@@ -2199,6 +2202,37 @@ tmp_agg %>%
   theme_minimal()
 ```
 
+... above, as a stacked bar char
+
+```{r}
+tmp_agg <- tmp %>%
+  group_by(sex, agegp10, method) %>%
+  summarize(mean_frac_mse_bias2_mean = mean(frac_mse_bias2_mean)) %>%
+  mutate(mean_frac_mse_var_mean = 1 - mean_frac_mse_bias2_mean)
+
+# Reshape data for stacked bar chart
+tmp_agg_long <- tmp_agg %>%
+  pivot_longer(cols = c(mean_frac_mse_bias2_mean, mean_frac_mse_var_mean),
+               names_to = "component", 
+               values_to = "fraction") %>%
+  mutate(component = case_when(
+    component == "mean_frac_mse_bias2_mean" ~ "Bias²",
+    component == "mean_frac_mse_var_mean" ~ "Variance"
+  ))
+
+# Stacked bar chart with one method in each panel
+tmp_agg_long %>%
+  ggplot(aes(x = agegp10, y = fraction, fill = component)) +
+  geom_col(position = "stack") +
+  #facet_grid(sex ~ method) + 
+  facet_grid(method ~ sex) + 
+  scale_y_continuous(labels = scales::percent) +
+  theme_minimal() +
+  xlab("") + ylab("")
+
+```
+
+#### Compare RMSE for sib and net
 
 Plot MSE values across boot reps, averaged across cities, for each age/sex group
 
@@ -2240,6 +2274,59 @@ acrossboot_avg_rmse_plot <-
 acrossboot_avg_rmse_plot
 ```
 
+
+```{r}
+## ABSOLUTE ERRORS
+
+# upper 99th percentile 
+lims99 <- max(quantile(with(comp_asdrs_boot, delta), .99))
+
+lim_upper_touse <- NA
+lim_upper_touse <- lims99
+
+comp_asdrs_boot %>%
+  ggplot() +
+  geom_histogram(aes(x=delta,
+                    color=agegp10,
+                     fill=agegp10)) +
+  geom_vline(xintercept=0, lty='dotted') +
+  theme_minimal() +
+  xlab("Err") +
+  facet_grid(sex + method ~ agegp10) +
+  xlim(-lims99, lims99) +
+  labs(caption="Scales set to show up to 99th percentile of errors") +
+  #guides(color = guide_legend(title='Age group', override.aes = list(alpha=1)))
+  guides(color = guide_legend(title='Age group'),
+         fill = guide_legend(title='Age group'))
+```
+
+```{r}
+## DIFFERENCE IN RMSES
+
+# upper 99th percentile 
+lims99 <- max(quantile(with(comp_asdrs_wide_boot, delta_Network-delta_Sibling), .99))
+
+lim_upper_touse <- NA
+lim_upper_touse <- lims99
+
+comp_asdrs_wide_boot %>%
+  ggplot() +
+  geom_histogram(aes(x=delta_Network - delta_Sibling,
+                    color=agegp10,
+                     fill=agegp10)) +
+  geom_vline(xintercept=0, lty='dotted') +
+  theme_minimal() +
+  xlab("Err Network - Err Sibling") +
+  facet_grid(sex ~ agegp10) +
+  xlim(-lims99, lims99) +
+  labs(caption="Scales set to show up to 99th percentile of differences") +
+  #guides(color = guide_legend(title='Age group', override.aes = list(alpha=1)))
+  guides(color = guide_legend(title='Age group'),
+         fill = guide_legend(title='Age group'))
+  facet_grid(sex ~ agegp10)
+```
+
+#### Compare variance for sib and net
 
 Plot variance values across boot reps, averaged across cities, for each age/sex group
 
@@ -2288,7 +2375,7 @@ acrossboot_avg_var_plot <-
 
 acrossboot_avg_var_plot
 ```
-
+#### Compare bias for sib and net
 
 TODO - BIAS PLOTS TOO
 

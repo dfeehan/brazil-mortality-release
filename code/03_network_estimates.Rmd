@@ -12,6 +12,8 @@ knitr::opts_chunk$set(echo = TRUE)
 library(networkreporting)
 library(tidyverse)
 library(here)
+library(future)
+library(furrr)
 library(tictoc)
 ```
 
@@ -32,9 +34,14 @@ ego.dat <- read_csv(file.path(survey_data_dir, "individual.csv"))
 nr.deaths.dat <- read_csv(file.path(survey_data_dir, "network_reports.csv"))
 
 # load bootstrap weights
+#boot.weights <- read_csv(file.path(survey_data_dir, "bootstrap_weights_jab1k.csv.gz"))
 #boot.weights <- read_csv(file.path(survey_data_dir, "bootstrap_weights_1k.csv"))
 #boot.weights <- read_csv(file.path(survey_data_dir, "bootstrap_weights_10k.csv.gz"))
-boot.weights <- readRDS(file.path(survey_data_dir, "bootstrap_weights_10k.rds"))
+
+#boot.weights <- readRDS(file.path(survey_data_dir, "bootstrap_weights_10k.rds"))
+#boot.weights <- read_csv(file.path(survey_data_dir, "bootstrap_weights_jab10k.csv.gz"))
+boot.weights <- readRDS(file.path(survey_data_dir, "bootstrap_weights_jab10k.rds"))
+
 #boot.weights <- read_csv(file.path(survey_data_dir, "bootstrap_weights_5k.csv.gz"))
 #boot.weights <- readRDS(file.path(survey_data_dir, "bootstrap_weights_5k.rds"))
 
@@ -140,6 +147,25 @@ nr_wrw
 
 ## Calculate network survival estimates from bootstrap resamples
 
+```{r}
+parallel <- TRUE
+#parallel <- FALSE
+
+#num.cores <- 6 
+num.cores <- 3
+#num.cores <- 2
+
+if(parallel) {
+  ## this is needed to avoid running out of memory errors w/ future package
+  ## see
+  ## https://github.com/HenrikBengtsson/future/issues/185
+  #options(future.globals.maxSize = 768 * 1024^2)
+  #options(future.globals.maxSize = 999 * 1024^2)
+  options(future.globals.maxSize = 2000 * 1024^2)
+}
+options(future.globals.maxSize = 2000 * 1024^2)
+options(expressions = 10000)
+```
 
 NB: 1000 bootstrap reps takes about 75 minutes on a 2020 Macbook Pro
 
@@ -149,8 +175,13 @@ These warnings come from older ages, which we don't use in this analysis.
 
 ```{r network-survival-estimates-bootstrap}
 tic('network survival estimates (with bootstrap)')
-#netsurv.asdr <- future_map_dfr(all.states,
-netsurv.asdr <- map_dfr(all.states,
+
+if(parallel) {
+  plan(multisession, workers=num.cores)
+}
+
+netsurv.asdr <- future_map_dfr(all.states,
+#netsurv.asdr <- map_dfr(all.states,
                              function(state) {
                                cat(glue::glue("Starting {state}...\n\n"))
                                     
@@ -176,10 +207,15 @@ netsurv.asdr <- map_dfr(all.states,
                                cur.ns$state_abbrev <- state
                                
                                return(cur.ns)
-                             })
-                             #,
-                             #.progress=TRUE)
+                             }#)
+                             ,
+                             .progress=TRUE)
 cat("\n\n")
+
+if(parallel) {
+  plan(sequential)  
+}
+
 toc()
 ```
 
