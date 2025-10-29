@@ -67,7 +67,7 @@ ego.dat <- read_csv(file.path(survey_data_dir, "individual.csv"))
 #boot.weights <- read_csv(file.path(survey_data_dir, "bootstrap_weights_1k.csv"))
 
 #boot.weights <- read_csv(file.path(survey_data_dir, "bootstrap_weights_jab1k.csv.gz"))
-boot.weights <- read_csv(file.path(survey_data_dir, "bootstrap_weights_jab10k.csv.gz"))
+boot.weights <- readRDS(file.path(survey_data_dir, "bootstrap_weights_jab10k.rds"))
 
 #boot.weights <- read_csv(file.path(survey_data_dir, "bootstrap_weights_10k.csv.gz"))
 #boot.weights <- readRDS(file.path(survey_data_dir, "bootstrap_weights_10k.rds"))
@@ -441,7 +441,8 @@ NB: 5000 bootstrap reps takes about 24 minutes w/ return.boot = FALSE; (using 6 
 tic("Running sibling estimates for states...")
 
 if(parallel) {
-  plan(multicore, workers=num.cores)
+  #plan(multicore, workers=num.cores)
+  plan(multisession, workers=num.cores)
 }
 
 #sib.asdr <- purrr::imap_dfr(city.sib.dat,

@@ -3,6 +3,11 @@ title: "Brazil mortality replication code"
 output: html_document
 ---
 
+# TODO OCT 2025
+
+- may need to add progressr package
+- may need to add logger package
+
 # Brazil sibling/network mortality analysis
 
 
