@@ -3,6 +3,7 @@ olddata.zip
 .RData
 .Rhistory
 .DS_Store
+.Renviron
 
 code/00_sample_map_files/
 
