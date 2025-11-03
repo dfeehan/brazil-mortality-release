@@ -1,0 +1,389 @@
+---
+title: "04b_temp_sib"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+```{r}
+#library(networkreporting)
+library(tidyverse)
+#library(lubridate)
+library(future)
+library(furrr)
+library(siblingsurvival)
+library(tictoc)
+library(logger)
+library(here)
+
+tic("Time to run file: ")
+```
+
+```{r}
+data_dir <- here('data')
+survey_data_dir <- file.path(data_dir, 'survey')
+out_dir <- here('out')
+```
+
+
+```{r}
+set.seed(10101010)
+```
+
+```{r}
+parallel <- TRUE
+#parallel <- FALSE
+
+num.cores <- 9
+#num.cores <- 2
+
+if(parallel) {
+  ## this is needed to avoid running out of memory errors w/ future package
+  ## see
+  ## https://github.com/HenrikBengtsson/future/issues/185
+  #options(future.globals.maxSize = 768 * 1024^2)
+  #options(future.globals.maxSize = 999 * 1024^2)
+  options(future.globals.maxSize = 2000 * 1024^2)
+}
+options(future.globals.maxSize = 2000 * 1024^2)
+options(expressions = 10000)
+```
+
+```{r}
+# Set up logger in main process
+log_threshold(TRACE)
+log_file <- paste0("sibling_estimates_", format(Sys.time(), "%Y%m%d_%H%M%S"), ".log")
+log_appender(appender_tee(file = log_file))
+
+log_info("Sibling estimates script started")
+
+if (file.exists("../run_docker.sh")) {
+  docker_run_contents <- readLines("../run_docker.sh")
+  log_debug("run_docker.sh contents:\n{paste(docker_run_contents, collapse = '\n')}")
+} else {
+  log_warn("../run_docker.sh not found in working directory: {getwd()}")
+}
+```
+
+
+# Load the data
+
+```{r read-data}
+bw_file <- "bootstrap_weights_jab10k.rds"
+  
+# load individual data
+sib.dat <- read_csv(file.path(survey_data_dir, "sibling_reports.csv"))
+
+# load individual data
+ego.dat <- read_csv(file.path(survey_data_dir, "individual.csv"))
+
+# load bootstrap weights
+#boot.weights <- read_csv(file.path(survey_data_dir, "bootstrap_weights_1k.csv"))
+
+#boot.weights <- read_csv(file.path(survey_data_dir, "bootstrap_weights_jab1k.csv.gz"))
+
+boot.weights <- readRDS(file.path(survey_data_dir, bw_file))
+
+#boot.weights <- read_csv(file.path(survey_data_dir, "bootstrap_weights_10k.csv.gz"))
+#boot.weights <- readRDS(file.path(survey_data_dir, "bootstrap_weights_10k.rds"))
+#boot.weights.fn <- "bootstrap_weights_5k.rds"
+
+#boot.weights.fn <- "bootstrap_weights_10k.rds"
+
+#boot.weights <- readRDS(file.path(survey_data_dir, boot.weights.fn))
+
+log_info(glue::glue("Bootstrap weights opened: {bw_file}"))
+
+# load city info
+state.dat <- read_csv(file.path(data_dir, "cities.csv"))
+all.states <- state.dat %>% pull(state_abbrev)
+all.regions <- unique(state.dat$region)
+```
+
+```{r make-city-data-lists}
+## It will be helpful to have a list of sibling reports, by city
+city.sib.dat <- setNames(map(all.states,
+                             function(state) {
+                               csd <- sib.dat %>% filter(state_abbrev==state)
+                               return(csd)
+                             }),
+                              all.states)
+
+## Similarly, it will be helpful to have a list of bootstrap resamples, by city
+city.boot.weights <- setNames(map(all.states,
+                                  function(state) {
+                                    cbw <- boot.weights %>% 
+                                      filter(state_abbrev==state) %>% 
+                                      select(-state_abbrev) %>%
+                                      ## we need the id in the bootstrap data to line up with the id in the
+                                      ## sibling reports
+                                      rename(ego.id = id)
+                                    return(cbw)
+                                  }),
+                              all.states)
+
+## And it will also be helpful to have a list of sibling reports by region
+region.sib.dat <- setNames(map(all.regions,
+                             function(region) {
+                               rsd <- sib.dat %>% 
+                                 left_join(state.dat %>% select(state_abbrev, region), by='state_abbrev') %>%
+                                 filter(region==!!region)
+                               return(rsd)
+                             }),
+                              all.regions)
+
+## ... and a list of sibling reports by region using only HQ cities
+regionhq.sib.dat <- setNames(map(all.regions,
+                             function(region) {
+                               rsd <- sib.dat %>% 
+                                 left_join(state.dat %>% select(state_abbrev, region), by='state_abbrev') %>%
+                                 filter(region==!!region)
+                               return(rsd)
+                             }),
+                              all.regions)
+
+## Similarly, it will be helpful to have a list of bootstrap resamples, by region
+region.boot.weights <- setNames(map(all.regions,
+                                  function(region) {
+                                    rbw <- boot.weights %>% 
+                                      left_join(state.dat %>% select(state_abbrev, region), by='state_abbrev') %>%
+                                      filter(region==!!region) %>% 
+                                      select(-state_abbrev, -region) %>%
+                                      ## we need the id in the bootstrap data to line up with the id in the
+                                      ## sibling reports
+                                      rename(ego.id = id)
+                                    return(rbw)
+                                  }),
+                              all.regions)
+
+## Finally, it will be helpful to have a list of bootstrap resamples, by region for the
+## 24 high-quality comparison cities
+regionhq.boot.weights <- setNames(map(all.regions,
+                                  function(region) {
+                                    rbw <- boot.weights %>% 
+                                      left_join(state.dat %>% select(state_abbrev, region), by='state_abbrev') %>%
+                                      filter(region==!!region) %>% 
+                                      select(-state_abbrev, -region) %>%
+                                      ## we need the id in the bootstrap data to line up with the id in the
+                                      ## sibling reports
+                                      rename(ego.id = id)
+                                    return(rbw)
+                                  }),
+                              all.regions)
+
+## And it will also be helpful to have national sibling reports 
+national.sib.dat <- sib.dat %>% 
+                    left_join(state.dat %>% select(state_abbrev, region), by='state_abbrev')
+
+## Similarly, it will be helpful to have national bootstrap resamples
+national.boot.weights <- boot.weights %>% 
+                           left_join(state.dat %>% select(state_abbrev, region), by='state_abbrev') %>%
+                           select(-state_abbrev, -region) %>%
+                           ## we need the id in the bootstrap data to line up with the id in the
+                           ## sibling reports
+                           rename(ego.id = id)
+```
+
+```{r make-agegp-objects}
+## Make age group objects
+
+# NB: age groups to start at 18, not 15, for comparability
+age.gps10 <- siblingsurvival::make.age.groups(start=18*12,
+                                              widths=12*c(7, rep(10, 4)),
+                                              names=c('[18,25)',
+                                                      '[25,35)',
+                                                      '[35,45)',
+                                                      '[45,55)',
+                                                      '[55,65)'))
+
+## Make time period objects
+
+time.periods.1yrbeforeint <- siblingsurvival::make.time.periods(start=-12,
+                                                                durations=12,
+                                                                names=c("0"))
+
+time.periods.7yrbeforeint <- siblingsurvival::make.time.periods(start=-12*7,
+                                                                durations=12*7,
+                                                                names=c("0-6"))
+```
+
+
+
+```{r get-cell-configs}
+## the default cell config has deaths 7 years before the interview
+cc <- siblingsurvival::cell_config(age.groups=age.gps10, 
+                                   time.periods='7yr_beforeinterview',
+                                   start.obs='dob_cmc_shifted',    # date of birth
+                                   end.obs='endobs_cmc_shifted',   # either the date respondent was interviewed 
+                                                                   # (if sib is alive) 
+                                                                   # or date of death (if sib is dead)
+                                   event='dod_cmc_shifted',        # date of death (for sibs who died)
+                                   age.offset='dob_cmc_shifted',   # date of birth
+                                   time.offset='doi_cmc_shifted',  # date of interview
+                                   exp.scale=1/12)
+
+## we'll make another cell config with deaths 1 year before the interview
+cc_12mo <- siblingsurvival::cell_config(age.groups=age.gps10, 
+                                   time.periods='12mo_beforeinterview',
+                                   start.obs='dob_cmc_shifted',    # date of birth
+                                   end.obs='endobs_cmc_shifted',   # either the date respondent was interviewed 
+                                                                   # (if sib is alive) 
+                                                                   # or date of death (if sib is dead)
+                                   event='dod_cmc_shifted',        # date of death (for sibs who died)
+                                   age.offset='dob_cmc_shifted',   # date of birth
+                                   time.offset='doi_cmc_shifted',  # date of interview
+                                   exp.scale=1/12)
+
+```
+
+
+## 12-month estimates
+
+
+```{r sibling-estimates-with-bootstrap-12mo}
+tic("Running sibling estimates for states...")
+
+if(parallel) {
+  plan(multisession, workers=num.cores)
+}
+
+#sib.asdr <- purrr::imap_dfr(city.sib.dat,
+sib.asdr.12mo <- furrr::future_imap_dfr(city.sib.dat,
+                                      function(cur.sib.dat, state) {
+                                        
+                                       library(logger)
+                                       log_threshold(TRACE)
+                                       log_appender(appender_file(log_file))  # Note: using appender_file, not appender_tee
+                                       
+                                       log_debug("Starting state 12mo estimates: {state}")
+                                       log_debug("Number of observations: {nrow(cur.sib.dat)}")
+    
+                                        cat(glue::glue("Starting {state}...\n\n"))
+                                       
+                                       ## reload these weights to avoid memory errors in future... 
+                                        #boot.weights <- readRDS(file.path(survey_data_dir, boot.weights.fn)) 
+                                        #city.boot.weights <- setNames(map(all.states,
+                                        #                                  function(state) {
+                                        #                                    cbw <- boot.weights %>% 
+                                        #                                      filter(state_abbrev==state) %>% 
+                                        #                                      select(-state_abbrev) %>%
+                                        #                                      ## we need the id in the bootstrap data to line up with the id in the
+                                        #                                      ## sibling reports
+                                        #                                      rename(ego.id = id)
+                                        #                                    return(cbw)
+                                        #                                  }),
+                                        #                              all.states)
+                                                                       
+                                        cur.bw <- city.boot.weights[[state]]
+                                        
+                                        cur.ests <- 
+                                          sibling_estimator(sib.dat = cur.sib.dat,
+                                          ego.id = 'ego.id',           # column with the respondent id
+                                          sib.id = 'sib.id',           # column with sibling id 
+                                                                       # (unique for each reported sibling)
+                                          sib.frame.indicator = 'in.F',# sibling frame population membership
+                                          sib.sex = 'sex',             # column with sibling's sex
+                                          cell.config=cc_12mo,              # cell configuration we created above
+                                          weights='ego.weight',        # column with the respondents' sampling weights
+                                          boot.weights=cur.bw,         # bootstrap weights
+                                          return.boot=TRUE)           # not returning full bootstrap results for now
+                                          
+                                        cur.ests <- cur.ests$boot.asdr.agg
+                                        cur.ests$state_abbrev <- state
+                                        return(cur.ests)
+                                      })
+
+if(parallel) {
+  plan(sequential)  
+}
+
+toc()
+
+log_info("12 mo. state estimates complete")
+```
+
+
+Rename a few columns 
+
+```{r rename-aggregate-res-12mo}
+sib.asdr.12mo <- sib.asdr.12mo %>% 
+  ungroup() %>%
+  rename(agegp10 = sib.age,
+         asdr = asdr.hat) %>%
+  mutate(sex = ifelse(sex==1, 'male', 'female'))
+
+sib.asdr.agg.12mo <- sib.asdr.12mo %>%
+  group_by(sex, agegp10, time.period, state_abbrev) %>%
+  summarize(asdr.hat = mean(asdr),
+            asdr.hat.sd = sd(asdr),
+            asdr.hat.ci.low = quantile(asdr, .025, na.rm=TRUE),
+            asdr.hat.ci.high = quantile(asdr, .975, na.rm=TRUE))
+```
+
+Calculate 47q18, ie cond prob of death between 18 and 65 
+
+```{r calculate-ffqf-12mo}
+sib.47q18.12mo <- sib.asdr.12mo %>%
+     mutate(width = ifelse(agegp10 == '[18,25)',
+                          7,
+                          10)) %>%
+    mutate(const.mx.p = exp(-width*asdr),
+           v2.mx.p = 1 - (width*asdr)/(1 + (width/2)*asdr)) %>%
+    group_by(state_abbrev, sex, time.period, boot_idx) %>%
+    summarize(q.47.18 = 1 - prod(const.mx.p),
+              q.47.18.alt = 1 - prod(v2.mx.p))
+
+sib.47q18.summ.12mo <- sib.47q18.12mo %>%
+  group_by(time.period, state_abbrev, sex) %>%
+  summarize(q.47.18.mean = mean(q.47.18),
+            q.47.18.sd = sd(q.47.18),
+            q.47.18.ci.low = quantile(q.47.18, .025, na.rm=TRUE),
+            q.47.18.ci.high = quantile(q.47.18, .975, na.rm=TRUE))
+```
+
+
+
+```{r save-results-12mo}
+### city ASDRs
+sib.tosave.12mo <- sib.asdr.agg.12mo %>% 
+  dplyr::rename(post_mean_asdr=asdr.hat,
+                post_sd_asdr=asdr.hat.sd,
+                post_ci_high_asdr=asdr.hat.ci.high,
+                post_ci_low_asdr=asdr.hat.ci.low) %>%
+  mutate(method = 'sib_design')
+write_csv(sib.tosave.12mo, file.path(out_dir, 'sib_12mo_design_asdrs.csv'))
+
+### bootstraps of city ASDRs
+sib.tosave.boot.12mo <- sib.asdr.12mo %>%
+  select(state_abbrev, sex, agegp10, boot_idx, post_mean_asdr=asdr) %>%
+  mutate(method='sib_design')
+write_csv(sib.tosave.boot.12mo, file.path(out_dir, 'sib_12mo_design_asdrs_boot.csv'))
+
+### city probs
+sib.47q18.tosave.12mo <- sib.47q18.summ.12mo %>% 
+  dplyr::rename(post_mean_q = q.47.18.mean,
+                post_sd_q = q.47.18.sd,
+                post_ci_low_q = q.47.18.ci.low,
+                post_ci_high_q = q.47.18.ci.high) %>%
+  mutate(method = 'sib_design')
+write_csv(sib.47q18.tosave.12mo, file.path(out_dir, 'sib_12mo_design_probs.csv'))
+
+### bootstraps of city probs
+sib.47q18.boot.12mo <- sib.47q18.12mo %>% 
+  select(state_abbrev, sex, boot_idx, q.47.18) %>%
+  mutate(method = 'sib_design')
+write_csv(sib.47q18.boot.12mo, file.path(out_dir, 'sib_12mo_design_probs_boot.csv'))
+```
+
+
+```{r}
+log_info("All sibling estimates complete")
+toc()
+```

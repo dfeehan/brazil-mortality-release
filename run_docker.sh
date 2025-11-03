@@ -5,7 +5,7 @@ export DOCKER_DEFAULT_PLATFORM=linux/amd64
 docker run -d \
   --rm \
   -p 8111:8787 \
-  --memory="60g" \
+  --memory="80g" \
   -e PASSWORD=pass \
   --name brazil \
   -v $(pwd):/home/rstudio/ \

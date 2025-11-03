@@ -1,0 +1,15 @@
+{
+  "editor_keybindings": "vim",
+  "syntax_color_console": true,
+  "highlight_selected_line": true,
+  "show_line_numbers": true,
+  "show_margin": true,
+  "margin_column": 80,
+  "soft_wrap_r_files": false,
+  "tab_width": 2,
+  "strip_trailing_whitespace": true,
+  "ensure_newline_at_eof": true,
+  "default_encoding": "UTF-8",
+  "save_workspace": "never",
+  "load_workspace": false
+}

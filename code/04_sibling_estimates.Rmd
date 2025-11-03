@@ -39,7 +39,7 @@ set.seed(10101010)
 parallel <- TRUE
 #parallel <- FALSE
 
-num.cores <- 6 
+num.cores <- 9
 #num.cores <- 2
 
 if(parallel) {
@@ -54,9 +54,28 @@ options(future.globals.maxSize = 2000 * 1024^2)
 options(expressions = 10000)
 ```
 
+```{r}
+# Set up logger in main process
+log_threshold(TRACE)
+log_file <- paste0("sibling_estimates_", format(Sys.time(), "%Y%m%d_%H%M%S"), ".log")
+log_appender(appender_tee(file = log_file))
+
+log_info("Sibling estimates script started")
+
+if (file.exists("../run_docker.sh")) {
+  docker_run_contents <- readLines("../run_docker.sh")
+  log_debug("run_docker.sh contents:\n{paste(docker_run_contents, collapse = '\n')}")
+} else {
+  log_warn("../run_docker.sh not found in working directory: {getwd()}")
+}
+```
+
+
 # Load the data
 
 ```{r read-data}
+bw_file <- "bootstrap_weights_jab10k.rds"
+  
 # load individual data
 sib.dat <- read_csv(file.path(survey_data_dir, "sibling_reports.csv"))
 
@@ -67,7 +86,8 @@ ego.dat <- read_csv(file.path(survey_data_dir, "individual.csv"))
 #boot.weights <- read_csv(file.path(survey_data_dir, "bootstrap_weights_1k.csv"))
 
 #boot.weights <- read_csv(file.path(survey_data_dir, "bootstrap_weights_jab1k.csv.gz"))
-boot.weights <- readRDS(file.path(survey_data_dir, "bootstrap_weights_jab10k.rds"))
+
+boot.weights <- readRDS(file.path(survey_data_dir, bw_file))
 
 #boot.weights <- read_csv(file.path(survey_data_dir, "bootstrap_weights_10k.csv.gz"))
 #boot.weights <- readRDS(file.path(survey_data_dir, "bootstrap_weights_10k.rds"))
@@ -76,6 +96,8 @@ boot.weights <- readRDS(file.path(survey_data_dir, "bootstrap_weights_jab10k.rds
 #boot.weights.fn <- "bootstrap_weights_10k.rds"
 
 #boot.weights <- readRDS(file.path(survey_data_dir, boot.weights.fn))
+
+log_info(glue::glue("Bootstrap weights opened: {bw_file}"))
 
 # load city info
 state.dat <- read_csv(file.path(data_dir, "cities.csv"))
@@ -436,15 +458,11 @@ NB: 1000 bootstrap reps takes about 6 minutes
 
 NB: 5000 bootstrap reps takes about 24 minutes w/ return.boot = FALSE; (using 6 cores) now re-running w/ return.boot = TRUE
     ... same!
+    
+NB: 20251029 - GETTING WARNINGS
+UNRELIABLE VALUE: Future (‘<none>’) unexpectedly generated random numbers without specifying argument '[future.]seed'. There is a risk that those random numbers are not statistically sound and the overall results might be invalid. To fix this, specify argument '[future.]seed', e.g. 'seed=TRUE'. This ensures that proper, parallel-safe random numbers are produced via the L'Ecuyer-CMRG method. To disable this check, use [future].seed=NULL, or set option 'future.rng.onMisuse' to "ignore"
 
 ```{r sibling-estimates-with-bootstrap}
-
-
-# Set up logger
-log_threshold(TRACE)  # Set to DEBUG, INFO, WARN, ERROR as needed
-log_appender(appender_tee(file = paste0("sibling_estimates_", 
-                                        format(Sys.time(), "%Y%m%d_%H%M%S"), 
-                                        ".log")))
 
 log_info("Starting sibling estimates processing")
 log_info("Number of states to process: {length(city.sib.dat)}")
@@ -455,8 +473,14 @@ if(parallel) {
   plan(multisession, workers=num.cores)
 }
 
+# Pass the log file path to workers
 sib.asdr <- furrr::future_imap_dfr(city.sib.dat,
   function(cur.sib.dat, state) {
+    # IMPORTANT: Configure logger inside each worker
+    library(logger)
+    log_threshold(TRACE)
+    log_appender(appender_file(log_file))  # Note: using appender_file, not appender_tee
+    
     log_debug("Starting state: {state}")
     log_debug("Number of observations: {nrow(cur.sib.dat)}")
     
@@ -497,7 +521,7 @@ if(parallel) {
 }
 toc()
 
-log_info("All processing complete")
+log_info("Sibling estimates complete")
 
 ```
 
@@ -558,12 +582,29 @@ summary(sib.47q18.check$rel_diff)
 
 NB: 1000 bootstrap reps takes about 4 minutes
 
+TODO - THIS IS WHERE IT SEEMS TO CRASH...
+
 ```{r sibling-estimates-byregion-bootstrap}
+
+log_info("Starting regional sibling estimates processing")
+log_info("Number of regions to process: {length(region.sib.dat)}")
+log_info("Using {num.cores} cores")
+
 tic("Running sibling estimates for regions...")
-sib.region.asdr <- purrr::imap_dfr(region.sib.dat,
+if(parallel) {
+  plan(multisession, workers=num.cores)
+}
+
+tic("Running sibling estimates for regions...")
+sib.region.asdr <- furrr::future_imap_dfr(region.sib.dat,
                                       function(cur.sib.dat, region) {
                                         
-                                        cat(glue::glue("Starting {region}...\n\n"))
+                                        library(logger)
+                                        log_threshold(TRACE)
+                                        log_appender(appender_file(log_file))  # Note: using appender_file, not appender_tee
+                                        
+                                        log_debug("Starting region: {region}")
+                                        log_debug("Number of observations: {nrow(cur.sib.dat)}")
                                                                        
                                         cur.bw <- region.boot.weights[[region]]
                                         
@@ -581,9 +622,17 @@ sib.region.asdr <- purrr::imap_dfr(region.sib.dat,
                                           
                                         cur.ests <- cur.ests$boot.asdr.agg
                                         cur.ests$region <- region
+                                        
+                                        log_debug("Finished region: {region}")
                                         return(cur.ests)
                                       })
+
+if(parallel) {
+  plan(sequential)  
+}
 toc()
+
+log_info("Region estimates complete")
 ```
 
 Rename a few columns 
@@ -643,6 +692,7 @@ summary(sib.region.47q18.check$rel_diff)
 ### Sibling estimates at national level 
 
 ```{r sibling-estimates-national-bootstrap}
+log_info("Starting sibling estimates at the national level")
 tic("Running sibling estimates at national level...")
 sib.national.asdr <- sibling_estimator(sib.dat = national.sib.dat,
                      ego.id = 'ego.id',           # column with the respondent id
@@ -810,6 +860,7 @@ sib.national.47q18.boot <- sib.national.47q18 %>%
 write_csv(sib.national.47q18.boot, 
           file.path(out_dir, 'sib_design_probs_national_boot.csv'))
 ```
+
 ## 12-month estimates
 
 
@@ -817,28 +868,35 @@ write_csv(sib.national.47q18.boot,
 tic("Running sibling estimates for states...")
 
 if(parallel) {
-  plan(multicore, workers=num.cores)
+  plan(multisession, workers=num.cores)
 }
 
 #sib.asdr <- purrr::imap_dfr(city.sib.dat,
 sib.asdr.12mo <- furrr::future_imap_dfr(city.sib.dat,
                                       function(cur.sib.dat, state) {
                                         
+                                       library(logger)
+                                       log_threshold(TRACE)
+                                       log_appender(appender_file(log_file))  # Note: using appender_file, not appender_tee
+                                       
+                                       log_debug("Starting state 12mo estimates: {state}")
+                                       log_debug("Number of observations: {nrow(cur.sib.dat)}")
+    
                                         cat(glue::glue("Starting {state}...\n\n"))
-                                       boot.weights <- readRDS(file.path(survey_data_dir, boot.weights.fn)) 
                                        
                                        ## reload these weights to avoid memory errors in future... 
-                                        city.boot.weights <- setNames(map(all.states,
-                                                                          function(state) {
-                                                                            cbw <- boot.weights %>% 
-                                                                              filter(state_abbrev==state) %>% 
-                                                                              select(-state_abbrev) %>%
-                                                                              ## we need the id in the bootstrap data to line up with the id in the
-                                                                              ## sibling reports
-                                                                              rename(ego.id = id)
-                                                                            return(cbw)
-                                                                          }),
-                                                                      all.states)
+                                        #boot.weights <- readRDS(file.path(survey_data_dir, boot.weights.fn)) 
+                                        #city.boot.weights <- setNames(map(all.states,
+                                        #                                  function(state) {
+                                        #                                    cbw <- boot.weights %>% 
+                                        #                                      filter(state_abbrev==state) %>% 
+                                        #                                      select(-state_abbrev) %>%
+                                        #                                      ## we need the id in the bootstrap data to line up with the id in the
+                                        #                                      ## sibling reports
+                                        #                                      rename(ego.id = id)
+                                        #                                    return(cbw)
+                                        #                                  }),
+                                        #                              all.states)
                                                                        
                                         cur.bw <- city.boot.weights[[state]]
                                         
@@ -865,6 +923,7 @@ if(parallel) {
 
 toc()
 
+log_info("12 mo. state estimates complete")
 ```
 
 
@@ -942,6 +1001,7 @@ write_csv(sib.47q18.boot.12mo, file.path(out_dir, 'sib_12mo_design_probs_boot.cs
 
 
 ```{r}
+log_info("All sibling estimates complete")
 toc()
 ```
 

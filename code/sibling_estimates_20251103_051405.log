@@ -1,0 +1,75 @@
+INFO [2025-11-03 05:14:05] Sibling estimates script started
+DEBUG [2025-11-03 05:14:05] run_docker.sh contents:
+#!/bin/zsh
+
+export DOCKER_DEFAULT_PLATFORM=linux/amd64
+
+docker run -d \
+  --rm \
+  -p 8111:8787 \
+  --memory="80g" \
+  -e PASSWORD=pass \
+  --name brazil \
+  -v $(pwd):/home/rstudio/ \
+  brazil-replication
+
+
+#  --memory-swap="12g" \
+#  --cpus="12.0" \
+INFO [2025-11-03 05:14:15] Bootstrap weights opened: bootstrap_weights_jab10k.rds
+DEBUG [2025-11-03 05:14:49] Starting state 12mo estimates: RO
+DEBUG [2025-11-03 05:14:49] Number of observations: 1041
+DEBUG [2025-11-03 05:14:54] Starting state 12mo estimates: RR
+DEBUG [2025-11-03 05:14:54] Number of observations: 1905
+DEBUG [2025-11-03 05:15:00] Starting state 12mo estimates: TO
+DEBUG [2025-11-03 05:15:00] Number of observations: 713
+DEBUG [2025-11-03 05:15:05] Starting state 12mo estimates: CE
+DEBUG [2025-11-03 05:15:05] Number of observations: 2530
+DEBUG [2025-11-03 05:15:10] Starting state 12mo estimates: PE
+DEBUG [2025-11-03 05:15:10] Number of observations: 2125
+DEBUG [2025-11-03 05:15:16] Starting state 12mo estimates: BA
+DEBUG [2025-11-03 05:15:16] Number of observations: 2402
+DEBUG [2025-11-03 05:15:21] Starting state 12mo estimates: RJ
+DEBUG [2025-11-03 05:15:21] Number of observations: 3459
+DEBUG [2025-11-03 05:15:27] Starting state 12mo estimates: SC
+DEBUG [2025-11-03 05:15:27] Number of observations: 932
+DEBUG [2025-11-03 05:15:33] Starting state 12mo estimates: MT
+DEBUG [2025-11-03 05:15:33] Number of observations: 1794
+DEBUG [2025-11-03 09:54:02] Starting state 12mo estimates: AC
+DEBUG [2025-11-03 09:54:02] Number of observations: 2131
+DEBUG [2025-11-03 10:02:49] Starting state 12mo estimates: MA
+DEBUG [2025-11-03 10:02:49] Number of observations: 1615
+DEBUG [2025-11-03 10:05:56] Starting state 12mo estimates: PA
+DEBUG [2025-11-03 10:05:56] Number of observations: 2433
+DEBUG [2025-11-03 10:10:02] Starting state 12mo estimates: GO
+DEBUG [2025-11-03 10:10:02] Number of observations: 1540
+DEBUG [2025-11-03 10:11:26] Starting state 12mo estimates: RS
+DEBUG [2025-11-03 10:11:26] Number of observations: 1126
+DEBUG [2025-11-03 10:18:15] Starting state 12mo estimates: RN
+DEBUG [2025-11-03 10:18:15] Number of observations: 1432
+DEBUG [2025-11-03 10:19:23] Starting state 12mo estimates: AL
+DEBUG [2025-11-03 10:19:23] Number of observations: 1364
+DEBUG [2025-11-03 10:20:37] Starting state 12mo estimates: MG
+DEBUG [2025-11-03 10:20:37] Number of observations: 2527
+DEBUG [2025-11-03 10:23:53] Starting state 12mo estimates: SP
+DEBUG [2025-11-03 10:23:53] Number of observations: 3164
+DEBUG [2025-11-03 14:27:01] Starting state 12mo estimates: AM
+DEBUG [2025-11-03 14:27:01] Number of observations: 2004
+DEBUG [2025-11-03 14:33:35] Starting state 12mo estimates: PI
+DEBUG [2025-11-03 14:33:35] Number of observations: 1909
+DEBUG [2025-11-03 14:37:46] Starting state 12mo estimates: AP
+DEBUG [2025-11-03 14:37:46] Number of observations: 1976
+DEBUG [2025-11-03 15:06:38] Starting state 12mo estimates: PB
+DEBUG [2025-11-03 15:06:38] Number of observations: 1704
+DEBUG [2025-11-03 15:26:30] Starting state 12mo estimates: SE
+DEBUG [2025-11-03 15:26:30] Number of observations: 2099
+DEBUG [2025-11-03 15:39:13] Starting state 12mo estimates: ES
+DEBUG [2025-11-03 15:39:13] Number of observations: 1265
+DEBUG [2025-11-03 15:48:26] Starting state 12mo estimates: MS
+DEBUG [2025-11-03 15:48:26] Number of observations: 1223
+DEBUG [2025-11-03 15:50:42] Starting state 12mo estimates: DF
+DEBUG [2025-11-03 15:50:42] Number of observations: 1678
+DEBUG [2025-11-03 16:11:42] Starting state 12mo estimates: PR
+DEBUG [2025-11-03 16:11:42] Number of observations: 1371
+INFO [2025-11-03 20:35:27] 12 mo. state estimates complete
+INFO [2025-11-03 20:35:37] All sibling estimates complete
