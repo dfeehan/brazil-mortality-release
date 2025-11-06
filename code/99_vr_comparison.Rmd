@@ -2232,6 +2232,127 @@ tmp_agg_long %>%
 
 ```
 
+#### Nov 03, trying to use JAB results
+
+NB: we'll only do this for states
+
+load the cluster counts
+
+```{r read-cc-data}
+survey_data_dir <- file.path(data_dir, 'survey')
+
+cc_file <- "bootstrap_cc_jab10k.rds"
+  
+boot.cc <- readRDS(file.path(survey_data_dir, cc_file))
+```
+
+
+Algorithm:
+
+for each state s
+  for each cluster i
+    pick out bootstrap reps that don't include the cluster, B(i)
+    calculate \widehat{\E}[B(i)], the average estimate over B(i)
+    calculate \widehat{\V}[B(i)], the variance of estimates over B(i)
+  calculate variance across the variance estimates \widehat{\V}[B(1)], \dots, \widehat{V}[B(P)]
+  
+
+```{r jab-estimates}
+# this creates a list with one entry for each PSU
+# that maps the PSU to the bootstrap indices that can be used for
+# the hold-one-out jackknife after bootstrap calculation based on that PSU
+jab_indexes <- 
+  # NB: we assume that the columns are in order
+  #  boot_rep_1, boot_rep_2, ...
+  boot.cc %>%
+  select(starts_with('boot_rep')) %>%
+  transpose(.names = boot.cc$cb_code) %>%
+  # convert number of times each PSU was included in the bootstrap resample
+  # into an indicator with value 
+  #  ... 1 if PSU was not included (so can be used in JAB calculation)
+  #  ... 0 otherwise
+  map(., ~ which(unlist(.x, use.names=FALSE) == 0))
+
+# dataframe with cols
+#   state_abbrev
+#   cb_code
+#   jab_indexes - a list column; the entry is the bootstrap reps to use for JAB calculations
+#   n_jab - the number of bootstrap resamples that did not have the PSU (and thus that can be used for JAB calculations)
+jab_df <- tibble(
+  cb_code = names(jab_indexes),
+  jab_indexes = jab_indexes
+  ) %>%
+  left_join(
+    boot.cc %>% select(state_abbrev, cb_code)
+  ) %>%
+  mutate(n_jab = map_dbl(jab_indexes, ~ length(.x)))
+
+
+# jackknife variance estimate formula
+# see, eg, the Efron book
+jack.var <- function(x) {
+  P <- length(x)
+  return( ((P-1)/P)*sum((x - mean(x))^2))
+}
+```
+
+```{r}
+
+tic("Calculating leave-one PSU out estimates to use with jackknife after bootstrap")
+lopo_ests <- jab_df %>%
+  mutate(
+    # leave one psu out ests
+    lopo_ests = map2(jab_indexes, state_abbrev,
+                   # this function takes a list of bootstrap indexes and
+                   # calculates summaries of all of the estimates based
+                   # on those indexes
+                   function(jab_boot_indexes, state_abbrev) {
+                      cur_res <- comp_asdrs_boot %>%
+                        filter(geo == state_abbrev) %>%
+                        # filter to boot indexes to be used for the hold-one-out calculations
+                        # based on this index
+                        filter(boot_idx %in% jab_boot_indexes) %>%
+                        group_by(geo,sex,agegp10,method) %>%
+                        summarize(n_jab_check = n(),
+                                  # fp.var is our custom function that has n in the denom instead of (n-1)
+                                  var_asdr_lopo = fp.var(post_mean_asdr),
+                                  mean_asdr_lopo = mean(post_mean_asdr),
+                                  bias_asdr_lopo = mean(post_mean_asdr - gs_asdr),
+                                  mse_asdr_lopo = mean((post_mean_asdr - gs_asdr)^2),
+                                  .groups = "drop")
+                      return(cur_res)
+                     
+                   }))
+toc()
+```
+
+```{r}
+jab_ests <- lopo_ests %>%
+  select(-jab_indexes) %>%
+  unnest(cols = lopo_ests) %>%
+  group_by(state_abbrev, geo, sex, agegp10, method) %>%
+  summarize(# number of PSUs used in JAB calculation
+            n_psu_jab = n(),
+            # average number of bootstrap reps used for each PSU's
+            # leave one PSU out calculations
+            n_jab_avg = mean(n_jab), 
+            # JAB variance estimate of variance estimate
+            var_var_jab = jack.var(var_asdr_lopo),
+            # JAB variance estimate of MSE estimate
+            var_mse_jab = jack.var(mse_asdr_lopo),
+            # JAB variance estimate of bias estimate
+            var_bias_jab = jack.var(bias_asdr_lopo))
+```
+
+
+TODO - WHAT TO DO WITH THESE ESTIMATES?
+
+- how noisy is bias / var decomposition
+
+
+
+
+
 #### Compare RMSE for sib and net
 
 Plot MSE values across boot reps, averaged across cities, for each age/sex group
