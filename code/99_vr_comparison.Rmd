@@ -2234,7 +2234,7 @@ tmp_agg_long %>%
 
 #### Nov 03, trying to use JAB results
 
-NB: we'll only do this for states
+NB: we'll only do this for states (not for regions)
 
 load the cluster counts
 
@@ -2257,7 +2257,7 @@ for each state s
   calculate variance across the variance estimates \widehat{\V}[B(1)], \dots, \widehat{V}[B(P)]
   
 
-```{r jab-estimates}
+```{r jab-indexes}
 # this creates a list with one entry for each PSU
 # that maps the PSU to the bootstrap indices that can be used for
 # the hold-one-out jackknife after bootstrap calculation based on that PSU
@@ -2296,7 +2296,7 @@ jack.var <- function(x) {
 }
 ```
 
-```{r}
+```{r leave-one-psu-out-estimates}
 
 tic("Calculating leave-one PSU out estimates to use with jackknife after bootstrap")
 lopo_ests <- jab_df %>%
@@ -2326,7 +2326,7 @@ lopo_ests <- jab_df %>%
 toc()
 ```
 
-```{r}
+```{r jab-estimates}
 jab_ests <- lopo_ests %>%
   select(-jab_indexes) %>%
   unnest(cols = lopo_ests) %>%
@@ -2344,10 +2344,158 @@ jab_ests <- lopo_ests %>%
             var_bias_jab = jack.var(bias_asdr_lopo))
 ```
 
+Also calculate leave-one-psu-out estimates for the wide version of the data
+(so we can directly get uncertainty about difference between estimators)
+
+TODO - THINK ABOUT THIS MORE: we are aggregating across states - how to handle that? Since each
+PSU is in one state, it seems like it would under-estimate variance to treat them all as separate;
+in other words, we need some kind of stratification in here, I think?
+
+```{r leave-one-psu-out-diff-estimates}
+
+tic("Calculating leave-one PSU out estimates to use with jackknife after bootstrap for differences")
+lopo_diff_ests <- jab_df %>%
+  mutate(
+    # leave one psu out ests
+    lopo_ests = map(jab_indexes,
+                   # this function takes a list of bootstrap indexes and
+                   # calculates summaries of all of the estimates based
+                   # on those indexes
+                   function(jab_boot_indexes) {
+                      cur_res <- comp_asdrs_wide_boot %>%
+                        # filter to boot indexes to be used for the hold-one-out calculations
+                        # based on this index
+                        filter(boot_idx %in% jab_boot_indexes) %>%
+                        # grouping by boot_idx will average over
+                        # state, sex, and age within each bootstrap rep
+                        group_by(boot_idx) %>%
+                        # calculate rmse for each method across state/sex/age
+                        summarize(rmse.n = sqrt(mean(delta2_Network)),
+                                  rmse.s = sqrt(mean(delta2_Sibling)),
+                                  mse.n = mean(delta2_Network),
+                                  mse.s = mean(delta2_Sibling),
+                                  .groups='drop') %>%
+                        ungroup() %>%
+                        # and get the difference in RMSE between net and sib across sate/sex/age
+                        mutate(rmse.n.minus.s = rmse.n - rmse.s) %>%
+                        # now calculate the variance in this estimated mean difference
+                        # across the bootstrap reps included when we leave this PSU out
+                        group_by(1) %>%
+                        summarize(n_jab_check = n(),
+                                  mean_diff_nminuss = mean(rmse.n.minus.s),
+                                  # fp.var is our custom function that has n in the denom instead of (n-1)
+                                  var_diff_nminuss_lopo = fp.var(rmse.n.minus.s),
+                                  mean_rmse_network = mean(rmse.n),
+                                  var_rmse_network_lopo = fp.var(rmse.n),
+                                  mean_rmse_sibling = mean(rmse.s),
+                                  var_rmse_sibling_lopo = fp.var(rmse.s),
+                                  mean_mse_network = mean(mse.n),
+                                  var_mse_network = fp.var(mse.n),
+                                  mean_mse_sibling = mean(mse.s),
+                                  var_mse_sibling = fp.var(mse.s),
+                                  .groups = "drop")
+                      return(cur_res)
+                     
+                   })) %>%
+  unnest(cols = lopo_ests)
+toc()
+```
+
+```{r}
+lopo_diff_ests %>%
+  select(-jab_indexes) %>%
+  select(-`1`) %>%
+  ggplot(.) +
+  geom_histogram(aes(x=mean_diff_nminuss)) 
+```
+
+```{r}
+lopo_diff_ests %>%
+  select(-jab_indexes) %>%
+  select(-`1`) %>%
+  ggplot(.) +
+  geom_histogram(aes(x=var_diff_nminuss_lopo))
+```
+
+```{r jab-diff-estimates}
+jab_diff_ests <- lopo_diff_ests %>%
+  select(-jab_indexes) %>%
+  select(-`1`) %>%
+  group_by(1) %>%
+  summarize(# number of PSUs used in JAB calculation
+            n_psu_jab = n(),
+            # average number of bootstrap reps used for each PSU's
+            # leave one PSU out calculations
+            n_jab_avg = mean(n_jab), 
+            # JAB variance estimate of variance estimate
+            var_var_jab = jack.var(var_diff_nminuss_lopo),
+            # JAB difference estimate
+            mean_diff_nminuss_jab = mean(mean_diff_nminuss),
+            .groups='drop')
+
+glimpse(jab_diff_ests)
+```
 
 TODO - WHAT TO DO WITH THESE ESTIMATES?
 
 - how noisy is bias / var decomposition
+
+```{r}
+errs_boot_asdr_rmse_summ %>% glimpse()
+```
+
+LEFT OFF HERE - I THINK THIS CODE IS WHAT WE WANT TO ADAPT TO GET
+JAB-BASED UNCERTAINTY ESTIMATES...
+
+```{r}
+#mse_diff_hist <- comp_asdrs_wide_boot %>%
+#  group_by(boot_idx) %>%
+#  summarize(mean.delta2.n.minus.s = mean(delta2.n.minus.s),
+#            mean.delta2.n = mean(delta2_Network),
+#            mean.delta2.s = mean(delta2_Sibling))
+#
+#errs_boot_asdr_mse <- mse_diff_hist  %>% 
+#  rename(err.n.minus.s = mean.delta2.n.minus.s,
+#         err.n = mean.delta2.n,
+#         err.s = mean.delta2.s) %>%
+#  bind_cols(loss = 'mse',
+#            qty = 'asdr',
+#            comparison_name = params$comparison_name,
+#            geo_name = params$geo_name)
+#
+#
+#errs_boot_asdr_rmse <- errs_boot_asdr_mse %>% 
+#  mutate(err.n = sqrt(err.n),
+#         err.s = sqrt(err.s),
+#         err.n.minus.s = err.n - err.s,
+#         loss = 'rmse')
+#
+#errs_boot_asdr_rmse_summ <- errs_boot_asdr_rmse %>%
+#  group_by(1) %>%
+#  summarize(diff_nminuss_mean = mean(err.n.minus.s),
+#            diff_nminuss_ci_low = quantile(err.n.minus.s, .025),
+#            diff_nminuss_ci_high = quantile(err.n.minus.s, .975),
+#            network_err = mean(err.n),
+#            network_err_ci_low = quantile(err.n, .025),
+#            network_err_ci_high = quantile(err.n, .975),
+#            network_err_sd = sd(err.n),
+#            network_err_ci_width = quantile(err.n, .975) - quantile(err.n, .025),
+#            sibling_err = mean(err.s),
+#            sibling_err_ci_low = quantile(err.s, .025),
+#            sibling_err_ci_high = quantile(err.s, .975),
+#            sibling_err_sd = sd(err.s),
+#            sibling_err_ci_width = quantile(err.s, .975) - quantile(err.s, .025),
+#            .groups='drop')
+#
+#glue::glue("
+#           Average network RMSE: {errs_boot_asdr_rmse_summ$network_err}
+#           Average sibling RMSE: {errs_boot_asdr_rmse_summ$sibling_err}
+#           On average, network estimates were about {errs_boot_asdr_rmse_summ$diff_nminuss_mean} RMSE units better than sibling estimates.  
+#           This is {round(100*errs_boot_asdr_rmse_summ$diff_nminuss_mean/errs_boot_asdr_rmse_summ$network_err,2)}% RMSE units better than sibling estimates.  
+#          CI:
+#          ({round(100*errs_boot_asdr_rmse_summ$diff_nminuss_ci_low/errs_boot_asdr_rmse_summ$network_err,2)}%,  {round(100*errs_boot_asdr_rmse_summ$diff_nminuss_ci_high/errs_boot_asdr_rmse_summ$network_err,2)}%)
+#           ")
+```
 
 
 
