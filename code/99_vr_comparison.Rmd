@@ -2296,6 +2296,8 @@ jack.var <- function(x) {
 }
 ```
 
+Calculate the leave-one-PSU-out estimates for death rates
+
 ```{r leave-one-psu-out-estimates}
 
 tic("Calculating leave-one PSU out estimates to use with jackknife after bootstrap")
@@ -2319,7 +2321,8 @@ lopo_ests <- jab_df %>%
                                   mean_asdr_lopo = mean(post_mean_asdr),
                                   bias_asdr_lopo = mean(post_mean_asdr - gs_asdr),
                                   mse_asdr_lopo = mean((post_mean_asdr - gs_asdr)^2),
-                                  .groups = "drop")
+                                  .groups = "drop") %>%
+                        mutate(rmse_asdr_lopo = sqrt(mse_asdr_lopo))
                       return(cur_res)
                      
                    }))
@@ -2344,14 +2347,152 @@ jab_ests <- lopo_ests %>%
             var_bias_jab = jack.var(bias_asdr_lopo))
 ```
 
+VARIANCE IN ESTIMATED DIFFERENCE IN RMSE
+
+Our point estimate for the difference in RMSE between methods is the average of the
+RMSE estimate differences between each method, averaged over all city/age/sex groups
+
+```{r}
+lopo_mse_city_diff <- lopo_ests %>%
+  unnest(lopo_ests) %>%
+  pivot_wider(names_from = 'method',
+              values_from = 'rmse_asdr_lopo',
+              id_cols=c('cb_code', 'state_abbrev', 'geo', 'agegp10', 'sex')) %>%
+  rename(rmse_asdr_lopo_net = Network,
+         rmse_asdr_lopo_sib = Sibling) %>%
+  mutate(rmse_asdr_lopo_n_minus_s = rmse_asdr_lopo_net - rmse_asdr_lopo_sib) %>%
+  ## now use the jackknife formula to get variance estimates for each city
+  group_split(geo) %>%
+  map_dfr(~ {
+    .x %>%
+      group_by(geo, cb_code) %>%
+      summarize(mean_rmse_asdr_lopo_n_minus_s = mean(rmse_asdr_lopo_n_minus_s))
+                # this should be 10 (since there are 10 age/sex groups)
+                #num_gp_check = n())
+  }) %>%
+  group_by(geo) %>%
+  # estimated variance in city MSE difference estimate, using JAB
+  summarize(city_var_rmse_asdr_lopo_n_minus_s = jack.var(mean_rmse_asdr_lopo_n_minus_s),
+            city_mean_rmse_asdr_lopo_n_minus_s = mean(mean_rmse_asdr_lopo_n_minus_s)) %>%
+  mutate(est_se_rmse_diff = sqrt(est_var_rmse_diff)) %>%
+
+lopo_mse_diff_tot <- lopo_mse_city_diff %>%
+  group_by(1) %>%
+  summarize(# overall estimate mse diff is the average across cities
+            est_rmse_diff = mean(city_mean_rmse_asdr_lopo_n_minus_s),
+            # overall estimated variance in mse diff is sum of city-specific 
+            # variance estimates
+            ## TODO - THINK ABOUT THIS:
+            ## I believe we need the (1/C)^2, from pulling the constant 1/C out of
+            ## the average - but should double check...
+            est_var_rmse_diff = ((1/27)^2)*sum(city_var_rmse_asdr_lopo_n_minus_s)) %>%
+  mutate(est_se_rmse_diff = sqrt(est_var_rmse_diff)) %>%
+  mutate(est_ci_low_rmse_diff = est_rmse_diff - 2*est_se_rmse_diff,
+         est_ci_high_rmse_diff = est_rmse_diff + 2*est_se_rmse_diff)
+
+```
+
+```{r}
+lopo_mse_diff_tot %>%
+  ggplot(.) +
+  geom_pointrange(aes(x = 'RMSE Difference',
+                      y = 1000*est_rmse_diff,
+                      ymin = 1000*est_ci_low_rmse_diff,
+                      ymax = 1000*est_ci_high_rmse_diff)) +
+  geom_hline(yintercept=0) +
+  xlab("") +
+  ylab("Estimated RMSE Difference (x 1,000)") +
+  expand_limits(y = c(-2, 2)) +
+  theme_minimal()
+```
+
+TODO LEFT OFF HERE - start thinking about other plots...
+
+
+
+
+BELOW IS FROM BEFORE...
+
 Also calculate leave-one-psu-out estimates for the wide version of the data
 (so we can directly get uncertainty about difference between estimators)
+
+Start from LOPO ests and aggregate MSE estimate up across age/sex/city within each method
+
+
+
+```{r}
+tmp <- lopo_ests %>%
+  select(-jab_indexes) %>%
+  #unnest(cols = lopo_ests) %>%
+  group_by(method) %>%
+  # average MSE across age/sex/city
+  summarize(agg_mse = mean(mse_asdr_lopo))
+```
+
+
+
+
 
 TODO - THINK ABOUT THIS MORE: we are aggregating across states - how to handle that? Since each
 PSU is in one state, it seems like it would under-estimate variance to treat them all as separate;
 in other words, we need some kind of stratification in here, I think?
 
 ```{r leave-one-psu-out-diff-estimates}
+
+tic("Calculating leave-one PSU out estimates to use with jackknife after bootstrap for differences")
+lopo_diff_ests <- jab_df %>%
+  mutate(
+    # leave one psu out ests
+    lopo_ests = map(jab_indexes,
+                   # this function takes a list of bootstrap indexes and
+                   # calculates summaries of all of the estimates based
+                   # on those indexes
+                   function(jab_boot_indexes) {
+                      cur_res <- comp_asdrs_wide_boot %>%
+                        # filter to boot indexes to be used for the hold-one-out calculations
+                        # based on this index
+                        filter(boot_idx %in% jab_boot_indexes) %>%
+                        # calculate estimate of MSE for net and for sib within
+                        # each age/sex/city, based on these LOPO bootstrap reps
+                        group_by(geo, sex, agegp10) %>%
+                        
+                        
+                        # grouping by boot_idx will average over
+                        # state, sex, and age within each bootstrap rep
+                        group_by(boot_idx) %>%
+                        # calculate rmse for each method across state/sex/age
+                        summarize(rmse.n = sqrt(mean(delta2_Network)),
+                                  rmse.s = sqrt(mean(delta2_Sibling)),
+                                  mse.n = mean(delta2_Network),
+                                  mse.s = mean(delta2_Sibling),
+                                  .groups='drop') %>%
+                        ungroup() %>%
+                        # and get the difference in RMSE between net and sib across sate/sex/age
+                        mutate(rmse.n.minus.s = rmse.n - rmse.s) %>%
+                        # now calculate the variance in this estimated mean difference
+                        # across the bootstrap reps included when we leave this PSU out
+                        group_by(1) %>%
+                        summarize(n_jab_check = n(),
+                                  mean_diff_nminuss = mean(rmse.n.minus.s),
+                                  # fp.var is our custom function that has n in the denom instead of (n-1)
+                                  var_diff_nminuss_lopo = fp.var(rmse.n.minus.s),
+                                  mean_rmse_network = mean(rmse.n),
+                                  var_rmse_network_lopo = fp.var(rmse.n),
+                                  mean_rmse_sibling = mean(rmse.s),
+                                  var_rmse_sibling_lopo = fp.var(rmse.s),
+                                  mean_mse_network = mean(mse.n),
+                                  var_mse_network = fp.var(mse.n),
+                                  mean_mse_sibling = mean(mse.s),
+                                  var_mse_sibling = fp.var(mse.s),
+                                  .groups = "drop")
+                      return(cur_res)
+                     
+                   })) %>%
+  unnest(cols = lopo_ests)
+toc()
+```
+
+```{r old-leave-one-psu-out-diff-estimates, eval=FALSE}
 
 tic("Calculating leave-one PSU out estimates to use with jackknife after bootstrap for differences")
 lopo_diff_ests <- jab_df %>%
