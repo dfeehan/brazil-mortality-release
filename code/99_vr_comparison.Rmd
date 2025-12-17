@@ -1381,381 +1381,6 @@ for(i in 1:np) {
 }
 dev.off()
 ```
-
-```{r}
-if(params$geo_name == 'city') {
-  
-## get Coale-Demeny model life table values
-## (these come from the demogR package)
-
-cd.f.raw <- cdmltw(sex='F')
-cd.m.raw <- cdmltw(sex='M')
-
-cd <- purrr::map_dfr(1:25,
-              function(idx) {
-                cur_level_f <- tibble(sex='f',
-                                      level.idx=idx,
-                                      age=cd.f.raw$age,
-                                      width=cd.f.raw$width,
-                                      e10=cd.f.raw$e10[idx],
-                                      lx=cd.f.raw$lx[idx,],
-                                      nqx=cd.f.raw$nqx[idx,],
-                                      nax=cd.f.raw$nax[idx,],
-                                      ndx=cd.f.raw$ndx[idx,],
-                                      nLx=cd.f.raw$nLx[idx,],
-                                      nmx=cd.f.raw$nmx[idx,],
-                                      Tx=cd.f.raw$Tx[idx,],
-                                      ex=cd.f.raw$ex[idx,])
-                
-                cur_level_m <- tibble(sex='m',
-                                      level.idx=idx,
-                                      age=cd.m.raw$age,
-                                      width=cd.m.raw$width,
-                                      e10=cd.m.raw$e10[idx],
-                                      lx=cd.m.raw$lx[idx,],
-                                      nqx=cd.m.raw$nqx[idx,],
-                                      nax=cd.m.raw$nax[idx,],
-                                      ndx=cd.m.raw$ndx[idx,],
-                                      nLx=cd.m.raw$nLx[idx,],
-                                      nmx=cd.m.raw$nmx[idx,],
-                                      Tx=cd.m.raw$Tx[idx,],
-                                      ex=cd.m.raw$ex[idx,])
-                                         
-                return(bind_rows(cur_level_f, cur_level_m))
-              })
-
-grab_cd_comparison <- function(level) {
-  
- cd_forcomp_fine <- cd %>% 
-  filter(level.idx==level) %>% 
-  filter(age >=15, age < 65)
-
-cd_forcomp <- cd_forcomp_fine %>%
-  group_by(sex) %>%
-  ## for age 15, we'll make this into age gp 18-19 by:
-  ##    * taking .75d1 + .25d2 where d1 is 15-19 asdr and d2 is 20-24 asdr
-  ##    * changing 'width' of age gp to 2
-  ##    * renaming age gp '18'
-  mutate(nLx = case_when(
-    age==15 ~ .75*nLx + .25*nLx[age==20],
-    TRUE ~ nLx
-  )) %>%
-  mutate(ndx = case_when(
-    age==15 ~ .75*ndx + .25*ndx[age==20],
-    TRUE ~ ndx
-  )) %>%
-  mutate(width = case_when(
-    age==15 ~ 2,
-    TRUE    ~ width
-  )) %>%
-  mutate(age = case_when(
-    age==15 ~ 18,
-    TRUE    ~ age
-  ))
-
-cd_forcomp <- cd_forcomp %>%
-  group_by(sex) %>%
-  mutate(agg.asdr = case_when(
-    age == 18 ~ (ndx + ndx[age==20])/(nLx + nLx[age==20]),
-    age == 25 ~ (ndx + ndx[age==30])/(nLx + nLx[age==30]),
-    age == 35 ~ (ndx + ndx[age==40])/(nLx + nLx[age==40]),
-    age == 45 ~ (ndx + ndx[age==50])/(nLx + nLx[age==50]),
-    age == 55 ~ (ndx + ndx[age==60])/(nLx + nLx[age==60]),
-    TRUE ~ NA_real_
-  ))  
-
-cd_forcomp <- cd_forcomp %>%
-  filter(!is.na(agg.asdr))
-
-cd_forcomp <- cd_forcomp %>%
-  mutate(agegp10=paste(cut(as.numeric(age),
-                           breaks=c(18,25,35,45,55,65,75,Inf),
-                           right=FALSE,
-                           include.lowest=TRUE)))
-
-return(cd_forcomp)
-
-}
-
-cd_level23_raw <- grab_cd_comparison(level=23) %>%
-  select(sex, agegp10, post_mean_asdr = agg.asdr) %>%
-  mutate(sex = case_when(sex == 'f' ~ 'Female',
-                         TRUE ~ 'Male')) %>%
-  mutate(geo = 'CD')
-
-cd_comparison <-
-  bind_rows(cd_level23_raw %>% mutate(method='Network'),
-            cd_level23_raw %>% mutate(method='Sibling'))
-
-}
-```
-
-
-Plot with plausibility comparison: asdrs for sib/net side by side
-
-
-```{r plot-asdrs-plaus, fig.width=6, fig.height=6}
-if(params$geo_name == 'city') {
-  
-
-rel.point.size <- .3
-point.stroke <- .2
-
-spec_geo <- "RJ"
-spec_geo_df <- est_asdrs %>% filter(geo == spec_geo)
-
-est_lty <- 'solid'
-mlt_lty <- 'solid' 
-#est_lty <- 'solid'
-#mlt_lty <- 'twodash' 
-
-est_color <- 'black'
-mlt_color <- 'blue'
-#mlt_color <- 'white'
-
-#bg_color <- 'light grey'
-bg_color <- 'white'
-
-est_alpha <- 0.2
-#mlt_alpha <- 0.8
-
-#est_shape <- 1 
-est_shape <- 16
-mlt_shape <- 4 
-
-legend_override_aes <- list(alpha = c(1,est_alpha),
-                            color = c(mlt_color, est_color))
-
-asdr_plaus_plot <- 
-  est_asdrs %>%
-  ggplot(.) +
-  theme_bw(base_size=5) +
-  ###
-  ## MODEL LIFE TABLE
-  ###
-  geom_line(aes(x=agegp10, 
-                y=post_mean_asdr,
-                color=mlt_color,
-                #shape=mlt_shape,
-                #lty=mlt_lty,
-                group=interaction(method,sex,geo)),
-            #alpha=.5,
-            data = cd_comparison,
-            color=mlt_color,
-            show.legend = TRUE,
-            #lty = mlt_lty,
-            lwd=1) +    
-  geom_point(aes(x=agegp10, 
-                y=post_mean_asdr,
-                #color=mlt_color,
-                shape=mlt_shape),
-                #lty=mlt_lty
-            #alpha=.5,
-            data = cd_comparison,
-            color=mlt_color,
-            #lty = mlt_lty,
-            lwd=3) +    
-  ###
-  ## ESTIMATES
-  ###
-  geom_line(aes(x=agegp10, 
-                y=post_mean_asdr,
-                #color=est_color,
-                #linetype=est_lty,
-                #shape=est_shape,
-                group=interaction(method,sex,geo)),
-            show.legend = TRUE,
-            color=est_color,
-            alpha=est_alpha) +  
-  geom_point(aes(x=agegp10, 
-                 y=post_mean_asdr,
-                 #color=est_color,
-                 #linetype=est_lty,
-                 shape=est_shape),
-             color=est_color,#
-            alpha=est_alpha) +  
-  facet_grid(sex ~ method) +
-  #scale_color_identity(guide = 'legend',
-  #                     name = "",
-  #                     breaks = c(mlt_color, est_color),
-  #                     labels = c("Model Life Table", "Estimate"))  +
-  scale_shape_identity(guide = 'legend',
-                       name = "",
-                       breaks = c(mlt_shape, est_shape),
-                       labels = c("Model Life Table", "Estimate"))  +
-  #guides(line = guide_legend())
-  #scale_line_identity(guide = 'legend',
-  #                     name = "",
-  #                     breaks = c(1,1),
-  #                     labels = c("Model Life Table", "Estimate"))  +
-  #scale_linetype_identity(guide = 'legend',
-  #                        name = "",
-  #                        breaks = c(mlt_lty, est_lty),
-  #                        labels = c("Model Life Table", "Estimate"))  +
-  #scale_y_log10() +
-  ylab("Age-specific death rate") +
-  xlab("") +
-  #guides(line = guide_legend(override.aes=list(alpha=c(1,0)))) +
-  guides(line = guide_legend(override.aes=legend_override_aes),
-         shape = guide_legend(override.aes=legend_override_aes)) +
-  #theme(
-  #panel.background = element_rect(fill = "lightblue",
-  #                              colour = "lightblue",
-  #                              size = 0.5, linetype = "solid"),
-  #panel.grid.major = element_line(size = 0.5, linetype = 'solid',
-  #                              colour = "white"), 
-  #panel.grid.minor = element_line(size = 0.25, linetype = 'solid',
-  #                              colour = "white")
-  #)
-  theme(strip.background=element_rect(fill=NA),
-        panel.background = element_rect(fill = bg_color,
-                                        colour = bg_color,
-                                        size = 0.5, linetype = "solid"),
-        legend.position='bottom')
-
-asdr_plaus_plot_log <- asdr_plaus_plot + scale_y_log10() + ylab("Log(Age-specific death rate)") +
-
-ggsave(filename=file.path(comp_out_dir, "asdr_plaus.pdf"),
-       plot=asdr_plaus_plot,
-       height=4,
-       width=4)
-knitr::plot_crop(file.path(comp_out_dir, "asdr_plaus.pdf"))
-
-ggsave(filename=file.path(comp_out_dir, "asdr_plaus_log.pdf"),
-       plot=asdr_plaus_plot_log,
-       height=4,
-       width=4)
-knitr::plot_crop(file.path(comp_out_dir, "asdr_plaus_log.pdf"))
-
-
-asdr_plaus_plot_log
-
-}
-```
-
-NEW VERSION OF THE EXAMPLE PLOT
-
-```{r spec-geo-valid-plot}
-# TODO
-if(params$geo_name == 'city') {
-  
-  #gs_lty <- 'dotted'
-  gs_lty <- 'solid'
-  #est_lty <- 'dotdash' 
-  est_lty <- 'dotted' 
-  #est_lty <- 'solid' 
-  mlt_lty <- 'longdash' 
-  
-  gs_color <- 'red'
-  est_color <- 'black'
-  mlt_color <- 'blue'
-  
-  gs_alpha <- 1
-  est_alpha <- 0.8
-  mlt_alpha <- 0.5
-  
-  est_shape <- 16 
-  gs_shape <- 1
-  
-  spec_geo <- 'RJ'
-  
-  spec_geo_df <- est_asdrs %>% filter(geo == spec_geo)
-  
-  asdr_rj_example <- 
-    est_asdrs %>%
-    left_join(gs_asdrs) %>% 
-    filter(geo == spec_geo) %>%
-    ggplot(.) +    
-    theme_bw(base_size=12) +
-    ##########
-    ## vital registration/gold standard
-    ##########
-    geom_point(aes(x=agegp10, 
-                  y=asdr,
-                  #group=interaction(method,sex,geo),
-                  #linetype=gs_lty,
-                  shape=gs_shape),
-                  size=5,
-                  #color=gs_color),
-              alpha=gs_alpha,
-              lwd=2) +  
-    #geom_line(aes(x=agegp10, 
-    #              y=asdr,
-    #              group=interaction(method,sex,geo),
-    #              linetype=gs_lty,
-    #              color=gs_color),
-    #          alpha=gs_alpha,
-    #          lwd=1.5) +  
-    #geom_point(aes(x=agegp10, 
-    #              y=asdr,
-    #              color=gs_color,
-    #              group=interaction(method,sex,geo))) +  
-    ##########
-    ## survey-based estimates
-    ##########
-    geom_line(aes(x=agegp10, 
-                  y=post_mean_asdr,
-                  #color=est_color,
-                  #linetype=est_lty,
-                  group=interaction(method,sex,geo)),
-            #alpha=est_alpha,
-            #alpha=0.7,
-            color='grey',
-            data = spec_geo_df,
-            lwd=1) +  
-    geom_linerange(aes(x=agegp10, 
-                        #y=post_mean_asdr,
-                        #color=est_color,
-                        #lty = est_lty,
-                        ymin=post_ci_low_asdr,
-                        ymax=post_ci_high_asdr),
-                    key_glyph = draw_key_blank,
-            alpha=est_alpha,
-            data = spec_geo_df) +  
-    geom_point(aes(x=agegp10, 
-                  y=post_mean_asdr,
-                  shape=est_shape),
-               lwd=2.5,
-                  #color=est_color,
-                  #linetype=est_lty,
-                  #group=interaction(method,sex,geo)),
-            alpha=est_alpha,
-            data = spec_geo_df) +  
-    facet_grid(sex ~ method) +
-    scale_y_log10() +
-    ylab("Log(Age-specific death rate)") +
-    xlab("") +
-    theme(strip.background=element_rect(fill=NA)) +
-    # see
-    # https://aosmith.rbind.io/2020/07/09/ggplot2-override-aes/
-    scale_shape_identity(guide = 'legend',
-                         name = "",
-                         breaks = c(gs_shape, est_shape),
-                         #guide = guide_legend(override.aes = list(size = c(6,1))),
-                         labels = c("Vital Registration", "Estimate")) +
-    #scale_color_identity(guide = 'legend',
-    #                     name = "",
-    #                     breaks = c(gs_color, est_color),
-    #                     labels = c("Vital Registration", "Estimate")) +
-    #scale_linetype_identity(guide = 'legend',
-    #                     name = "",
-    #                     breaks = c(gs_lty, est_lty),
-    #                     labels = c("Vital Registration", "Estimate"))  +    
-    guides(shape=guide_legend(override.aes = list(size=c(4,2)))) +
-    theme(legend.position = 'bottom')
-  
-  ggsave(filename=file.path(comp_out_dir, "asdr_vr_rj_example.pdf"),
-       plot=asdr_rj_example,
-       height=6,
-       width=6)
-   knitr::plot_crop(file.path(comp_out_dir, "asdr_vr_rj_example.pdf"))
- 
-   asdr_rj_example 
-}
-```
-
-
-
 ### Minimum detectable effects
 
 ```{r}
@@ -1853,7 +1478,10 @@ all_ci_widths
 ```
 
 
-Error distn for file
+## Error distn for file
+
+TODO - If we still use these results (not sure), then I think these need to be 
+updated for the MSE based on bootstrap we're using now...
 
 ```{r}
 mse_diff_hist <- comp_asdrs_wide_boot %>%
@@ -2052,14 +1680,15 @@ if(geo_name %in% c('national', 'region')) {
 
 ## Bias-Variance Decomposition
 
-
-Get uncertainty around BVD ests
-
 ```{r}
 fp.var <- function(x) {
   return(mean((x - mean(x))^2))
 }
+```
 
+Get uncertainty around BVD ests
+
+```{r}
 # summary of results across cities within each bootstrap for each age/sex group
 acrosscity_boot_res <- comp_asdrs_boot %>%
   ## for each method,
@@ -2089,44 +1718,78 @@ acrossboot_city_res <- comp_asdrs_boot %>%
               values_from = c('bias', 'var', 'fp.var', 'mse', 'rmse'))
 ```
 
-### New - aggregating across boot reps within each age/sex/city group
+### Calculating bias / variance / MSE within each age/sex/city
 
-I think this approach is estimating uncertainty over repeated applications of our design; ie, if we conducted this study in these 27 cities again, selecting a different random sample, what would our results show?
+Here, we estimating design-based bias, variance, and MSE
+ie, if we conducted this study in these 27 cities again, selecting 
+a different random sample, what would our results show?
 
 ```{r}
-across_boot_long_res <- comp_asdrs_boot %>%
+#across_boot_long_res <- 
+estimated_properties_long <- 
+  comp_asdrs_boot %>%
   ## for each method,
   ## aggregating across the cities w/in each age/sex group + bootstrap rep
   group_by(sex, agegp10, geo, method) %>%
   summarize(avg_estimate = mean(post_mean_asdr),
             gs_val = mean(gs_asdr),
-            bias = mean(delta),
+            # NB: gs_asdr values are all the same, so gs_asdr[1] just
+            # picks out one of them
+            bias = mean(post_mean_asdr) - gs_asdr[1],
             #bias_check = mean(post_mean_asdr) - avg_estimate,
-            var = var(delta),
-            fp.var = fp.var(delta),            
-            mse = mean(delta2),
-            rmse = sqrt(mean(delta2))) %>%
+            var = var(post_mean_asdr),
+            fp.var = fp.var(post_mean_asdr),            
+            mse = mean((post_mean_asdr - gs_asdr)^2)) %>%
+            #rmse = sqrt(mean(delta2))) %>%
+            #var = var(delta),
+            #fp.var = fp.var(delta),            
+            #mse = mean(delta2),
+            #rmse = sqrt(mean(delta2))) %>%
+  mutate(rmse = sqrt(mse)) %>%
   ungroup() %>%
-  # this seems to be right...
-  mutate(bias_alt = 1000*(avg_estimate - gs_val)) %>%
-  mutate(bias_check = bias_alt - bias,
-         bvd_check = mse - (fp.var + bias^2))
+  mutate(frac_mse_bias2 = bias^2/mse,
+         frac_mse_var = fp.var / mse)
+  #%>%
+  # uncomment to check that bias-variance decomposition holds
+  # (it does!)
+  #mutate(bias_alt = 1000*(avg_estimate - gs_val)) %>%
+  #mutate(bias_check = bias_alt - bias,
+  #       bvd_check = mse - (fp.var + bias^2))
 
-across_boot_res <- across_boot_long_res %>%
+#across_boot_res <- across_boot_long_res %>%
+estimated_properties <- 
+  estimated_properties_long %>%
   select(-avg_estimate) %>%
   pivot_wider(names_from = 'method',
               values_from = c('bias', 
-                              'bias_alt',
-                              'bias_check', 'bvd_check',
-                              'var', 'fp.var', 'mse', 'rmse'))
+                              #'bias_alt',
+                              #'bias_check', 'bvd_check',
+                              'var', 'fp.var', 'mse', 'rmse',
+                              'frac_mse_bias2', 'frac_mse_var'))
 
-across_boot_city_avg_res <- across_boot_res %>%
-  group_by(sex, agegp10) %>%
+#across_boot_city_avg_res <- across_boot_res %>%
+estimated_properties_city_avg <- 
+  estimated_properties_long %>%
+  # average of estimator properties across cities
+  group_by(method, geo) %>%
   summarize(across(c(starts_with('bias'), 
                      starts_with('var'),
                      starts_with('fp.var'),
                      starts_with('mse'),
-                     starts_with('rmse')),
+                     starts_with('rmse'),
+                     starts_with('frac_mse')),
+                   list(mean = mean)))
+
+estimated_properties_agesex_avg <- 
+  estimated_properties_long %>%
+  # average of estimator properties across cities
+  group_by(method, sex, agegp10) %>%
+  summarize(across(c(starts_with('bias'), 
+                     starts_with('var'),
+                     starts_with('fp.var'),
+                     starts_with('mse'),
+                     starts_with('rmse'),
+                     starts_with('frac_mse')),
                    list(mean = mean)))
 ```
 
@@ -2135,55 +1798,49 @@ across_boot_city_avg_res <- across_boot_res %>%
 Plot the share of MSE that is bias2 and variance for each method
 
 ```{r}
-tmp <- across_boot_long_res %>%
-  mutate(frac_mse_bias2 = bias^2 / mse,
-         frac_mse_var = fp.var / mse) %>%
-  # this checks out...
-  #mutate(id_check = frac_mse_bias2 + frac_mse_var) %>%
-  #select(id_check, everything())
-  group_by(geo, sex, agegp10, method) %>%
-  summarize(frac_mse_bias2_mean = mean(frac_mse_bias2),
-            frac_mse_bias2_ci_low = quantile(frac_mse_bias2, .025),
-            frac_mse_bias2_ci_high = quantile(frac_mse_bias2, .975))
- 
-tmp %>%
+estimated_properties_long %>%
   ggplot(.) +
-  geom_point(aes(x = frac_mse_bias2_mean,
+  geom_point(aes(x = frac_mse_bias2,
                  y = method,
                  color = method),
              position = position_jitter(width = 0, height = 0.2)) +
+  geom_point(data = estimated_properties_agesex_avg,
+             aes(x = frac_mse_bias2_mean,
+                 y = method,
+                 color = method),
+             shape = 'X',      
+             size = 8) +      
   facet_grid(agegp10 ~ sex) +
   ylab("") +
-  xlab("Avg across bootstrap reps\nof the fraction of MSE that is Bias^2") +
+  xlab("Fraction of MSE that is Bias^2") +
+  guides(color = guide_legend(title="")) +
+  theme_minimal()
+
+estimated_properties_long %>%
+  ggplot(.) +
+  geom_point(aes(x = frac_mse_var,
+                 y = method,
+                 color = method),
+             position = position_jitter(width = 0, height = 0.2)) +
+  geom_point(data = estimated_properties_agesex_avg,
+             aes(x = frac_mse_var_mean,
+                 y = method,
+                 color = method),
+             shape = 'X',      
+             size = 8) +      
+  facet_grid(agegp10 ~ sex) +
+  ylab("") +
+  xlab("Fraction of MSE that is from variance") +
   guides(color = guide_legend(title="")) +
   theme_minimal()
 ```
 
 ```{r}
-tmp %>%
-  pivot_wider(values_from = starts_with('frac_mse'),
-              names_from = 'method',
-              id_cols = c(geo, sex, agegp10)) %>%
-  ggplot(.) +
-  geom_abline(slope = 1, intercept = 0, color='grey') +
-  geom_point(aes(x = frac_mse_bias2_mean_Network,
-                 y = frac_mse_bias2_mean_Sibling)) +
-  facet_grid(sex ~ agegp10) +
-  coord_obs_pred() +
-  xlab("Netowrk\nAvg across bootstrap reps\nof the fraction of MSE that is Bias^2") +
-  ylab("Sibling\nAvg across bootstrap reps\nof the fraction of MSE that is Bias^2") +
-  theme_minimal()
-``` 
-```{r}
-tmp_agg <- tmp %>%
-  group_by(sex, agegp10, method) %>%
-  summarize(mean_frac_mse_bias2_mean = mean(frac_mse_bias2_mean))
-
 # one method in each panel
-tmp_agg %>%
+estimated_properties_agesex_avg %>%
   ggplot(.) +
   geom_point(aes(x = agegp10, 
-                 y = mean_frac_mse_bias2_mean, 
+                 y = frac_mse_bias2_mean, 
                  color=sex,
                  shape=sex),
              size=2) +
@@ -2191,10 +1848,10 @@ tmp_agg %>%
   theme_minimal()
 
 # one sex in each panel
-tmp_agg %>%
+estimated_properties_agesex_avg %>%
   ggplot(.) +
   geom_point(aes(x = agegp10, 
-                 y = mean_frac_mse_bias2_mean, 
+                 y = frac_mse_bias2_mean, 
                  color=method,
                  shape=method),
              size=2) +
@@ -2205,19 +1862,15 @@ tmp_agg %>%
 ... above, as a stacked bar char
 
 ```{r}
-tmp_agg <- tmp %>%
-  group_by(sex, agegp10, method) %>%
-  summarize(mean_frac_mse_bias2_mean = mean(frac_mse_bias2_mean)) %>%
-  mutate(mean_frac_mse_var_mean = 1 - mean_frac_mse_bias2_mean)
-
-# Reshape data for stacked bar chart
-tmp_agg_long <- tmp_agg %>%
-  pivot_longer(cols = c(mean_frac_mse_bias2_mean, mean_frac_mse_var_mean),
+# reshape data for stacked bar chart
+tmp_agg_long <- estimated_properties_agesex_avg %>%
+#tmp_agg_long <- tmp_agg %>%
+  pivot_longer(cols = c(frac_mse_bias2_mean, frac_mse_var_mean),
                names_to = "component", 
                values_to = "fraction") %>%
   mutate(component = case_when(
-    component == "mean_frac_mse_bias2_mean" ~ "Bias²",
-    component == "mean_frac_mse_var_mean" ~ "Variance"
+    component == "frac_mse_bias2_mean" ~ "Bias²",
+    component == "frac_mse_var_mean" ~ "Variance"
   ))
 
 # Stacked bar chart with one method in each panel
@@ -2231,6 +1884,8 @@ tmp_agg_long %>%
   xlab("") + ylab("")
 
 ```
+
+TODO DENNIS LEFT OFF...
 
 #### Nov 03, trying to use JAB results
 
@@ -2258,6 +1913,7 @@ for each state s
   
 
 ```{r jab-indexes}
+tic("Getting jackknife after bootstrap (JAB) indexes")
 # this creates a list with one entry for each PSU
 # that maps the PSU to the bootstrap indices that can be used for
 # the hold-one-out jackknife after bootstrap calculation based on that PSU
@@ -2286,8 +1942,12 @@ jab_df <- tibble(
     boot.cc %>% select(state_abbrev, cb_code)
   ) %>%
   mutate(n_jab = map_dbl(jab_indexes, ~ length(.x)))
+toc()
+```
 
+This is a helper function that will be useful below
 
+```{r}
 # jackknife variance estimate formula
 # see, eg, the Efron book
 jack.var <- function(x) {
@@ -2353,1187 +2013,158 @@ Our point estimate for the difference in RMSE between methods is the average of 
 RMSE estimate differences between each method, averaged over all city/age/sex groups
 
 ```{r}
-lopo_mse_city_diff <- lopo_ests %>%
+# this produces a tibble with one row for each
+# PSU x age-sex group (so, 10 times the number of PSUs, \approx 41,000)
+# note that, since each PSU is in exactly one city, each row here is
+# a LOPO estimate that corresponds to a city/age/sex cell
+lopo_agesexgeo_wide <- lopo_ests %>%
   unnest(lopo_ests) %>%
   pivot_wider(names_from = 'method',
               values_from = 'rmse_asdr_lopo',
               id_cols=c('cb_code', 'state_abbrev', 'geo', 'agegp10', 'sex')) %>%
   rename(rmse_asdr_lopo_net = Network,
          rmse_asdr_lopo_sib = Sibling) %>%
-  mutate(rmse_asdr_lopo_n_minus_s = rmse_asdr_lopo_net - rmse_asdr_lopo_sib) %>%
+  mutate(rmse_asdr_lopo_n_minus_s = rmse_asdr_lopo_net - rmse_asdr_lopo_sib) 
+```
+
+Get the city-specific estimated differences in RMSE
+
+```{r}
+# uncertainty in estimated point estimates (based on JAB)
+lopo_rmse_city_diff <- lopo_agesexgeo_wide %>%
   ## now use the jackknife formula to get variance estimates for each city
   group_split(geo) %>%
   map_dfr(~ {
     .x %>%
+      # aggregate LOPO estimates across age/sex groups within this city and PSU
       group_by(geo, cb_code) %>%
       summarize(mean_rmse_asdr_lopo_n_minus_s = mean(rmse_asdr_lopo_n_minus_s))
                 # this should be 10 (since there are 10 age/sex groups)
                 #num_gp_check = n())
   }) %>%
+  # and now take the aggregated (across age/sex) LOPO estimates for 
+  # each city/PSU, and aggregate these using the jackknife formula
+  # this produces an estimated variance of the estimated RMSE difference 
+  # within each city
   group_by(geo) %>%
   # estimated variance in city MSE difference estimate, using JAB
   summarize(city_var_rmse_asdr_lopo_n_minus_s = jack.var(mean_rmse_asdr_lopo_n_minus_s),
             city_mean_rmse_asdr_lopo_n_minus_s = mean(mean_rmse_asdr_lopo_n_minus_s)) %>%
-  mutate(est_se_rmse_diff = sqrt(est_var_rmse_diff)) %>%
+  mutate(city_se_rmse_diff = sqrt(city_var_rmse_asdr_lopo_n_minus_s)) 
 
-lopo_mse_diff_tot <- lopo_mse_city_diff %>%
-  group_by(1) %>%
-  summarize(# overall estimate mse diff is the average across cities
-            est_rmse_diff = mean(city_mean_rmse_asdr_lopo_n_minus_s),
-            # overall estimated variance in mse diff is sum of city-specific 
-            # variance estimates
-            ## TODO - THINK ABOUT THIS:
-            ## I believe we need the (1/C)^2, from pulling the constant 1/C out of
-            ## the average - but should double check...
-            est_var_rmse_diff = ((1/27)^2)*sum(city_var_rmse_asdr_lopo_n_minus_s)) %>%
-  mutate(est_se_rmse_diff = sqrt(est_var_rmse_diff)) %>%
-  mutate(est_ci_low_rmse_diff = est_rmse_diff - 2*est_se_rmse_diff,
-         est_ci_high_rmse_diff = est_rmse_diff + 2*est_se_rmse_diff)
+# point estimate (not based on JAB)
+rmse_city_diff <- estimated_properties %>%
+  mutate(rmse_asdr_n_minus_s = rmse_Network - rmse_Sibling) %>%
+  group_by(geo) %>%
+  summarize(city_rmse_diff = mean(rmse_asdr_n_minus_s)) %>%
+  # join on the uncertainty in estimated RMSE diffs, based on JAB
+  left_join(lopo_rmse_city_diff) %>%
+  mutate(city_rmse_diff_ci_low = city_rmse_diff - 1.96*city_se_rmse_diff,
+         city_rmse_diff_ci_high = city_rmse_diff + 1.96*city_se_rmse_diff)
 
 ```
 
 ```{r}
-lopo_mse_diff_tot %>%
+biggestdiff <- max(c(1000*rmse_city_diff$city_rmse_diff_ci_low,
+                     1000*rmse_city_diff$city_rmse_diff_ci_high))
+annscale <- .8
+annxoff <- 0.2 
+
+rmse_city_diff %>%
+  mutate(geo = fct_reorder(geo, city_rmse_diff)) %>%
   ggplot(.) +
-  geom_pointrange(aes(x = 'RMSE Difference',
+  geom_pointrange(aes(x = geo,
+                      y = 1000*city_rmse_diff,
+                      ymin = 1000*city_rmse_diff_ci_low,
+                      ymax = 1000*city_rmse_diff_ci_high)) +
+  geom_hline(yintercept=0) +
+  xlab("") +
+  ylab("Estimated RMSE Difference (x 1,000)\nNetwork RMSE - Sibling RMSE") +
+  expand_limits(y = c(-6, 6)) +
+  annotate(geom='text',
+         label="<- Network is better ",
+         #x='SE',
+         x=annxoff,
+         y=-biggestdiff*annscale,
+         size=rel(3),
+         color='red',
+         angle=90) +
+  annotate(geom='text',
+           label="Sibling is better ->",
+           #x='SE',
+           x=annxoff,
+           y=biggestdiff*annscale,
+           size=rel(3),
+           color='red',
+           angle=90) +
+  theme_minimal() +
+  coord_cartesian(clip = "off")
+```
+
+
+Get the total estimated difference in RMSE (averaged across all cities)
+
+```{r}
+# finally, aggregate the city-specific estimated variance of the estimated 
+# RMSE differences across cities
+rmse_tot_diff <- rmse_city_diff %>%
+  ungroup() %>%
+  # to summarize across all rows in the tibble
+  group_by(1) %>%
+  summarize(# overall estimate mse diff is the average across cities
+            est_rmse_diff = mean(city_rmse_diff),
+            # overall estimated variance in mse diff is average of city-specific 
+            # variance estimates, which is (1/27)^2 times the sum of 
+            # the city-specific variances
+            # (we need (1/27)^2 because we're pulling a constant out of the
+            #  variance -- see the appendix notes)
+            est_var_rmse_diff = ((1/27)^2)*sum(city_var_rmse_asdr_lopo_n_minus_s)) %>%
+  mutate(est_se_rmse_diff = sqrt(est_var_rmse_diff)) %>%
+  mutate(est_ci_low_rmse_diff = est_rmse_diff - 2*est_se_rmse_diff,
+         est_ci_high_rmse_diff = est_rmse_diff + 2*est_se_rmse_diff)
+```
+
+```{r}
+annscale <- -3  
+biggestdiff <- max(c(1000*rmse_tot_diff$est_ci_low_rmse_diff, 
+                     1000*rmse_tot_diff$est_ci_high_rmse_diff))
+
+rmse_tot_diff %>%
+  ggplot(.) +
+  geom_pointrange(aes(x = 'Average Overall RMSE Difference',
                       y = 1000*est_rmse_diff,
                       ymin = 1000*est_ci_low_rmse_diff,
                       ymax = 1000*est_ci_high_rmse_diff)) +
   geom_hline(yintercept=0) +
   xlab("") +
-  ylab("Estimated RMSE Difference (x 1,000)") +
+  ylab("Estimated RMSE Difference (x 1,000)\nNetwork RMSE - Sibling RMSE") +
   expand_limits(y = c(-2, 2)) +
+  annotate(geom='text',
+           label="<- Network is better ",
+           #x='SE',
+           x=0.5,
+           y=-biggestdiff*annscale,
+           size=rel(3),
+           color='red',
+           angle=90) +
+  annotate(geom='text',
+           label="Sibling is better ->",
+           #x='SE',
+           x=0.5,
+           y=biggestdiff*annscale,
+           size=rel(3),
+           color='red',
+           angle=90) +
   theme_minimal()
 ```
+### Headline variance, bias, MSE
 
-TODO LEFT OFF HERE - start thinking about other plots...
+TODO
 
 
+### Age/sex breakdown of variance, bias, MSE 
 
-
-BELOW IS FROM BEFORE...
-
-Also calculate leave-one-psu-out estimates for the wide version of the data
-(so we can directly get uncertainty about difference between estimators)
-
-Start from LOPO ests and aggregate MSE estimate up across age/sex/city within each method
-
-
-
-```{r}
-tmp <- lopo_ests %>%
-  select(-jab_indexes) %>%
-  #unnest(cols = lopo_ests) %>%
-  group_by(method) %>%
-  # average MSE across age/sex/city
-  summarize(agg_mse = mean(mse_asdr_lopo))
-```
-
-
-
-
-
-TODO - THINK ABOUT THIS MORE: we are aggregating across states - how to handle that? Since each
-PSU is in one state, it seems like it would under-estimate variance to treat them all as separate;
-in other words, we need some kind of stratification in here, I think?
-
-```{r leave-one-psu-out-diff-estimates}
-
-tic("Calculating leave-one PSU out estimates to use with jackknife after bootstrap for differences")
-lopo_diff_ests <- jab_df %>%
-  mutate(
-    # leave one psu out ests
-    lopo_ests = map(jab_indexes,
-                   # this function takes a list of bootstrap indexes and
-                   # calculates summaries of all of the estimates based
-                   # on those indexes
-                   function(jab_boot_indexes) {
-                      cur_res <- comp_asdrs_wide_boot %>%
-                        # filter to boot indexes to be used for the hold-one-out calculations
-                        # based on this index
-                        filter(boot_idx %in% jab_boot_indexes) %>%
-                        # calculate estimate of MSE for net and for sib within
-                        # each age/sex/city, based on these LOPO bootstrap reps
-                        group_by(geo, sex, agegp10) %>%
-                        
-                        
-                        # grouping by boot_idx will average over
-                        # state, sex, and age within each bootstrap rep
-                        group_by(boot_idx) %>%
-                        # calculate rmse for each method across state/sex/age
-                        summarize(rmse.n = sqrt(mean(delta2_Network)),
-                                  rmse.s = sqrt(mean(delta2_Sibling)),
-                                  mse.n = mean(delta2_Network),
-                                  mse.s = mean(delta2_Sibling),
-                                  .groups='drop') %>%
-                        ungroup() %>%
-                        # and get the difference in RMSE between net and sib across sate/sex/age
-                        mutate(rmse.n.minus.s = rmse.n - rmse.s) %>%
-                        # now calculate the variance in this estimated mean difference
-                        # across the bootstrap reps included when we leave this PSU out
-                        group_by(1) %>%
-                        summarize(n_jab_check = n(),
-                                  mean_diff_nminuss = mean(rmse.n.minus.s),
-                                  # fp.var is our custom function that has n in the denom instead of (n-1)
-                                  var_diff_nminuss_lopo = fp.var(rmse.n.minus.s),
-                                  mean_rmse_network = mean(rmse.n),
-                                  var_rmse_network_lopo = fp.var(rmse.n),
-                                  mean_rmse_sibling = mean(rmse.s),
-                                  var_rmse_sibling_lopo = fp.var(rmse.s),
-                                  mean_mse_network = mean(mse.n),
-                                  var_mse_network = fp.var(mse.n),
-                                  mean_mse_sibling = mean(mse.s),
-                                  var_mse_sibling = fp.var(mse.s),
-                                  .groups = "drop")
-                      return(cur_res)
-                     
-                   })) %>%
-  unnest(cols = lopo_ests)
-toc()
-```
-
-```{r old-leave-one-psu-out-diff-estimates, eval=FALSE}
-
-tic("Calculating leave-one PSU out estimates to use with jackknife after bootstrap for differences")
-lopo_diff_ests <- jab_df %>%
-  mutate(
-    # leave one psu out ests
-    lopo_ests = map(jab_indexes,
-                   # this function takes a list of bootstrap indexes and
-                   # calculates summaries of all of the estimates based
-                   # on those indexes
-                   function(jab_boot_indexes) {
-                      cur_res <- comp_asdrs_wide_boot %>%
-                        # filter to boot indexes to be used for the hold-one-out calculations
-                        # based on this index
-                        filter(boot_idx %in% jab_boot_indexes) %>%
-                        # grouping by boot_idx will average over
-                        # state, sex, and age within each bootstrap rep
-                        group_by(boot_idx) %>%
-                        # calculate rmse for each method across state/sex/age
-                        summarize(rmse.n = sqrt(mean(delta2_Network)),
-                                  rmse.s = sqrt(mean(delta2_Sibling)),
-                                  mse.n = mean(delta2_Network),
-                                  mse.s = mean(delta2_Sibling),
-                                  .groups='drop') %>%
-                        ungroup() %>%
-                        # and get the difference in RMSE between net and sib across sate/sex/age
-                        mutate(rmse.n.minus.s = rmse.n - rmse.s) %>%
-                        # now calculate the variance in this estimated mean difference
-                        # across the bootstrap reps included when we leave this PSU out
-                        group_by(1) %>%
-                        summarize(n_jab_check = n(),
-                                  mean_diff_nminuss = mean(rmse.n.minus.s),
-                                  # fp.var is our custom function that has n in the denom instead of (n-1)
-                                  var_diff_nminuss_lopo = fp.var(rmse.n.minus.s),
-                                  mean_rmse_network = mean(rmse.n),
-                                  var_rmse_network_lopo = fp.var(rmse.n),
-                                  mean_rmse_sibling = mean(rmse.s),
-                                  var_rmse_sibling_lopo = fp.var(rmse.s),
-                                  mean_mse_network = mean(mse.n),
-                                  var_mse_network = fp.var(mse.n),
-                                  mean_mse_sibling = mean(mse.s),
-                                  var_mse_sibling = fp.var(mse.s),
-                                  .groups = "drop")
-                      return(cur_res)
-                     
-                   })) %>%
-  unnest(cols = lopo_ests)
-toc()
-```
-
-```{r}
-lopo_diff_ests %>%
-  select(-jab_indexes) %>%
-  select(-`1`) %>%
-  ggplot(.) +
-  geom_histogram(aes(x=mean_diff_nminuss)) 
-```
-
-```{r}
-lopo_diff_ests %>%
-  select(-jab_indexes) %>%
-  select(-`1`) %>%
-  ggplot(.) +
-  geom_histogram(aes(x=var_diff_nminuss_lopo))
-```
-
-```{r jab-diff-estimates}
-jab_diff_ests <- lopo_diff_ests %>%
-  select(-jab_indexes) %>%
-  select(-`1`) %>%
-  group_by(1) %>%
-  summarize(# number of PSUs used in JAB calculation
-            n_psu_jab = n(),
-            # average number of bootstrap reps used for each PSU's
-            # leave one PSU out calculations
-            n_jab_avg = mean(n_jab), 
-            # JAB variance estimate of variance estimate
-            var_var_jab = jack.var(var_diff_nminuss_lopo),
-            # JAB difference estimate
-            mean_diff_nminuss_jab = mean(mean_diff_nminuss),
-            .groups='drop')
-
-glimpse(jab_diff_ests)
-```
-
-TODO - WHAT TO DO WITH THESE ESTIMATES?
-
-- how noisy is bias / var decomposition
-
-```{r}
-errs_boot_asdr_rmse_summ %>% glimpse()
-```
-
-LEFT OFF HERE - I THINK THIS CODE IS WHAT WE WANT TO ADAPT TO GET
-JAB-BASED UNCERTAINTY ESTIMATES...
-
-```{r}
-#mse_diff_hist <- comp_asdrs_wide_boot %>%
-#  group_by(boot_idx) %>%
-#  summarize(mean.delta2.n.minus.s = mean(delta2.n.minus.s),
-#            mean.delta2.n = mean(delta2_Network),
-#            mean.delta2.s = mean(delta2_Sibling))
-#
-#errs_boot_asdr_mse <- mse_diff_hist  %>% 
-#  rename(err.n.minus.s = mean.delta2.n.minus.s,
-#         err.n = mean.delta2.n,
-#         err.s = mean.delta2.s) %>%
-#  bind_cols(loss = 'mse',
-#            qty = 'asdr',
-#            comparison_name = params$comparison_name,
-#            geo_name = params$geo_name)
-#
-#
-#errs_boot_asdr_rmse <- errs_boot_asdr_mse %>% 
-#  mutate(err.n = sqrt(err.n),
-#         err.s = sqrt(err.s),
-#         err.n.minus.s = err.n - err.s,
-#         loss = 'rmse')
-#
-#errs_boot_asdr_rmse_summ <- errs_boot_asdr_rmse %>%
-#  group_by(1) %>%
-#  summarize(diff_nminuss_mean = mean(err.n.minus.s),
-#            diff_nminuss_ci_low = quantile(err.n.minus.s, .025),
-#            diff_nminuss_ci_high = quantile(err.n.minus.s, .975),
-#            network_err = mean(err.n),
-#            network_err_ci_low = quantile(err.n, .025),
-#            network_err_ci_high = quantile(err.n, .975),
-#            network_err_sd = sd(err.n),
-#            network_err_ci_width = quantile(err.n, .975) - quantile(err.n, .025),
-#            sibling_err = mean(err.s),
-#            sibling_err_ci_low = quantile(err.s, .025),
-#            sibling_err_ci_high = quantile(err.s, .975),
-#            sibling_err_sd = sd(err.s),
-#            sibling_err_ci_width = quantile(err.s, .975) - quantile(err.s, .025),
-#            .groups='drop')
-#
-#glue::glue("
-#           Average network RMSE: {errs_boot_asdr_rmse_summ$network_err}
-#           Average sibling RMSE: {errs_boot_asdr_rmse_summ$sibling_err}
-#           On average, network estimates were about {errs_boot_asdr_rmse_summ$diff_nminuss_mean} RMSE units better than sibling estimates.  
-#           This is {round(100*errs_boot_asdr_rmse_summ$diff_nminuss_mean/errs_boot_asdr_rmse_summ$network_err,2)}% RMSE units better than sibling estimates.  
-#          CI:
-#          ({round(100*errs_boot_asdr_rmse_summ$diff_nminuss_ci_low/errs_boot_asdr_rmse_summ$network_err,2)}%,  {round(100*errs_boot_asdr_rmse_summ$diff_nminuss_ci_high/errs_boot_asdr_rmse_summ$network_err,2)}%)
-#           ")
-```
-
-
-
-
-
-#### Compare RMSE for sib and net
-
-Plot MSE values across boot reps, averaged across cities, for each age/sex group
-
-```{r}
-# MSE
-
-alpha_val <- 0.3
-
-acrossboot_avg_rmse_plot <-
-  across_boot_res %>%
-  ggplot(.) +
-  geom_abline(intercept=0,slope=1) +
-  geom_point(aes(x=rmse_Network,
-                 y=rmse_Sibling,
-                 color=agegp10),
-             alpha = alpha_val) +
-  geom_point(data=across_boot_city_avg_res,
-             aes(x=rmse_Network_mean,
-                 y=rmse_Sibling_mean),
-                 #color=agegp10),
-             size=2,
-             stroke=2,
-             shape='x') +
-  theme_minimal() +
-  xlab("RMSE Network") +
-  ylab("RMSE Sibling") +
-  facet_grid(sex ~ agegp10) +
-  #xlim(0, lim_upper_touse) + ylim(0, lim_upper_touse) +
-  coord_obs_pred() +
-  #labs(caption="Scales set to show up to 99th percentile of values") +
-  guides(color = guide_legend(title='Age group', override.aes = list(alpha=1)))
-  #coord_obs_pred(xlim=c(0,lim_upper_touse), ylim=c(0,lim_upper_touse)) 
-
-#saveRDS(acrosscity_rmse_plot, file.path(comp_out_dir, "accrosscity_rmse_plot.rds"))
-#ggsave(file.path(comp_out_dir, "accrosscity_rmse_plot.pdf"),
-#       acrosscity_rmse_plot,
-#       width=8, height=4)
-
-acrossboot_avg_rmse_plot
-```
-
-
-```{r}
-## ABSOLUTE ERRORS
-
-# upper 99th percentile 
-lims99 <- max(quantile(with(comp_asdrs_boot, delta), .99))
-
-lim_upper_touse <- NA
-lim_upper_touse <- lims99
-
-comp_asdrs_boot %>%
-  ggplot() +
-  geom_histogram(aes(x=delta,
-                    color=agegp10,
-                     fill=agegp10)) +
-  geom_vline(xintercept=0, lty='dotted') +
-  theme_minimal() +
-  xlab("Err") +
-  facet_grid(sex + method ~ agegp10) +
-  xlim(-lims99, lims99) +
-  labs(caption="Scales set to show up to 99th percentile of errors") +
-  #guides(color = guide_legend(title='Age group', override.aes = list(alpha=1)))
-  guides(color = guide_legend(title='Age group'),
-         fill = guide_legend(title='Age group'))
-```
-
-```{r}
-## DIFFERENCE IN RMSES
-
-# upper 99th percentile 
-lims99 <- max(quantile(with(comp_asdrs_wide_boot, delta_Network-delta_Sibling), .99))
-
-lim_upper_touse <- NA
-lim_upper_touse <- lims99
-
-comp_asdrs_wide_boot %>%
-  ggplot() +
-  geom_histogram(aes(x=delta_Network - delta_Sibling,
-                    color=agegp10,
-                     fill=agegp10)) +
-  geom_vline(xintercept=0, lty='dotted') +
-  theme_minimal() +
-  xlab("Err Network - Err Sibling") +
-  facet_grid(sex ~ agegp10) +
-  xlim(-lims99, lims99) +
-  labs(caption="Scales set to show up to 99th percentile of differences") +
-  #guides(color = guide_legend(title='Age group', override.aes = list(alpha=1)))
-  guides(color = guide_legend(title='Age group'),
-         fill = guide_legend(title='Age group'))
-  facet_grid(sex ~ agegp10)
-```
-
-#### Compare variance for sib and net
-
-Plot variance values across boot reps, averaged across cities, for each age/sex group
-
-```{r}
-# Variance
-alpha_val <- 0.3
-
-
-# upper 99th percentile 
-lims99 <- max(quantile(c(across_boot_res$var_Network, across_boot_res$vare_Sibling), .99))
-#lims99 <- max(quantile(acrosscity_boot_res$rmse_Network, .99), quantile(acrosscity_boot_res$rmse_Sibling, .99))
-#limsInf <- max(acrosscity_boot_res$rmse_Network, acrosscity_boot_res$rmse_Sibling)
-
-#lim_upper_touse <- NA
-lim_upper_touse <- lims99
-
-acrossboot_avg_var_plot <-
-  across_boot_res %>%
-  ggplot(.) +
-  geom_abline(intercept=0,slope=1) +
-  geom_point(aes(x=var_Network,
-                 y=var_Sibling,
-                 color=agegp10),
-             alpha = alpha_val) +
-  geom_point(data=across_boot_city_avg_res,
-             aes(x=var_Network_mean,
-                 y=var_Sibling_mean),
-                 #color=agegp10),
-             size=2,
-             stroke=2,
-             shape='x') +
-  theme_minimal() +
-  xlab("Network Variance") +
-  ylab("Sibling Variance") +
-  facet_grid(sex ~ agegp10) +
-  xlim(0, lim_upper_touse) + ylim(0, lim_upper_touse) +
-  coord_obs_pred() +
-  #labs(caption="Scales set to show up to 99th percentile of values") +
-  guides(color = guide_legend(title='Age group', override.aes = list(alpha=1)))
-  #coord_obs_pred(xlim=c(0,lim_upper_touse), ylim=c(0,lim_upper_touse)) 
-
-#saveRDS(acrosscity_rmse_plot, file.path(comp_out_dir, "accrosscity_rmse_plot.rds"))
-#ggsave(file.path(comp_out_dir, "accrosscity_rmse_plot.pdf"),
-#       acrosscity_rmse_plot,
-#       width=8, height=4)
-
-acrossboot_avg_var_plot
-```
-#### Compare bias for sib and net
-
-TODO - BIAS PLOTS TOO
-
-
-### Prev - aggregating across cities w/in each boot rep
-
-
-```{r}
-
-# upper 99th percentile 
-lims99 <- max(quantile(c(acrosscity_boot_res$rmse_Network, acrosscity_boot_res$rmse_Sibling), .99))
-#lims99 <- max(quantile(acrosscity_boot_res$rmse_Network, .99), quantile(acrosscity_boot_res$rmse_Sibling, .99))
-limsInf <- max(acrosscity_boot_res$rmse_Network, acrosscity_boot_res$rmse_Sibling)
-
-#lim_upper_touse <- NA
-lim_upper_touse <- lims99
-
-alpha_val <- .01
-
-# MSE
-acrosscity_mse_agg <-
-  acrosscity_boot_res %>%
-  group_by(agegp10, sex) %>%
-  summarize(mean_rmse_Network = mean(rmse_Network),
-            mean_rmse_Sibling = mean(rmse_Sibling),
-            ci_low_rmse_Network = quantile(rmse_Network, .025),
-            ci_high_rmse_Network = quantile(rmse_Network, .975),
-            ci_low_rmse_Sibling = quantile(rmse_Sibling, .025),
-            ci_high_rmse_Sibling = quantile(rmse_Sibling, .975))
-
-acrosscity_rmse_plot <-
-  acrosscity_boot_res %>%
-  ggplot(.) +
-  geom_abline(intercept=0,slope=1) +
-  geom_point(aes(x=rmse_Network,
-                 y=rmse_Sibling,
-                 color=agegp10),
-             alpha=alpha_val) +
-  geom_point(data=acrosscity_mse_agg,
-             aes(x=mean_rmse_Network,
-                 y=mean_rmse_Sibling),
-             shape='x') +
-  theme_minimal() +
-  xlab("RMSE Network") +
-  ylab("RMSE Sibling") +
-  facet_grid(sex ~ agegp10) +
-  xlim(0, lim_upper_touse) + ylim(0, lim_upper_touse) +
-  coord_obs_pred() +
-  labs(caption="Scales set to show up to 99th percentile of values") +
-  guides(color = guide_legend(title='Age group', override.aes = list(alpha=1)))
-  #coord_obs_pred(xlim=c(0,lim_upper_touse), ylim=c(0,lim_upper_touse)) 
-
-saveRDS(acrosscity_rmse_plot, file.path(comp_out_dir, "accrosscity_rmse_plot.rds"))
-ggsave(file.path(comp_out_dir, "accrosscity_rmse_plot.pdf"),
-       acrosscity_rmse_plot,
-       width=8, height=4)
-
-acrosscity_rmse_plot
-```
-
-
-```{r}
-## DIFFERENCE IN RMSES
-
-## TO TRY FROM CLAUDE
-## (see Google Doc)
-#panel_limits <- acrosscity_boot_res %>%
-#  group_by(agegp10, sex) %>%
-#  summarize(
-#    lim99 = max(quantile(rmse_Network, .99), 
-#                quantile(rmse_Sibling, .99))
-#  )
-
-# upper 99th percentile 
-lims99 <- max(quantile(acrosscity_boot_res$rmse_Network-acrosscity_boot_res$rmse_Sibling, .99))
-
-lim_upper_touse <- NA
-lim_upper_touse <- lims99
-
-# MSE
-acrosscity_mse_diff_agg <-
-  acrosscity_boot_res %>%
-  mutate(rmse_diff_NminusS = rmse_Network - rmse_Sibling) %>%
-  group_by(agegp10, sex) %>%
-  summarize(mean_rmse_diff_NminusS = mean(rmse_diff_NminusS),
-            ci_low_rmse_diff_NminusS = quantile(rmse_diff_NminusS, .025),
-            ci_high_rmse_diff_NminusS = quantile(rmse_diff_NminusS, .975)) %>%
-  ungroup()
-
-acrosscity_rmse_diff_plot <-
-  acrosscity_boot_res %>%
-  mutate(rmse_diff_NminusS = rmse_Network - rmse_Sibling) %>%
-  ggplot(.) +
-  geom_histogram(aes(x=rmse_diff_NminusS,
-                     color=agegp10,
-                     fill=agegp10)) +
-  geom_vline(xintercept=0, lty='dotted') +
-  theme_minimal() +
-  xlab("RMSE Network - RMSE Sibling") +
-  facet_grid(sex ~ agegp10) +
-  xlim(-lims99, lims99) +
-  labs(caption="Scales set to show up to 99th percentile of differences") +
-  #guides(color = guide_legend(title='Age group', override.aes = list(alpha=1)))
-  guides(color = guide_legend(title='Age group'),
-         fill = guide_legend(title='Age group'))
-
-#saveRDS(acrosscity_rmse_plot, file.path(comp_out_dir, "accrosscity_rmse_plot.rds"))
-#ggsave(file.path(comp_out_dir, "accrosscity_rmse_plot.pdf"),
-#       acrosscity_rmse_plot,
-#       width=8, height=4)
-
-acrosscity_rmse_diff_plot
-```
-
-RMSE distn of number of age/sex gps for which net is better
-
-```{r}
-net_lower_mse_res <- acrosscity_boot_res %>%
-  mutate(net_has_lower_rmse = as.numeric(rmse_Network < rmse_Sibling)) %>%
-  group_by(boot_idx) %>%
-  summarize(num_agesexgp_net_has_lower_mse = sum(net_has_lower_rmse))
-
-
-
-glue::glue("
-           On average, the network method has lower RMSE for
-           median: {quantile(net_lower_mse_res$num_agesexgp_net_has_lower_mse,.5)},
-           mean: {mean(net_lower_mse_res$num_agesexgp_net_has_lower_mse)} age-sex groups, with interval \
-           ({quantile(net_lower_mse_res$num_agesexgp_net_has_lower_mse,.025)}, {quantile(net_lower_mse_res$num_agesexgp_net_has_lower_mse,.975)})
-           ")
-```
-
-
-RMSE DIFFS OVERALL
-
-
-```{r}
-## DIFFERENCE IN RMSES
-
-# upper 99th percentile 
-lims99 <- max(quantile(acrosscity_boot_res$rmse_Network-acrosscity_boot_res$rmse_Sibling, .99))
-
-lim_upper_touse <- NA
-lim_upper_touse <- lims99
-
-# MSE
-acrosscity_mse_overalldiff_agg <-
-  acrosscity_boot_res %>%
-  mutate(rmse_diff_NminusS = rmse_Network - rmse_Sibling) %>%
-  group_by(1) %>%
-  summarize(mean_rmse_diff_NminusS = mean(rmse_diff_NminusS),
-            ci_low_rmse_diff_NminusS = quantile(rmse_diff_NminusS, .025),
-            ci_high_rmse_diff_NminusS = quantile(rmse_diff_NminusS, .975)) %>%
-  ungroup()
-
-acrosscity_rmse_overalldiff_plot <-
-  acrosscity_boot_res %>%
-  mutate(rmse_diff_NminusS = rmse_Network - rmse_Sibling) %>%
-  ggplot(.) +
-  geom_histogram(aes(x=rmse_diff_NminusS,
-                     #fill=interaction(agegp10,sex)),
-                     fill=agegp10),
-                 bins=50) +
-  geom_vline(xintercept=0, lty='dotted') +
-  theme_minimal() +
-  xlab("RMSE Network - RMSE Sibling") +
-  xlim(-lims99, lims99) +
-  labs(caption="Scales set to show up to 99th percentile of differences") +
-  NULL
-
-#saveRDS(acrosscity_rmse_plot, file.path(comp_out_dir, "accrosscity_rmse_plot.rds"))
-#ggsave(file.path(comp_out_dir, "accrosscity_rmse_plot.pdf"),
-#       acrosscity_rmse_plot,
-#       width=8, height=4)
-
-acrosscity_rmse_overalldiff_plot
-```
-
-Aggregate RMSE
-
-```{r}
-# weights by share of combined popn in each age group
-agg_as_weights <- gs_asdrs %>%
-  group_by(agegp10, sex) %>%
-  summarize(tot_popn = sum(popn)) %>%
-  ungroup() %>%
-  mutate(wt_frac_popn = tot_popn / sum(tot_popn))
-
-agg_as_weights
-```
-
-
-```{r}
-# MSE
-overall_bvd_agg <- 
-  acrosscity_boot_res %>%
-  left_join(agg_as_weights) %>%
-  group_by(boot_idx) %>%
-  summarize(agg_rmse_Network = weighted.mean(rmse_Network, w=wt_frac_popn),
-            agg_rmse_Sibling = weighted.mean(rmse_Sibling, w=wt_frac_popn),
-            agg_rmse_diffNminusS = weighted.mean(rmse_Network - rmse_Sibling, w=wt_frac_popn),
-            agg_var_Network = weighted.mean(fp.var_Network, w=wt_frac_popn),
-            agg_var_Sibling = weighted.mean(fp.var_Sibling, w=wt_frac_popn),
-            agg_var_diffNminusS = weighted.mean(fp.var_Network - fp.var_Sibling, w=wt_frac_popn),
-            agg_bias_Network = weighted.mean(bias_Network, w=wt_frac_popn),
-            agg_bias_Sibling = weighted.mean(bias_Sibling, w=wt_frac_popn),
-            agg_bias_diffNminusS = weighted.mean(bias_Network - bias_Sibling, w=wt_frac_popn)
-            ) %>%
-  pivot_longer(cols=-boot_idx,
-               names_to = c('qty', 'method'),
-               names_pattern = ".*(rmse|var|bias).*(Network|Sibling|diffNminusS)") %>%
-  group_by(qty, method) %>%
-  summarize(
-            mean_agg = mean(value),
-            ci_low_agg = quantile(value, .025),
-            ci_high_agg = quantile(value, .975))
-
-#overall_bvd_agg_long <- overall_bvd_agg %>%
-#  #pivot_longer(cols=everything(),
-#  #             names_to = c('qty', 'method'),
-#  #             names_pattern = "(ci_low|ci_high|mean).*(Network|Sibling)") %>%
-#  pivot_wider(names_from = 'method',
-#              values_from = c('mean_agg', 'ci_low_agg', 'ci_high_agg'))
-
-overall_bvd_agg %>%
-  ggplot(.) +
-  geom_pointrange(aes(y = mean_agg,
-                      ymin = ci_low_agg,
-                      ymax = ci_high_agg,
-                      x = method)) +
-  theme_minimal() +
-  expand_limits(y=0) +
-  facet_wrap(~qty, scales='free_y') +
-  xlab("") +
-  ylab("")
-  #ylab("Aggregate RMSE")
-```
-
-
-Variance
-
-```{r}
-lims99 <- max(quantile(acrosscity_boot_res$rmse_Network, .99), quantile(acrosscity_boot_res$rmse_Sibling, .99))
-limsInf <- max(acrosscity_boot_res$rmse_Network, acrosscity_boot_res$rmse_Sibling)
-
-#lim_upper_touse <- NA
-lim_upper_touse <- lims99
-
-alpha_val <- .01
-
-# VAR
-acrosscity_var_agg <-
-  acrosscity_boot_res %>%
-  group_by(agegp10, sex) %>%
-  summarize(mean_var_Network = mean(var_Network),
-            mean_var_Sibling = mean(var_Sibling),
-            mean_sqrt_var_sibling = mean(sqrt(var_Sibling)),
-            mean_sqrt_var_network = mean(sqrt(var_Network)),
-            ci_low_var_Network = quantile(var_Network, .025),
-            ci_high_var_Network = quantile(var_Network, .975),
-            ci_low_var_Sibling = quantile(var_Sibling, .025),
-            ci_high_var_Sibling = quantile(var_Sibling, .975))
-
-acrosscity_var_plot <- acrosscity_boot_res %>%
-  ggplot(.) +
-  geom_abline(intercept=0,slope=1) +
-  geom_point(aes(x=sqrt(var_Network),
-                 y=sqrt(var_Sibling),
-                 color=agegp10),
-             alpha=alpha_val) +
-  geom_point(data=acrosscity_var_agg,
-             aes(x=mean_sqrt_var_network,
-                 y=mean_sqrt_var_sibling),
-             shape='x') +
-  theme_minimal() +
-  xlab("Root Variance Network") +
-  ylab("Root Variance Sibling") +
-  facet_grid(sex ~ agegp10) +
-  xlim(0, lim_upper_touse) + ylim(0, lim_upper_touse) +
-  coord_obs_pred() +
-  labs(caption="Scales set to show up to 99th percentile of values") +
-  guides(color = guide_legend(title='Age group', override.aes = list(alpha=1)))
-
-saveRDS(acrosscity_var_plot, file.path(comp_out_dir, "accrosscity_var_plot.rds"))
-ggsave(file.path(comp_out_dir, "accrosscity_var_plot.pdf"),
-       acrosscity_var_plot,
-       width=8, height=4)
-
-acrosscity_var_plot
-```
-```{r}
-lims99 <- max(quantile(abs(acrosscity_boot_res$bias_Network), .99), quantile(abs(acrosscity_boot_res$bias_Sibling), .99))
-limsInf <- max(abs(acrosscity_boot_res$bias_Network), abs(acrosscity_boot_res$bias_Sibling))
-
-#lim_upper_touse <- NA
-lim_upper_touse <- lims99
-#lim_upper_touse <- limsInf
-
-
-alpha_val <- .01
-
-# VAR
-acrosscity_bias_agg <-
-  acrosscity_boot_res %>%
-  group_by(agegp10, sex) %>%
-  summarize(mean_bias_Network = mean(bias_Network),
-            mean_bias_Sibling = mean(bias_Sibling),
-            ci_low_bias_Network = quantile(bias_Network, .025),
-            ci_high_bias_Network = quantile(bias_Network, .975))
-
-acrosscity_bias_plot <- acrosscity_boot_res %>%
-  ggplot(.) +
-  geom_abline(intercept=0,slope=1) +
-  geom_point(aes(x=bias_Network,
-                 y=bias_Sibling,
-                 color=agegp10),
-             alpha=alpha_val) +
-  geom_point(data=acrosscity_bias_agg,
-             aes(x=mean_bias_Network,
-                 y=mean_bias_Sibling),
-             shape='x') +
-  theme_minimal() +
-  xlab("Bias Network") +
-  ylab("Bias Sibling") +
-  facet_grid(sex ~ agegp10) +
-  #xlim(-lim_upper_touse, lim_upper_touse) + ylim(-lim_upper_touse, lim_upper_touse) +
-  xlim(-10,10) + ylim(-10,10)+
-  coord_obs_pred() +
-  #labs(caption="Scales set to show up to 99th percentile of values") +
-  guides(color = guide_legend(title='Age group', override.aes = list(alpha=1)))
-
-saveRDS(acrosscity_bias_plot, file.path(comp_out_dir, "accrosscity_bias_plot.rds"))
-ggsave(file.path(comp_out_dir, "accrosscity_bias_plot.pdf"),
-       acrosscity_bias_plot,
-       width=8, height=4)
-
-acrosscity_bias_plot
-```
-
-```{r}
-# sanity check that bias-variance decomposition holds
-acrosscity_boot_res %>%
-  ggplot(.) +
-  geom_abline(intercept=0, slope=1, color='grey') +
-  geom_point(aes(x = bias_Network^2 + fp.var_Network,
-                 y = mse_Network)) +
-  theme_minimal() +
-  coord_equal()
-```
-
-```{r}
-# sanity check that bias-variance decomposition holds
-acrossboot_city_res %>%
-  ggplot(.) +
-  geom_abline(intercept=0, slope=1, color='grey') +
-  geom_point(aes(x = bias_Network^2 + fp.var_Network,
-                 y = mse_Network)) +
-  theme_minimal() +
-  coord_equal()
-```
-
-
-Check bias-variance decomposition w/in city/age/sex group:
-MSE = bias^2 + var
-
-```{r}
-fp.var <- function(x) {
-  return(mean((x - mean(x))^2))
-}
-
-bvd_check <- comp_asdrs_boot %>%
-  group_by(geo, sex, agegp10, method) %>%
-  summarize(estimand = mean(post_mean_asdr),
-            gs = mean(gs_asdr),
-            mse = mean((post_mean_asdr - gs_asdr)^2),
-            mse_ci_low = quantile((post_mean_asdr - gs_asdr)^2, .025),
-            mse_ci_high = quantile((post_mean_asdr - gs_asdr)^2, .975),
-            # NB: the mse var in comp_asdrs_boot is based on delta = (est - truth)*1000
-            #mse = mean(delta2/(1000^2)),
-            bias = mean(post_mean_asdr - gs_asdr),
-            bias_ci_low = quantile((post_mean_asdr - gs_asdr), .025),
-            bias_ci_high = quantile((post_mean_asdr - gs_asdr), .025),
-            ## TODO - ADD CI HERE...
-            var = var(post_mean_asdr)) %>%
-            #var = fp.var(post_mean_asdr)) %>%
-            #var = mean((post_mean_asdr - estimand)^2)) %>%
-  mutate(check = mse - (bias^2 + var))
-
-# sanity check that bias-variance decomposition holds
-bvd_check %>%
-  ggplot(.) +
-  geom_abline(intercept=0, slope=1, color='grey') +
-  geom_point(aes(x = bias^2 + var,
-                 y = mse)) +
-  theme_minimal() +
-  coord_equal()
-
-bvd_check
-```
-
-```{r}
-bvd_check_long <- bvd_check %>%
-  select(-estimand, -check) %>%
-  pivot_longer(cols=c('mse', 'bias', 'var')) %>%
-  #select(-estimand, -check) %>%
-  rename(qty = name) %>%
-  select(-starts_with('mse'), -starts_with('bias')) %>%
-  pivot_wider(names_from = c('method'),
-              values_from = 'value')
-
-bvd_check_long
-```
-
-Aggregate up to age/sex groups (across cities)
-
-```{r}
-bvd_as_rmse_plot <- bvd_check_long %>%
-  #filter(qty %in% c('bias', 'var')) %>%
-  filter(qty == 'mse') %>%
-  group_by(sex, agegp10) %>%
-  # we take the average of the MSE; when we plot,
-  # we'll take the square root to make it a little more interpretable - but
-  # the quantity being averaged is the MS E
-  summarize(Network = mean(Network),
-            Sibling=mean(Sibling)) %>%
-  ggplot(.) +
-  geom_abline(intercept=0, slope=1, color='grey', lty=2) +
-  geom_point(aes(x=sqrt(Network), y=sqrt(Sibling), color=agegp10, shape=sex)) +
-  guides(color=guide_legend(override.aes=list(alpha=1),
-                            title='Age'),
-         shape=guide_legend(override.aes=list(alpha=1),
-                            title='')) +
-  #xlab("Network variance") + ylab("Sibling variance") +
-  xlab("Square root of\nNetwork average MSE") +
-  ylab("Square root of\nSibling average MSE") +
-  expand_limits(x=0, y=0) +
-  #coord_equal() +
-  tune::coord_obs_pred() +
-  age_scale_color +
-  theme_minimal() 
-
-
-# NB: this one is used
-saveRDS(bvd_as_rmse_plot, file.path(comp_out_dir, "bvd_as_rmse_plot.rds"))
-ggsave(file.path(comp_out_dir, "bvd_as_rmse.pdf"),
-       bvd_as_rmse_plot,
-       width=5, height=4)
-
-## symbol size and font size for 'alone' plots
-alone_size <- 4
-alone_text_size <- 14
-alone_fig_size <- 6
-
-# NB: this one is used
-bvd_as_rmse_plot_alone <- bvd_check_long %>%
-  #filter(qty %in% c('bias', 'var')) %>%
-  filter(qty == 'mse') %>%
-  group_by(sex, agegp10) %>%
-  # we take the average of the MSE; when we plot,
-  # we'll take the square root to make it a little more interpretable - but
-  # the quantity being averaged is the MS E
-  summarize(Network = mean(Network),
-            Sibling=mean(Sibling)) %>%
-  ggplot(.) +
-  geom_abline(intercept=0, slope=1, color='grey', lty=2, lwd=1.5) +
-  geom_point(aes(x=sqrt(Network), y=sqrt(Sibling), color=agegp10, shape=sex), size = alone_size) +
-  guides(color=guide_legend(override.aes=list(alpha=1),
-                            title='Age'),
-         shape=guide_legend(override.aes=list(alpha=1),
-                            title='')) +
-  xlab("Square root of\nNetwork average MSE") +
-  ylab("Square root of\nSibling average MSE") +
-  expand_limits(x=0, y=0) +
-  #coord_equal() +
-  tune::coord_obs_pred() +
-  age_scale_color +
-  #theme_minimal() + 
-  theme_bw() + 
-  theme(legend.position='right',
-        text=element_text(size=alone_text_size))
-
-
-ggsave(file.path(comp_out_dir, "bvd_as_rmse_alone.pdf"),
-       bvd_as_rmse_plot_alone,
-       width=alone_fig_size, height=alone_fig_size)
-
-         #guides(color=guide_legend(nrow=2,byrow=TRUE)) +
-         #theme(legend.position='bottom', 
-        #       legend.direction='horizontal',
-        #       legend.box='vertical',
-        #       legend.margin=margin()),
-
-bvd_as_rmse_plot_alone
-```
-
-Same as above, but as a bar plot
-
-```{r}
-
-bvd_as_rmse_bar_plot <- bvd_check_long %>%
-  #filter(qty %in% c('bias', 'var')) %>%
-  filter(qty == 'mse') %>%
-  group_by(sex, agegp10) %>%
-  # we take the average of the MSE; when we plot,
-  # we'll take the square root to make it a little more interpretable - but
-  # the quantity being averaged is the MS E
-  summarize(Network = mean(Network),
-            Sibling=mean(Sibling)) %>%
-  pivot_longer(cols=c('Network', 'Sibling'), names_to='estimator', values_to='mse') %>%
-  ggplot(.) +
-  geom_bar(aes(y=agegp10, x=1000*sqrt(mse), fill=estimator), stat='identity', position='dodge') +
-  #geom_abline(intercept=0, slope=1, color='grey', lty=2) +
-  #geom_point(aes(x=sqrt(Network), y=sqrt(Sibling), color=agegp10, shape=sex)) +
-  #guides(color=guide_legend(override.aes=list(alpha=1),
-  #                          title='Age'),
-  #       shape=guide_legend(override.aes=list(alpha=1),
-  #                          title='')) +
-  ##xlab("Network variance") + ylab("Sibling variance") +
-  #xlab("Square root of\nNetwork average MSE") +
-  #ylab("Square root of\nSibling average MSE") +
-  #expand_limits(x=0, y=0) +
-  ##coord_equal() +
-  #tune::coord_obs_pred() +
-  #age_scale_color +
-  xlab("RMSE") + ylab("") +
-  facet_wrap(~ sex) +
-  theme_minimal() 
-
-ggsave(file.path(comp_out_dir, "bvd_as_rmse_bar.pdf"),
-       bvd_as_rmse_bar_plot,
-       width=6, height=6)
-
-bvd_as_rmse_bar_plot
-```
-
-
-Sqrt of the variance
-
-```{r}
-bvd_as_se_plot <- bvd_check_long %>%
-  #filter(qty %in% c('bias', 'var')) %>%
-  filter(qty == 'var') %>%
-  group_by(sex, agegp10) %>%
-  ## we average the variance across cities,
-  ## then we take the square root to make it easier to read
-  ## but the quantity being averaged is the variance
-  summarize(Network = mean(Network),
-            Sibling=mean(Sibling)) %>%
-  ggplot(.) +
-  geom_abline(intercept=0, slope=1, color='grey', lty=2) +
-  geom_point(aes(x=sqrt(Network), y=sqrt(Sibling), color=agegp10, shape=sex)) +
-  guides(color=guide_legend(override.aes=list(alpha=1),
-                            title='Age'),
-         shape=guide_legend(override.aes=list(alpha=1),
-                            title='')) +
-  #xlab("Network variance") + ylab("Sibling variance") +
-  #xlab(TeX(r'(Network average $\sqrt{var}$)')) + 
-  #ylab(TeX(r'(Sibling average $\sqrt{var}$)')) + 
-  xlab("Square root of\nNetwork average variance") +
-  ylab("Square root of\nSibling average variance") +
-  #coord_equal() +
-  tune::coord_obs_pred() +
-  theme_minimal() +
-  age_scale_color +
-  expand_limits(x = 0, y = 0)
-
-# NB: this one is used
-saveRDS(bvd_as_se_plot, file.path(comp_out_dir, "bvd_as_se_plot.rds"))
-ggsave(file.path(comp_out_dir, "bvd_as_se.pdf"),
-       bvd_as_se_plot,
-       width=5, height=4)
-
-bvd_as_se_plot_alone <- bvd_check_long %>%
-  #filter(qty %in% c('bias', 'var')) %>%
-  filter(qty == 'var') %>%
-  group_by(sex, agegp10) %>%
-  ## we average the variance across cities,
-  ## then we take the square root to make it easier to read
-  ## but the quantity being averaged is the variance
-  summarize(Network = mean(Network),
-            Sibling=mean(Sibling)) %>%
-  ggplot(.) +
-  geom_abline(intercept=0, slope=1, color='grey', lty=2, lwd=1.5) +
-  geom_point(aes(x=sqrt(Network), y=sqrt(Sibling), color=agegp10, shape=sex), size=alone_size) +
-  guides(color=guide_legend(override.aes=list(alpha=1),
-                            title='Age'),
-         shape=guide_legend(override.aes=list(alpha=1),
-                            title='')) +
-  #xlab("Network variance") + ylab("Sibling variance") +
-  #xlab(TeX(r'(Network average $\sqrt{var}$)')) + 
-  #ylab(TeX(r'(Sibling average $\sqrt{var}$)')) + 
-  xlab("Square root of\nNetwork average variance") +
-  ylab("Square root of\nSibling average variance") +
-  #coord_equal() +
-  tune::coord_obs_pred() +
-  #theme_minimal() +
-  theme_bw() +
-  age_scale_color +
-  expand_limits(x = 0, y = 0) +
-  theme(legend.position='right',
-        text=element_text(size=alone_text_size))
-
-# NB: this one is used
-saveRDS(bvd_as_se_plot_alone, file.path(comp_out_dir, "bvd_as_se_plot_alone.rds"))
-ggsave(file.path(comp_out_dir, "bvd_as_se_alone.pdf"),
-       bvd_as_se_plot_alone,
-       width=alone_fig_size, height=alone_fig_size)
-
-bvd_as_se_plot_alone
-```
-
-Bias
-
-```{r}
-bvd_as_bias_plot <- bvd_check_long %>%
-  #filter(qty %in% c('bias', 'var')) %>%
-  filter(qty == 'bias') %>%
-  group_by(sex, agegp10) %>%
-  summarize(Network = mean(Network),
-            Sibling=mean(Sibling)) %>%
-  ggplot(.) +
-  #geom_abline(intercept=0, slope=1, color='grey', linetype=2) +
-  geom_vline(xintercept=0, color='grey') +
-  geom_hline(yintercept=0, color='grey') +
-  geom_point(aes(x=Network, y=Sibling, color=agegp10, shape=sex)) +
-  guides(color=guide_legend(override.aes=list(alpha=1),
-                            title='Age'),
-         shape=guide_legend(override.aes=list(alpha=1),
-                            title='')) +
-  xlab("Network bias") + ylab("Sibling bias") +
-  #coord_equal() +
-  tune::coord_obs_pred() +
-  lemon::scale_y_symmetric(mid=0) +
-  lemon::scale_x_symmetric(mid=0) +
-  age_scale_color +
-  theme_minimal() 
-
-# NB: this one is used
-saveRDS(bvd_as_bias_plot, file.path(comp_out_dir, "bvd_as_bias_plot.rds"))
-
-ggsave(file.path(comp_out_dir, "bvd_as_bias.pdf"),
-       bvd_as_bias_plot,
-       width=5, height=4)
-
-bvd_as_bias_plot_alone <- bvd_check_long %>%
-  #filter(qty %in% c('bias', 'var')) %>%
-  filter(qty == 'bias') %>%
-  group_by(sex, agegp10) %>%
-  summarize(Network = mean(Network),
-            Sibling=mean(Sibling)) %>%
-  ggplot(.) +
-  #geom_abline(intercept=0, slope=1, color='grey', linetype=2) +
-  geom_vline(xintercept=0, color='grey') +
-  geom_hline(yintercept=0, color='grey') +
-  geom_point(aes(x=Network, y=Sibling, color=agegp10, shape=sex), size=alone_size) +
-  guides(color=guide_legend(override.aes=list(alpha=1),
-                            title='Age'),
-         shape=guide_legend(override.aes=list(alpha=1),
-                            title='')) +
-  xlab("Network bias") + ylab("Sibling bias") +
-  #coord_equal() +
-  tune::coord_obs_pred() +
-  lemon::scale_y_symmetric(mid=0) +
-  lemon::scale_x_symmetric(mid=0) +
-  age_scale_color +
-  #theme_minimal() +
-  theme_bw() +
-  theme(legend.position='right',
-        text=element_text(size=alone_text_size))
-
-# NB: this one is used
-saveRDS(bvd_as_bias_plot_alone, file.path(comp_out_dir, "bvd_as_bias_plot_alone.rds"))
-
-ggsave(file.path(comp_out_dir, "bvd_as_bias_alone.pdf"),
-       bvd_as_bias_plot_alone,
-       width=alone_fig_size, height=alone_fig_size)
-
-bvd_as_bias_plot_alone
-```
-
-
-Same as above, but as a bar plot
-
-```{r}
-
-bvd_as_bias_bar_plot <- bvd_check_long %>%
-  filter(qty == 'bias') %>%
-  group_by(sex, agegp10) %>%
-  summarize(Network = mean(Network),
-            Sibling=mean(Sibling)) %>%
-  pivot_longer(cols=c('Network', 'Sibling'), names_to='estimator', values_to='bias') %>%
-  ggplot(.) +
-  #### vertical version
-  #geom_bar(aes(y=agegp10, x=bias, fill=estimator), stat='identity', position='dodge') +
-  #lemon::scale_x_symmetric(mid=0) +
-  #geom_vline(xintercept=0) +
-  #xlab("Bias") + ylab("") +
-  #facet_wrap(~ sex) +
-  #### horizontal version
-  geom_bar(aes(x=agegp10, y=bias, fill=estimator, pattern=estimator), stat='identity', position='dodge') +
-  lemon::scale_y_symmetric(mid=0) +
-  geom_hline(yintercept=0) +
-  ylab("Average Bias\n(Estimate - Gold Standard)") + xlab("") +
-  #annotate("text",
-  #         #label = "Estimate is too high -->",
-  #         label = "Estimate is\ntoo high -->",
-  #         x=5.5, y=0.001,
-  #         size=3,
-  #         hjust=0,
-  #         col='red',
-  #         angle = 90) +
-  facet_grid(sex ~ .) +
-  scale_fill_manual(breaks=c('Network', 'Sibling'),
-                    values = c(color_net, color_sib)) +
-  guides(fill = guide_legend(title="")) +
-  theme_bw() +
-  theme(strip.background =element_rect(fill="white"))
-  #theme_minimal() 
-
-
-saveRDS(bvd_as_bias_bar_plot, file.path(comp_out_dir, "bvd_as_bias_bar_plot.rds"))
-ggsave(file.path(comp_out_dir, "bvd_as_bias_bar_alone.pdf"),
-       bvd_as_bias_bar_plot,
-       #width=6, height=8)
-       width=8, height=5)
-
-bvd_as_bias_bar_plot
-```
-
-Count number of age/sex groups for which magnitude of net bias is bigger
-than magnitude of sibling bias
-
-```{r}
-check_ns_mag_bias <- bvd_check_long %>%
-  #filter(qty %in% c('bias', 'var')) %>%
-  filter(qty == 'bias') %>%
-  group_by(sex, agegp10) %>%
-  summarize(Network = mean(Network),
-            Sibling=mean(Sibling)) %>%
-  mutate(net_bias_mag_bigger = as.numeric(abs(Network) > abs(Sibling)))
-
-glue::glue("
-           The bias of the network method is bigger in magnitude for
-           {sum(check_ns_mag_bias$net_bias_mag_bigger)} out of {nrow(check_ns_mag_bias)} age-sex groups
-           ")
-
-check_ns_mag_bias
-```
+TODO
 
 # Maps
 
