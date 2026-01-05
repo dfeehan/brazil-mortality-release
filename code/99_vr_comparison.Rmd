@@ -96,7 +96,7 @@ tic(glue::glue("Running comparison for {comparison_name} / {geo_name}"))
 ```
 
 
-## Some aesthetics for the plots
+Some aesthetics for the plots
 
 ```{r}
 color_sib <- "#FC4E07"
@@ -117,7 +117,7 @@ region_pal <- tribble(~ region, ~ color,
 age_scale_color <- scale_color_viridis(discrete=TRUE, direction=-1)
 ```
 
-## Open up the estimates
+# Open up the estimates
 
 Load vital registration reference estimates
 
@@ -440,6 +440,8 @@ if(params$do_12mo) {
 }
 ```
 
+# Summarize estimates
+
 ## Quantitative summaries
 
 MSE on natural scale
@@ -531,7 +533,9 @@ if(params$do_12mo) {
 }
 ```
 
-## Plots directly comparing estimates at the level of geography (state or region)
+## Plots related to ASDR estimates
+
+### Plot directly comparing estimated ASDRs from two methods
 
 ```{r plot-compare-ests}
 direct_comp_est_asdrs <- 
@@ -577,313 +581,8 @@ direct_plot_logged
 
 ```
 
-```{r plot-compare-ests-probs}
-direct_comp_est_probs <- 
-  est_probs %>%
-    select(-time.period) %>%
-    tidyr::pivot_wider(id_cols=c('sex', 'geo'),
-                       values_from=c('post_mean_q'),
-                       names_from=c('method')) 
-```
 
-
-```{r}
-cur_range <- range(log(direct_comp_est_probs$Network),
-                   log(direct_comp_est_probs$Sibling),
-                   finite=TRUE)
-
-alpha.val <- .6 
-  
-# logged
-direct_plot_probs_logged <-  direct_comp_est_probs %>%
-  ggplot(.) +
-  geom_abline(intercept=0, slope=1) +
-  geom_point(aes(x=log(Network), 
-                 y=log(Sibling),
-                 shape=sex), 
-             alpha=alpha.val) +
-  coord_equal() +
-  xlim(cur_range) + ylim(cur_range) +
-  guides(shape=guide_legend(override.aes=list(alpha=1),
-                            title='')) +
-  ylab("log(Sibling prob. of death est.)") +
-  xlab("log(Network prob. of death est.)") +
-  theme_bw()
-
-# NB: this is used in paper
-saveRDS(direct_plot_probs_logged, file.path(comp_out_dir, "direct_probs_logged.rds"))
-ggsave(filename=file.path(comp_out_dir, "direct_probs_logged.pdf"),
-       plot=direct_plot_probs_logged,
-       height=3.5,
-       width=3.5)
-direct_plot_probs_logged
-
-```
-
-## Plots by geography
-
-### Error summaries across geography
-
-#### ASDRS
-
-All ests, by geography
-
-```{r calculate-errs-in-asdrs-by-geo}
-comp_asdrs_bygeo <- comp_asdrs %>%
-  group_by(method, geo) %>%
-  summarize(geo_mse = mean(delta2),
-            #geo_are = sum(abs(delta_rel))) 
-            # this should be the mean, right?
-            geo_are = mean(abs(delta_rel))) 
-
-comp_asdrs_bygeo_boot <- comp_asdrs_boot %>%
-  group_by(method, geo, boot_idx) %>%
-  summarize(geo_mse = mean(delta2),
-            #geo_are = sum(abs(delta_rel))) 
-            # this should be the mean, right?
-            geo_are = mean(abs(delta_rel))) 
-
-# difference in MSE (network - sibling)
-comp_asdrs_bygeo_wide <- comp_asdrs_bygeo %>%
-  select(-geo_are) %>%
-  pivot_wider(names_from=method, values_from=geo_mse)  %>%
-  mutate(n.minus.s = Network - Sibling)
-
-comp_asdrs_bygeo_wide_boot <- comp_asdrs_bygeo_boot %>%
-  select(-geo_are) %>%
-  pivot_wider(names_from=method, values_from=geo_mse)  %>%
-  mutate(n.minus.s = Network - Sibling)
-
-# difference in ARE (network - sibling)
-comp_rel_asdrs_bygeo_wide <- comp_asdrs_bygeo %>%
-  select(-geo_mse) %>%
-  pivot_wider(names_from=method, values_from=geo_are) %>%
-  mutate(n.minus.s = Network - Sibling)
-
-comp_rel_asdrs_bygeo_wide_boot <- comp_asdrs_bygeo_boot %>%
-  select(-geo_mse) %>%
-  pivot_wider(names_from=method, values_from=geo_are) %>%
-  mutate(n.minus.s = Network - Sibling)
-```
-
-
-By age/sex/geography
-
-```{r asdr-errs-by-age-sex-geo}
-comp_asdrs_bygeoas <- comp_asdrs %>%
-  group_by(method, geo, sex, agegp10) %>%
-  summarize(geo_mse = mean(delta2),
-            # this should be the mean, right?
-            geo_are = mean(abs(delta_rel)),
-            # not absolute relative error (so, can be negative)
-            geo_re = mean(delta_rel_notabs)) %>%
-  ungroup() %>%
-  mutate(geo_rmse = sqrt(geo_mse))
-
-# difference in MSE (network - sibling)
-comp_asdrs_bygeoas_wide <- comp_asdrs_bygeoas %>%
-  select(-geo_are, -geo_re, -geo_rmse) %>%
-  pivot_wider(names_from=method, values_from=geo_mse)  %>%
-  mutate(n.minus.s = Network - Sibling)
-
-# difference in RMSE (network - sibling)
-comp_rmse_asdrs_bygeoas_wide <- comp_asdrs_bygeoas %>%
-  select(-geo_are, -geo_re, -geo_mse) %>%
-  pivot_wider(names_from=method, values_from=geo_rmse)  %>%
-  mutate(n.minus.s = Network - Sibling)
-  # alternate approach:
-  # square root of difference in MSE (network - sibling)
-  # that is,
-  #   sign(MSE(net) - MSE(sib)) * sqrt(MSE(net) - MSE(sib))
-  #mutate(n.minus.s = sign(Network - Sibling) * sqrt(abs(Network - Sibling)))
-
-# difference in ARE (network - sibling)
-comp_rel_asdrs_bygeoas_wide <- comp_asdrs_bygeoas %>%
-  select(-geo_mse, -geo_re, -geo_rmse) %>%
-  pivot_wider(names_from=method, values_from=geo_are) %>%
-  mutate(n.minus.s = Network - Sibling)
-```
-
-By age/sex
-
-```{r asdr-errs-by-age-sex}
-comp_asdrs_byas <- comp_asdrs %>%
-  group_by(method, sex, agegp10) %>%
-  summarize(as_mse = mean(delta2),
-            as_are = mean(abs(delta_rel)),
-            # not absolute relative error (so, can be negative)
-            as_re = mean(delta_rel_notabs))  
-
-# with bootstraps
-comp_asdrs_byas_boot <- comp_asdrs_boot %>%
-  group_by(method, sex, agegp10, boot_idx) %>%
-  summarize(as_mse = mean(delta2),
-            as_are = mean(abs(delta_rel)),
-            # not absolute relative error (so, can be negative)
-            as_re = mean(delta_rel_notabs),
-            .groups='drop') %>%
-  group_by(method, sex, agegp10) %>%
-  summarize(as_mse_ci_low = quantile(as_mse, .025),
-            as_mse_ci_high = quantile(as_mse, .975),
-            as_mse = mean(as_mse),
-            as_are_ci_low = quantile(as_are, .025),
-            as_are_ci_high = quantile(as_are, .975),
-            as_are = mean(as_are),
-            # not absolute relative error (so, can be negative)
-            as_re_ci_low = quantile(as_re, .025),
-            as_re_ci_high = quantile(as_re, .975),
-            as_re = mean(as_re))
-
-# difference in MSE (network - sibling)
-comp_asdrs_byas_wide <- comp_asdrs_byas %>%
-  select(-as_are, -as_re) %>%
-  pivot_wider(names_from=method, values_from=as_mse)  %>%
-  mutate(n.minus.s = Network - Sibling)
-
-# difference in ARE (network - sibling)
-comp_rel_asdrs_byas_wide <- comp_asdrs_byas %>%
-  select(-as_mse, -as_re) %>%
-  pivot_wider(names_from=method, values_from=as_are) %>%
-  mutate(n.minus.s = Network - Sibling)
-```
-
-#### Probabilities
-
-All ests, by geography (probs)
-
-```{r calculate-errs-in-probs-by-geo}
-comp_probs_bygeo <- comp_probs %>%
-  group_by(method, geo) %>%
-  summarize(geo_mse = mean(delta2),
-            #geo_are = sum(abs(delta_rel))) 
-            # this should be the mean, right?
-            geo_are = mean(abs(delta_rel))) 
-
-comp_probs_bygeo_boot <- comp_probs_boot %>%
-  group_by(method, geo, boot_idx) %>%
-  summarize(geo_mse = mean(delta2),
-            #geo_are = sum(abs(delta_rel))) 
-            # this should be the mean, right?
-            geo_are = mean(abs(delta_rel))) 
-
-# difference in MSE (network - sibling)
-comp_probs_bygeo_wide <- comp_probs_bygeo %>%
-  select(-geo_are) %>%
-  pivot_wider(names_from=method, values_from=geo_mse)  %>%
-  mutate(n.minus.s = Network - Sibling)
-
-comp_probs_bygeo_wide_boot <- comp_probs_bygeo_boot %>%
-  select(-geo_are) %>%
-  pivot_wider(names_from=method, values_from=geo_mse)  %>%
-  mutate(n.minus.s = Network - Sibling)
-
-# difference in ARE (network - sibling)
-comp_rel_probs_bygeo_wide <- comp_probs_bygeo %>%
-  select(-geo_mse) %>%
-  pivot_wider(names_from=method, values_from=geo_are) %>%
-  mutate(n.minus.s = Network - Sibling)
-
-comp_rel_probs_bygeo_wide_boot <- comp_probs_bygeo_boot %>%
-  select(-geo_mse) %>%
-  pivot_wider(names_from=method, values_from=geo_are) %>%
-  mutate(n.minus.s = Network - Sibling)
-```
-
-
-By age/sex/geography (probs)
-
-```{r prob-errs-by-age-sex-geo}
-comp_probs_bygeos <- comp_probs %>%
-  group_by(method, geo, sex) %>%
-  summarize(geo_mse = mean(delta2),
-            #geo_are = sum(abs(delta_rel))) 
-            # this should be the mean, right?
-            geo_are = mean(abs(delta_rel)))  
-
-# difference in MSE (network - sibling)
-comp_probs_bygeos_wide <- comp_probs_bygeos %>%
-  select(-geo_are) %>%
-  pivot_wider(names_from=method, values_from=geo_mse)  %>%
-  mutate(n.minus.s = Network - Sibling)
-
-# difference in ARE (network - sibling)
-comp_rel_probs_bygeos_wide <- comp_probs_bygeos %>%
-  select(-geo_mse) %>%
-  pivot_wider(names_from=method, values_from=geo_are) %>%
-  mutate(n.minus.s = Network - Sibling)
-```
-
-Plot the difference between the two methods against the estimated completeness
-
-Plot the difference between the two methods (MSE) against the estimated completeness
-
-```{r comp-errs-mse-vrcompleteness, fig.height=3.5, fig.width=3.5}
-## NB: only have completeness at the state level...
-if(geo_name == 'city') {
-
-# difference in MSE
-comp_df <- comp_asdrs_bygeo_wide
-
-comp_df_withvr <- comp_df %>%
-  left_join(ibge_vr_completeness %>%
-              select(geo, ibge_est_vrcov = mean_sim_cov_pct))
-
-biggestdiff <- max(abs(comp_df_withvr$n.minus.s))
-xrange <- c(-biggestdiff, biggestdiff)
-
-## controls how far out annotations go
-annscale <- .6
-
-geo_err_mse_vr_comp <-
-  comp_df_withvr %>%
-        mutate(geo = fct_reorder(geo, n.minus.s)) %>%
-  ggplot(.) +
-  geom_text(aes(y=n.minus.s,
-                x=ibge_est_vrcov,
-                label=geo)) +
-  #geom_vline(xintercept=0, color='dark grey') +
-  #geom_point(aes(y=state_abbrev, x=n.minus.s)) +
-  theme_minimal() +
-  ylab("Network estimate MSE - Sibling estimate MSE") +
-  xlab("Estimated VR completeness") +
-  expand_limits(y=xrange) +
-  annotate(geom='text',
-           label="<- Network is better ",
-           #x='SE',
-           x=100,
-           y=-biggestdiff*annscale,
-           size=rel(3),
-           color='red',
-           angle=90) +
-  annotate(geom='text',
-           label="Sibling is better ->",
-           #x='SE',
-           x=100,
-           y=biggestdiff*annscale,
-           size=rel(3),
-           color='red',
-           angle=90) +
-  theme(axis.title.x=element_text(size=rel(.8))) +
-  ## see
-  ## https://stackoverflow.com/questions/12409960/ggplot2-annotate-outside-of-plot
-  ## for how this helps plot not clip annotations
-  coord_cartesian(clip='off') +
-  NULL
-
-
-ggsave(filename=file.path(comp_out_dir, "geo_err_summ_mse_vrsens.pdf"),
-       plot=geo_err_mse_vr_comp,
-       height=3.5,
-       width=3.5)
-knitr::plot_crop(file.path(comp_out_dir, "geo_err_summ_mse_vrsens.pdf"))
-
-geo_err_mse_vr_comp
-
-}
-```
-
-
-Scatter plot with all death rates
+### Scatter plot with all ASDR estimates compared to VR, panel for each method
 
 ```{r}
 method_facet_names <- c('Sibling' = 'Sibling Estimates',
@@ -934,7 +633,7 @@ saveRDS(asdr_point_scatter,
 asdr_point_scatter
 ```
 
-Make a plot that has a matrix of VR/Sibling/Network
+### Plot that has a matrix of VR/Sibling/Network ests
 
 ```{r splom-sib-net-vr}
 direct_comp_all_asdrs_df <- 
@@ -1100,115 +799,7 @@ final_splom
 ```
 
 
-Version of the direct ASDR comparison between network + sibling,
-faceted by age/sex group
-
-```{r}
-cur_range <- with(direct_comp_all_asdrs_df,
-                  range(log(Sibling),
-                        log(Network),
-                        log(VR),
-                        finite=TRUE))
-
-
-alpha.val <- 1
-
-splom_sn_faceted <- direct_comp_all_asdrs_df %>%
-  ggplot(.) +
-  geom_abline(intercept=0, slope=1) +
-  geom_point(aes(x=log(Sibling), 
-                 y=log(Network),
-                 color=agegp10,
-                 shape=sex), 
-             alpha=alpha.val) +
-  coord_equal() +
-  xlim(cur_range) + ylim(cur_range) +
-  guides(color=guide_legend(override.aes=list(alpha=1),
-                            title='Age'),
-         shape=guide_legend(override.aes=list(alpha=1),
-                            title='')) +
-  xlab("log(Sibling death rate est.)") +
-  ylab("log(Network death rate est.)") +
-  age_scale_color +
-  theme_bw() +
-  facet_grid(sex ~ agegp10) +
-  theme(legend.position='bottom',
-        legend.box='vertical')
-
-fig_height <- 4 
-fig_width <- 8
-
-saveRDS(splom_sn_faceted, file.path(comp_out_dir, "net_vs_sib_asdr_faceted.rds"))
-ggsave(filename=file.path(comp_out_dir, "net_vs_sib_asdr_faceted.pdf"),
-       plot=splom_sn_faceted,
-       height=fig_height,
-       width=fig_width)
-
-splom_sn_faceted
-```
-
-
-# Direct comparison - probs
-
-
-Scatter plot with the probs
-
-```{r}
-direct_comp_est_probs <- 
-  est_probs %>%
-    select(-time.period) %>%
-    tidyr::pivot_wider(id_cols=c('sex', 'geo'),
-                       values_from=c('post_mean_q'),
-                       names_from=c('method')) 
-
-cur_range <- range(log(direct_comp_est_probs$Network),
-                   log(direct_comp_est_probs$Sibling),
-                   finite=TRUE)
-
-```
-
-
-```{r}
-method_facet_names <- c('Sibling' = 'Sibling Estimates',
-                        'Network' = 'Network Estimates')
-
-prob_point_scatter_df <- est_probs %>%
-  left_join(gs_probs %>% select(geo, sex, q.47.18)) %>% 
-  mutate(method = dplyr::recode(method, !!!method_facet_names))
-
-cur_range <- range(c(prob_point_scatter_df$post_mean_q,
-                     prob_point_scatter_df$q.47.18),
-                   finite = TRUE)
-
-prob_point_scatter <- prob_point_scatter_df %>%
-  ggplot(.) +
-  theme_bw(base_size=5) +
-  geom_abline(intercept=0, slope=1) +
-  geom_point(aes(x=q.47.18, 
-                 y=post_mean_q, 
-                 shape=sex),
-                 alpha=.5) +
-  coord_equal() +
-  xlim(cur_range) + ylim(cur_range) +
-  facet_grid(~ method) +
-  ylab("Estimated probability of adult death") +
-  xlab("VR probability of adult death") +
-  guides(shape=guide_legend(title='', override.aes=list(alpha=1))) +
-  NULL
-
-# NB: this is used in paper
-ggsave(filename=file.path(comp_out_dir, "prob_point_scatter.pdf"),
-       plot=prob_point_scatter,
-       height=4,
-       width=6)
-saveRDS(prob_point_scatter, 
-        file.path(comp_out_dir, "prob_point_scatter.rds"))
-
-prob_point_scatter
-```
-
-
-### Estimates from both sources + VR values
+### Estimates from both sources + VR values by geo, one per page
 
 
 ```{r plot-asdrs-ref, fig.width=3.5, fig.height=10}
@@ -1287,101 +878,177 @@ knitr::plot_crop(file.path(comp_out_dir, "asdr_pointrange_log_multipage.pdf"))
 asdr_point_plot_log_onepage
 ```
 
-Specific example used in paper
+
+
+### Correlations between different sets of estimates
+
+Summarize relationship between sibling and network probability of death estimates with correlation matrix
+
 
 ```{r}
-# TODO
-if(params$geo_name == 'city') {
-  
-  spec_geo <- 'RJ'
-  
-  asdr_point_example <- 
-  est_asdrs %>%
-  left_join(gs_asdrs) %>% 
-  #group_by(sex, geo) %>%
-  # order facets by state difficulty
-  #mutate(delta = post_mean_asdr - asdr,
-  #       state_difficulty = sum(abs(delta))) %>%
-  #ungroup() %>%
-  #mutate(geo = as_factor(geo),
-  #       geo = forcats::fct_reorder(geo, state_difficulty)) %>%
-         #geo = drlib::reorder_within(geo, state_difficulty, sex)) %>%
-  # end new 
-  filter(geo == spec_geo) %>%
+direct_comp_all_probs_df <- 
+  est_probs %>%
+    bind_rows(gs_probs %>% rename(post_mean_q = q.47.18) %>% mutate(method='VR')) %>%
+    select(-time.period) %>%
+    tidyr::pivot_wider(id_cols=c('sex', 'geo'),
+                       values_from=c('post_mean_q'),
+                       names_from=c('method')) 
+
+cat("\n\nCorrelation between probabilities, not on log scale\n")
+# not on log scale
+print(
+  cor(direct_comp_all_probs_df %>% 
+           select(Sibling, Network, VR))
+)
+```
+
+Summarize relationship between sibling and network death rate estimates with correlation matrix
+
+
+```{r}
+
+cat("\n\nCorrelation between ASDRs, not on log scale\n")
+# not on log scale
+print(
+  cor(direct_comp_all_asdrs_df %>% 
+                select(Sibling, Network, VR))
+  )
+cat("\n\n")
+
+cat("\n\nCorrelation between log(ASDR)s, log(0) mapped to tiny value:\n")
+# log scale, replace log(0) with log(1e-8)
+print(cor(direct_comp_all_asdrs_df %>% 
+      select(Sibling, Network, VR) %>% 
+      mutate(across(everything(),log)) %>%
+      mutate(Sibling = ifelse(! is.finite(Sibling), log(1e-8), Sibling))))
+cat("\n\n")
+
+cat("\n\nCorrelation between log(ASDR)s, dropping rows where sibling estimates are 0\n")
+# log scale, drop rows where sibling ests are 0
+print(cor(
+  direct_comp_all_asdrs_df %>% 
+      select(Sibling, Network, VR) %>% 
+      mutate(across(everything(),log)) %>%
+      #filter(if_all(everything(), ~ is.finite(.x)))
+      filter_all(all_vars(is.finite(.)))  
+    ))
+```
+
+
+## Plots related to probability estimates 
+
+
+
+```{r}
+direct_comp_est_probs <- 
+  est_probs %>%
+    select(-time.period) %>%
+    tidyr::pivot_wider(id_cols=c('sex', 'geo'),
+                       values_from=c('post_mean_q'),
+                       names_from=c('method')) 
+
+cur_range <- range(log(direct_comp_est_probs$Network),
+                   log(direct_comp_est_probs$Sibling),
+                   finite=TRUE)
+
+```
+
+### Scatter plot comparing estimated probs to VR, one panel per method 
+
+```{r}
+method_facet_names <- c('Sibling' = 'Sibling Estimates',
+                        'Network' = 'Network Estimates')
+
+prob_point_scatter_df <- est_probs %>%
+  left_join(gs_probs %>% select(geo, sex, q.47.18)) %>% 
+  mutate(method = dplyr::recode(method, !!!method_facet_names))
+
+cur_range <- range(c(prob_point_scatter_df$post_mean_q,
+                     prob_point_scatter_df$q.47.18),
+                   finite = TRUE)
+
+prob_point_scatter <- prob_point_scatter_df %>%
   ggplot(.) +
   theme_bw(base_size=5) +
-  geom_pointrange(aes(x=agegp10, 
-                      y=post_mean_asdr, 
-                      ymin=post_ci_low_asdr,
-                      ymax=post_ci_high_asdr,
-                      color=method,
-                      shape=method),
-                  position=position_dodge(width=.5),
-                  size=rel(rel.point.size),
-                  stroke=point.stroke) +
-  geom_point(aes(x=agegp10,
-                 y=asdr,
-                 color='Vital registration',
-                 shape='Vital registration'),
-             size=rel(rel.point.size),
-             stroke=1) +
-  ylab("Log(Age-specific death rate)") +
-  xlab("") +
-  theme(strip.background=element_rect(fill=NA)) +
-  guides(color=guide_legend(title='Method', override.aes=list(linetype=c(1,1,0))),
-  #guides(color=guide_legend(title='Method'),
-         shape=guide_legend(title='Method')) +
-  scale_shape_manual(values=c('Sibling'=shape_sib, 'Network'=shape_net, 'Vital registration'=shape_gs))+
-  scale_color_manual(values=c('Sibling'=color_sib, 'Network'=color_net, 'Vital registration'=color_gs)) +
-  theme(legend.position='bottom',
-        legend.direction='horizontal') +
-  scale_y_log10() +
-  #facet_grid(. ~ sex)
-  facet_grid(sex ~ .)
-  
-  
-  ggsave(filename=file.path(comp_out_dir, "asdr_pointrange_example.pdf"),
-       plot=asdr_point_example,
-       height=6,
-       width=3)
-   knitr::plot_crop(file.path(comp_out_dir, "asdr_pointrange_example.pdf"))
- 
-  asdr_point_example 
-}
+  geom_abline(intercept=0, slope=1) +
+  geom_point(aes(x=q.47.18, 
+                 y=post_mean_q, 
+                 shape=sex),
+                 alpha=.5) +
+  coord_equal() +
+  xlim(cur_range) + ylim(cur_range) +
+  facet_grid(~ method) +
+  ylab("Estimated probability of adult death") +
+  xlab("VR probability of adult death") +
+  guides(shape=guide_legend(title='', override.aes=list(alpha=1))) +
+  NULL
+
+# NB: this is used in paper
+ggsave(filename=file.path(comp_out_dir, "prob_point_scatter.pdf"),
+       plot=prob_point_scatter,
+       height=4,
+       width=6)
+saveRDS(prob_point_scatter, 
+        file.path(comp_out_dir, "prob_point_scatter.rds"))
+
+prob_point_scatter
 ```
 
 
+```{r plot-compare-ests-probs}
+direct_comp_est_probs <- 
+  est_probs %>%
+    select(-time.period) %>%
+    tidyr::pivot_wider(id_cols=c('sex', 'geo'),
+                       values_from=c('post_mean_q'),
+                       names_from=c('method')) 
+```
 
 
 ```{r}
-asdr_point_plot_opp <- asdr_point_plot + 
-  ggforce::facet_grid_paginate(geo ~ sex, ncol=2, nrow=1)
+cur_range <- range(log(direct_comp_est_probs$Network),
+                   log(direct_comp_est_probs$Sibling),
+                   finite=TRUE)
 
-np <- n_pages(asdr_point_plot_opp)
+alpha.val <- .6 
+  
+# logged
+direct_plot_probs_logged <-  direct_comp_est_probs %>%
+  ggplot(.) +
+  geom_abline(intercept=0, slope=1) +
+  geom_point(aes(x=log(Network), 
+                 y=log(Sibling),
+                 shape=sex), 
+             alpha=alpha.val) +
+  coord_equal() +
+  xlim(cur_range) + ylim(cur_range) +
+  guides(shape=guide_legend(override.aes=list(alpha=1),
+                            title='')) +
+  ylab("log(Sibling prob. of death est.)") +
+  xlab("log(Network prob. of death est.)") +
+  theme_bw()
 
-pdf(file.path(comp_out_dir, "asdr_pointrange_opp.pdf"),
-    width=7, height=3.5)
-for(i in 1:np) {
-  print(asdr_point_plot + ggforce::facet_grid_paginate(geo ~ sex, ncol=2, nrow=1, page=i))
-}
-dev.off()
+# NB: this is used in paper
+saveRDS(direct_plot_probs_logged, file.path(comp_out_dir, "direct_probs_logged.rds"))
+ggsave(filename=file.path(comp_out_dir, "direct_probs_logged.pdf"),
+       plot=direct_plot_probs_logged,
+       height=3.5,
+       width=3.5)
+direct_plot_probs_logged
 
-asdr_point_plot_opp <- asdr_point_plot + 
-   ggforce::facet_grid_paginate(geo ~ sex, ncol=2, nrow=1) +
-  scale_y_log10()
-
-np <- n_pages(asdr_point_plot_opp)
-
-pdf(file.path(comp_out_dir, "asdr_pointrange_log_opp.pdf"),
-    width=7, height=3.5)
-for(i in 1:np) {
-  print(asdr_point_plot + 
-          ggforce::facet_grid_paginate(geo ~ sex, ncol=2, nrow=1, page=i) +
-          scale_y_log10())
-}
-dev.off()
 ```
-### Minimum detectable effects
+
+
+
+TODO - for all of these
+
+-- do we want to switch to JAB estimates of MSEs?
+-- what about regional and national analyses?
+
+
+# Summaries of estimated sampling variation
+
+## Minimum detectable effects
 
 ```{r}
 ##
@@ -1415,7 +1082,7 @@ mde_probs
 ```
 
 
-### CI width 
+## CI width 
 
 CI width for asdrs
 
@@ -1478,7 +1145,204 @@ all_ci_widths
 ```
 
 
-## Error distn for file
+# Summaries of errors
+
+### TODO - OLD METHOD calculate errors for file
+
+
+
+### Errors in ASDRs estimates, summarized in various ways 
+
+All ests, by geography
+
+```{r calculate-errs-in-asdrs-by-geo}
+comp_asdrs_bygeo <- comp_asdrs %>%
+  group_by(method, geo) %>%
+  summarize(geo_mse = mean(delta2),
+            #geo_are = sum(abs(delta_rel))) 
+            # this should be the mean, right?
+            geo_are = mean(abs(delta_rel))) 
+
+comp_asdrs_bygeo_boot <- comp_asdrs_boot %>%
+  group_by(method, geo, boot_idx) %>%
+  summarize(geo_mse = mean(delta2),
+            #geo_are = sum(abs(delta_rel))) 
+            # this should be the mean, right?
+            geo_are = mean(abs(delta_rel))) 
+
+# difference in MSE (network - sibling)
+comp_asdrs_bygeo_wide <- comp_asdrs_bygeo %>%
+  select(-geo_are) %>%
+  pivot_wider(names_from=method, values_from=geo_mse)  %>%
+  mutate(n.minus.s = Network - Sibling)
+
+comp_asdrs_bygeo_wide_boot <- comp_asdrs_bygeo_boot %>%
+  select(-geo_are) %>%
+  pivot_wider(names_from=method, values_from=geo_mse)  %>%
+  mutate(n.minus.s = Network - Sibling)
+
+# difference in ARE (network - sibling)
+comp_rel_asdrs_bygeo_wide <- comp_asdrs_bygeo %>%
+  select(-geo_mse) %>%
+  pivot_wider(names_from=method, values_from=geo_are) %>%
+  mutate(n.minus.s = Network - Sibling)
+
+comp_rel_asdrs_bygeo_wide_boot <- comp_asdrs_bygeo_boot %>%
+  select(-geo_mse) %>%
+  pivot_wider(names_from=method, values_from=geo_are) %>%
+  mutate(n.minus.s = Network - Sibling)
+```
+
+
+By age/sex/geography
+
+```{r asdr-errs-by-age-sex-geo}
+comp_asdrs_bygeoas <- comp_asdrs %>%
+  group_by(method, geo, sex, agegp10) %>%
+  summarize(geo_mse = mean(delta2),
+            # this should be the mean, right?
+            geo_are = mean(abs(delta_rel)),
+            # not absolute relative error (so, can be negative)
+            geo_re = mean(delta_rel_notabs)) %>%
+  ungroup() %>%
+  mutate(geo_rmse = sqrt(geo_mse))
+
+# difference in MSE (network - sibling)
+comp_asdrs_bygeoas_wide <- comp_asdrs_bygeoas %>%
+  select(-geo_are, -geo_re, -geo_rmse) %>%
+  pivot_wider(names_from=method, values_from=geo_mse)  %>%
+  mutate(n.minus.s = Network - Sibling)
+
+# difference in RMSE (network - sibling)
+comp_rmse_asdrs_bygeoas_wide <- comp_asdrs_bygeoas %>%
+  select(-geo_are, -geo_re, -geo_mse) %>%
+  pivot_wider(names_from=method, values_from=geo_rmse)  %>%
+  mutate(n.minus.s = Network - Sibling)
+  # alternate approach:
+  # square root of difference in MSE (network - sibling)
+  # that is,
+  #   sign(MSE(net) - MSE(sib)) * sqrt(MSE(net) - MSE(sib))
+  #mutate(n.minus.s = sign(Network - Sibling) * sqrt(abs(Network - Sibling)))
+
+# difference in ARE (network - sibling)
+comp_rel_asdrs_bygeoas_wide <- comp_asdrs_bygeoas %>%
+  select(-geo_mse, -geo_re, -geo_rmse) %>%
+  pivot_wider(names_from=method, values_from=geo_are) %>%
+  mutate(n.minus.s = Network - Sibling)
+```
+
+By age/sex
+
+```{r asdr-errs-by-age-sex}
+comp_asdrs_byas <- comp_asdrs %>%
+  group_by(method, sex, agegp10) %>%
+  summarize(as_mse = mean(delta2),
+            as_are = mean(abs(delta_rel)),
+            # not absolute relative error (so, can be negative)
+            as_re = mean(delta_rel_notabs))  
+
+# with bootstraps
+comp_asdrs_byas_boot <- comp_asdrs_boot %>%
+  group_by(method, sex, agegp10, boot_idx) %>%
+  summarize(as_mse = mean(delta2),
+            as_are = mean(abs(delta_rel)),
+            # not absolute relative error (so, can be negative)
+            as_re = mean(delta_rel_notabs),
+            .groups='drop') %>%
+  group_by(method, sex, agegp10) %>%
+  summarize(as_mse_ci_low = quantile(as_mse, .025),
+            as_mse_ci_high = quantile(as_mse, .975),
+            as_mse = mean(as_mse),
+            as_are_ci_low = quantile(as_are, .025),
+            as_are_ci_high = quantile(as_are, .975),
+            as_are = mean(as_are),
+            # not absolute relative error (so, can be negative)
+            as_re_ci_low = quantile(as_re, .025),
+            as_re_ci_high = quantile(as_re, .975),
+            as_re = mean(as_re))
+
+# difference in MSE (network - sibling)
+comp_asdrs_byas_wide <- comp_asdrs_byas %>%
+  select(-as_are, -as_re) %>%
+  pivot_wider(names_from=method, values_from=as_mse)  %>%
+  mutate(n.minus.s = Network - Sibling)
+
+# difference in ARE (network - sibling)
+comp_rel_asdrs_byas_wide <- comp_asdrs_byas %>%
+  select(-as_mse, -as_re) %>%
+  pivot_wider(names_from=method, values_from=as_are) %>%
+  mutate(n.minus.s = Network - Sibling)
+```
+
+### Errors in probability estimates, summarized in various ways 
+
+All ests, by geography (probs)
+
+```{r calculate-errs-in-probs-by-geo}
+comp_probs_bygeo <- comp_probs %>%
+  group_by(method, geo) %>%
+  summarize(geo_mse = mean(delta2),
+            #geo_are = sum(abs(delta_rel))) 
+            # this should be the mean, right?
+            geo_are = mean(abs(delta_rel))) 
+
+comp_probs_bygeo_boot <- comp_probs_boot %>%
+  group_by(method, geo, boot_idx) %>%
+  summarize(geo_mse = mean(delta2),
+            #geo_are = sum(abs(delta_rel))) 
+            # this should be the mean, right?
+            geo_are = mean(abs(delta_rel))) 
+
+# difference in MSE (network - sibling)
+comp_probs_bygeo_wide <- comp_probs_bygeo %>%
+  select(-geo_are) %>%
+  pivot_wider(names_from=method, values_from=geo_mse)  %>%
+  mutate(n.minus.s = Network - Sibling)
+
+comp_probs_bygeo_wide_boot <- comp_probs_bygeo_boot %>%
+  select(-geo_are) %>%
+  pivot_wider(names_from=method, values_from=geo_mse)  %>%
+  mutate(n.minus.s = Network - Sibling)
+
+# difference in ARE (network - sibling)
+comp_rel_probs_bygeo_wide <- comp_probs_bygeo %>%
+  select(-geo_mse) %>%
+  pivot_wider(names_from=method, values_from=geo_are) %>%
+  mutate(n.minus.s = Network - Sibling)
+
+comp_rel_probs_bygeo_wide_boot <- comp_probs_bygeo_boot %>%
+  select(-geo_mse) %>%
+  pivot_wider(names_from=method, values_from=geo_are) %>%
+  mutate(n.minus.s = Network - Sibling)
+```
+
+
+By age/sex/geography (probs)
+
+```{r prob-errs-by-age-sex-geo}
+comp_probs_bygeos <- comp_probs %>%
+  group_by(method, geo, sex) %>%
+  summarize(geo_mse = mean(delta2),
+            #geo_are = sum(abs(delta_rel))) 
+            # this should be the mean, right?
+            geo_are = mean(abs(delta_rel)))  
+
+# difference in MSE (network - sibling)
+comp_probs_bygeos_wide <- comp_probs_bygeos %>%
+  select(-geo_are) %>%
+  pivot_wider(names_from=method, values_from=geo_mse)  %>%
+  mutate(n.minus.s = Network - Sibling)
+
+# difference in ARE (network - sibling)
+comp_rel_probs_bygeos_wide <- comp_probs_bygeos %>%
+  select(-geo_mse) %>%
+  pivot_wider(names_from=method, values_from=geo_are) %>%
+  mutate(n.minus.s = Network - Sibling)
+```
+
+
+
+## TODO OLD METHOD - Error distns to save to file
 
 TODO - If we still use these results (not sure), then I think these need to be 
 updated for the MSE based on bootstrap we're using now...
@@ -1613,60 +1477,76 @@ glue::glue("
 ```
 
 
+## Plot the difference between the two methods against the estimated completeness
 
-# Correlations between different sets of estimates
+Plot the difference between the two methods (MSE) against the estimated completeness
 
-Summarize relationship between sibling and network probability of death estimates with correlation matrix
+```{r comp-errs-mse-vrcompleteness, fig.height=3.5, fig.width=3.5}
+## NB: only have completeness at the state level...
+if(geo_name == 'city') {
+
+# difference in MSE
+comp_df <- comp_asdrs_bygeo_wide
+
+comp_df_withvr <- comp_df %>%
+  left_join(ibge_vr_completeness %>%
+              select(geo, ibge_est_vrcov = mean_sim_cov_pct))
+
+biggestdiff <- max(abs(comp_df_withvr$n.minus.s))
+xrange <- c(-biggestdiff, biggestdiff)
+
+## controls how far out annotations go
+annscale <- .6
+
+geo_err_mse_vr_comp <-
+  comp_df_withvr %>%
+        mutate(geo = fct_reorder(geo, n.minus.s)) %>%
+  ggplot(.) +
+  geom_text(aes(y=n.minus.s,
+                x=ibge_est_vrcov,
+                label=geo)) +
+  #geom_vline(xintercept=0, color='dark grey') +
+  #geom_point(aes(y=state_abbrev, x=n.minus.s)) +
+  theme_minimal() +
+  ylab("Network estimate MSE - Sibling estimate MSE") +
+  xlab("Estimated VR completeness") +
+  expand_limits(y=xrange) +
+  annotate(geom='text',
+           label="<- Network is better ",
+           #x='SE',
+           x=100,
+           y=-biggestdiff*annscale,
+           size=rel(3),
+           color='red',
+           angle=90) +
+  annotate(geom='text',
+           label="Sibling is better ->",
+           #x='SE',
+           x=100,
+           y=biggestdiff*annscale,
+           size=rel(3),
+           color='red',
+           angle=90) +
+  theme(axis.title.x=element_text(size=rel(.8))) +
+  ## see
+  ## https://stackoverflow.com/questions/12409960/ggplot2-annotate-outside-of-plot
+  ## for how this helps plot not clip annotations
+  coord_cartesian(clip='off') +
+  NULL
 
 
-```{r}
-direct_comp_all_probs_df <- 
-  est_probs %>%
-    bind_rows(gs_probs %>% rename(post_mean_q = q.47.18) %>% mutate(method='VR')) %>%
-    select(-time.period) %>%
-    tidyr::pivot_wider(id_cols=c('sex', 'geo'),
-                       values_from=c('post_mean_q'),
-                       names_from=c('method')) 
+ggsave(filename=file.path(comp_out_dir, "geo_err_summ_mse_vrsens.pdf"),
+       plot=geo_err_mse_vr_comp,
+       height=3.5,
+       width=3.5)
+knitr::plot_crop(file.path(comp_out_dir, "geo_err_summ_mse_vrsens.pdf"))
 
-cat("\n\nCorrelation between probabilities, not on log scale\n")
-# not on log scale
-print(
-  cor(direct_comp_all_probs_df %>% 
-           select(Sibling, Network, VR))
-)
+geo_err_mse_vr_comp
+
+}
 ```
 
-Summarize relationship between sibling and network death rate estimates with correlation matrix
 
-
-```{r}
-
-cat("\n\nCorrelation between ASDRs, not on log scale\n")
-# not on log scale
-print(
-  cor(direct_comp_all_asdrs_df %>% 
-                select(Sibling, Network, VR))
-  )
-cat("\n\n")
-
-cat("\n\nCorrelation between log(ASDR)s, log(0) mapped to tiny value:\n")
-# log scale, replace log(0) with log(1e-8)
-print(cor(direct_comp_all_asdrs_df %>% 
-      select(Sibling, Network, VR) %>% 
-      mutate(across(everything(),log)) %>%
-      mutate(Sibling = ifelse(! is.finite(Sibling), log(1e-8), Sibling))))
-cat("\n\n")
-
-cat("\n\nCorrelation between log(ASDR)s, dropping rows where sibling estimates are 0\n")
-# log scale, drop rows where sibling ests are 0
-print(cor(
-  direct_comp_all_asdrs_df %>% 
-      select(Sibling, Network, VR) %>% 
-      mutate(across(everything(),log)) %>%
-      #filter(if_all(everything(), ~ is.finite(.x)))
-      filter_all(all_vars(is.finite(.)))  
-    ))
-```
 
 
 # National and regional analyses ends here
@@ -1677,6 +1557,10 @@ if(geo_name %in% c('national', 'region')) {
   knitr::knit_exit()
 }
 ```
+
+# TODO - JAB uncertainty estimates
+
+
 
 ## Bias-Variance Decomposition
 
@@ -2166,7 +2050,7 @@ TODO
 
 TODO
 
-# Maps
+# Maps / Geography
 
 ```{r}
 city.dat <- read_csv(file.path(data_dir, "cities.csv"))
@@ -2562,7 +2446,7 @@ Moran's I values that are significant at $p=0.05$ level
 moran_I_df %>% filter(p_value < 0.05)
 ```
 
-## Heatmap figures 
+# Heatmaps showing error
 
 Create a dataset `all_err_diffs_boot`
 which has a row for each geo/sex/agegp/boot_idx that has, for Sibling and Network

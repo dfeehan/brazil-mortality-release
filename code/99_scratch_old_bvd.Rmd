@@ -3,6 +3,155 @@ title: "SCRATCH - old BVD stuff"
 output: html_notebook
 ---
 
+## Removed 20260105
+
+
+
+Version of the direct ASDR comparison between network + sibling,
+faceted by age/sex group
+
+```{r}
+cur_range <- with(direct_comp_all_asdrs_df,
+                  range(log(Sibling),
+                        log(Network),
+                        log(VR),
+                        finite=TRUE))
+
+
+alpha.val <- 1
+
+splom_sn_faceted <- direct_comp_all_asdrs_df %>%
+  ggplot(.) +
+  geom_abline(intercept=0, slope=1) +
+  geom_point(aes(x=log(Sibling), 
+                 y=log(Network),
+                 color=agegp10,
+                 shape=sex), 
+             alpha=alpha.val) +
+  coord_equal() +
+  xlim(cur_range) + ylim(cur_range) +
+  guides(color=guide_legend(override.aes=list(alpha=1),
+                            title='Age'),
+         shape=guide_legend(override.aes=list(alpha=1),
+                            title='')) +
+  xlab("log(Sibling death rate est.)") +
+  ylab("log(Network death rate est.)") +
+  age_scale_color +
+  theme_bw() +
+  facet_grid(sex ~ agegp10) +
+  theme(legend.position='bottom',
+        legend.box='vertical')
+
+fig_height <- 4 
+fig_width <- 8
+
+saveRDS(splom_sn_faceted, file.path(comp_out_dir, "net_vs_sib_asdr_faceted.rds"))
+ggsave(filename=file.path(comp_out_dir, "net_vs_sib_asdr_faceted.pdf"),
+       plot=splom_sn_faceted,
+       height=fig_height,
+       width=fig_width)
+
+splom_sn_faceted
+```
+
+
+
+Specific example used in paper
+
+```{r}
+# TODO
+if(params$geo_name == 'city') {
+  
+  spec_geo <- 'RJ'
+  
+  asdr_point_example <- 
+  est_asdrs %>%
+  left_join(gs_asdrs) %>% 
+  #group_by(sex, geo) %>%
+  # order facets by state difficulty
+  #mutate(delta = post_mean_asdr - asdr,
+  #       state_difficulty = sum(abs(delta))) %>%
+  #ungroup() %>%
+  #mutate(geo = as_factor(geo),
+  #       geo = forcats::fct_reorder(geo, state_difficulty)) %>%
+         #geo = drlib::reorder_within(geo, state_difficulty, sex)) %>%
+  # end new 
+  filter(geo == spec_geo) %>%
+  ggplot(.) +
+  theme_bw(base_size=5) +
+  geom_pointrange(aes(x=agegp10, 
+                      y=post_mean_asdr, 
+                      ymin=post_ci_low_asdr,
+                      ymax=post_ci_high_asdr,
+                      color=method,
+                      shape=method),
+                  position=position_dodge(width=.5),
+                  size=rel(rel.point.size),
+                  stroke=point.stroke) +
+  geom_point(aes(x=agegp10,
+                 y=asdr,
+                 color='Vital registration',
+                 shape='Vital registration'),
+             size=rel(rel.point.size),
+             stroke=1) +
+  ylab("Log(Age-specific death rate)") +
+  xlab("") +
+  theme(strip.background=element_rect(fill=NA)) +
+  guides(color=guide_legend(title='Method', override.aes=list(linetype=c(1,1,0))),
+  #guides(color=guide_legend(title='Method'),
+         shape=guide_legend(title='Method')) +
+  scale_shape_manual(values=c('Sibling'=shape_sib, 'Network'=shape_net, 'Vital registration'=shape_gs))+
+  scale_color_manual(values=c('Sibling'=color_sib, 'Network'=color_net, 'Vital registration'=color_gs)) +
+  theme(legend.position='bottom',
+        legend.direction='horizontal') +
+  scale_y_log10() +
+  #facet_grid(. ~ sex)
+  facet_grid(sex ~ .)
+  
+  
+  ggsave(filename=file.path(comp_out_dir, "asdr_pointrange_example.pdf"),
+       plot=asdr_point_example,
+       height=6,
+       width=3)
+   knitr::plot_crop(file.path(comp_out_dir, "asdr_pointrange_example.pdf"))
+ 
+  asdr_point_example 
+}
+```
+
+
+
+
+```{r}
+asdr_point_plot_opp <- asdr_point_plot + 
+  ggforce::facet_grid_paginate(geo ~ sex, ncol=2, nrow=1)
+
+np <- n_pages(asdr_point_plot_opp)
+
+pdf(file.path(comp_out_dir, "asdr_pointrange_opp.pdf"),
+    width=7, height=3.5)
+for(i in 1:np) {
+  print(asdr_point_plot + ggforce::facet_grid_paginate(geo ~ sex, ncol=2, nrow=1, page=i))
+}
+dev.off()
+
+asdr_point_plot_opp <- asdr_point_plot + 
+   ggforce::facet_grid_paginate(geo ~ sex, ncol=2, nrow=1) +
+  scale_y_log10()
+
+np <- n_pages(asdr_point_plot_opp)
+
+pdf(file.path(comp_out_dir, "asdr_pointrange_log_opp.pdf"),
+    width=7, height=3.5)
+for(i in 1:np) {
+  print(asdr_point_plot + 
+          ggforce::facet_grid_paginate(geo ~ sex, ncol=2, nrow=1, page=i) +
+          scale_y_log10())
+}
+dev.off()
+```
+
+
 ## Plausibility plots
 
 
