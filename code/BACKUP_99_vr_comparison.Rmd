@@ -1154,44 +1154,40 @@ all_ci_widths
 
 # Point estimates of Bias/MSE/Var
 
-These get calculated for each method/city/age/sex
 
 ```{r bvm-estimates}
 asdr_properties_point_estimates <- comp_asdrs_boot %>%
   group_by(geo, sex, agegp10, method) %>%
-  summarize( est_bias = mean(post_mean_asdr) - gs_asdr[1],
-             est_mse = mean( (post_mean_asdr - gs_asdr[1])^2 ),
-             est_mare = mean( abs(post_mean_asdr - gs_asdr[1])/gs_asdr[1]),
-             est_var = fp.var(post_mean_asdr)) %>%
-  mutate(est_rmse = sqrt(est_mse)) %>%
-  mutate(qty = 'asdr')
-
-prob_properties_point_estimates <- comp_probs_boot %>%
-  group_by(geo, sex, method) %>%
-  summarize( est_bias = mean(post_mean_q) - gs_prob[1],
-             est_mse = mean( (post_mean_q - gs_prob[1])^2 ),
-             est_mare = mean( abs(post_mean_q - gs_prob[1])/gs_prob[1]),
-             est_var = fp.var(post_mean_q)) %>%
-  mutate(est_rmse = sqrt(est_mse)) %>%
-  mutate(qty = 'prob')
+  summarize( asdr_bias = mean(post_mean_asdr) - gs_asdr[1],
+             asdr_mse = mean( (post_mean_asdr - gs_asdr[1])^2 ),
+             asdr_mare = mean( abs(post_mean_asdr - gs_asdr[1])/gs_asdr[1]),
+             asdr_var = fp.var(post_mean_asdr)
+  
+  lopo_ests %>%
+  select(-jab_indexes) %>%
+  # geo is stored in lopo_ests, and we don't want to duplicate it
+  select(-geo) %>%
+  unnest(cols = lopo_ests) %>%
+  #group_by(state_abbrev, geo, sex, agegp10, method) %>%
+  group_by(geo, sex, agegp10, method) %>%
+  summarize(# number of PSUs used in JAB calculation
+            n_psu_jab = n(),
+            # average number of bootstrap reps used for each PSU's
+            # leave one PSU out calculations
+            n_jab_avg = mean(n_jab), 
+            # JAB variance estimate of variance estimate
+            var_var_jab = jack.var(var_asdr_lopo),
+            # JAB variance estimate of MSE estimate
+            var_mse_jab = jack.var(mse_asdr_lopo),
+            # JAB variance estimate of RMSE estimate
+            var_rmse_jab = jack.var(rmse_asdr_lopo),
+            # JAB variance estimate of bias estimate
+            var_bias_jab = jack.var(bias_asdr_lopo)) %>%
+  mutate(se_var_jab = sqrt(var_var_jab),
+         se_mse_jab = sqrt(var_mse_jab),
+         se_rmse_jab = sqrt(var_rmse_jab),
+         se_bias_jab = sqrt(var_bias_jab))
 ```
-
-And also calculate these quantities for the difference between network and sibling
-
-```{r}
-asdr_diff_properties_point_estimates <- asdr_properties_point_estimates %>%
-  pivot_wider(names_from = 'method',
-              values_from = c('est_rmse', 'est_mse', 'est_bias', 'est_var', 'est_mare')) %>%
-  mutate(est_rmse_n_minus_s = est_rmse_Network - est_rmse_Sibling,
-         est_mare_n_minus_s = est_mare_Network - est_mare_Sibling)
-
-prob_diff_properties_point_estimates <- prob_properties_point_estimates %>%
-  pivot_wider(names_from = 'method',
-              values_from = c('est_rmse', 'est_mse', 'est_bias', 'est_var', 'est_mare')) %>%
-  mutate(est_rmse_n_minus_s = est_rmse_Network - est_rmse_Sibling,
-         est_mare_n_minus_s = est_mare_Network - est_mare_Sibling)
-```
-
 
 # Use JAB to calculate uncertainty in Bias/Variance/MSE
 
@@ -1289,9 +1285,9 @@ toc()
 ```
 
 
-## Calculate the leave-one-PSU-out (LOPO) estimates 
+## Calculate the leave-one-PSU-out (LOPO) estimates for death rates
 
-This takes about 8.5 minutes on my fancy laptop...
+This takes about 6 minutes on my fancy laptop...
 
 ```{r leave-one-psu-out-estimates}
 tic("Calculating leave-one PSU out estimates to use with jackknife after bootstrap")
@@ -1316,10 +1312,25 @@ lopo_ests <- jab_df %>%
                                     mean_asdr_lopo = mean(post_mean_asdr),
                                     bias_asdr_lopo = mean(post_mean_asdr - gs_asdr),
                                     mse_asdr_lopo = mean((post_mean_asdr - gs_asdr)^2),
-                                    mare_asdr_lopo = mean( abs(post_mean_asdr - gs_asdr) / gs_asdr),
                                     .groups = "drop") %>%
                           mutate(rmse_asdr_lopo = sqrt(mse_asdr_lopo))
                         
+                        # repeat for probabilities
+                        cur_res_probs <- comp_probs_boot %>%
+                          filter(geo == cur_geo) %>%
+                          # filter to boot indexes to be used for the hold-one-out calculations
+                          # based on this index
+                          filter(boot_idx %in% jab_boot_indexes) %>%
+                          group_by(geo,sex,method) %>%
+                          summarize(n_jab_check = n(),
+                                    # fp.var is our custom function that has n in the denom instead of (n-1)
+                                    var_prob_lopo = fp.var(post_mean_q),
+                                    mean_prob_lopo = mean(post_mean_q),
+                                    bias_prob_lopo = mean(post_mean_q - gs_prob),
+                                    mse_prob_lopo = mean((post_mean_q - gs_prob)^2),
+                                    .groups = "drop") %>%
+                          mutate(rmse_asdr_lopo = sqrt(mse_prob_lopo))
+                          
                         return(cur_res)
                        
                      }))
@@ -1347,7 +1358,6 @@ lopo_prob_ests <- jab_df %>%
                                     mean_prob_lopo = mean(post_mean_q),
                                     bias_prob_lopo = mean(post_mean_q - gs_prob),
                                     mse_prob_lopo = mean((post_mean_q - gs_prob)^2),
-                                    mare_prob_lopo = mean( abs(post_mean_q - gs_prob) / gs_prob),
                                     .groups = "drop") %>%
                           mutate(rmse_prob_lopo = sqrt(mse_prob_lopo))
                           
@@ -1380,14 +1390,11 @@ jab_ests <- lopo_ests %>%
             var_mse_jab = jack.var(mse_asdr_lopo),
             # JAB variance estimate of RMSE estimate
             var_rmse_jab = jack.var(rmse_asdr_lopo),
-            # JAB variance estimate of MARE estimate
-            var_mare_jab = jack.var(mare_asdr_lopo),
             # JAB variance estimate of bias estimate
             var_bias_jab = jack.var(bias_asdr_lopo)) %>%
   mutate(se_var_jab = sqrt(var_var_jab),
          se_mse_jab = sqrt(var_mse_jab),
          se_rmse_jab = sqrt(var_rmse_jab),
-         se_mare_jab = sqrt(var_mare_jab),
          se_bias_jab = sqrt(var_bias_jab))
 ```
 
@@ -1411,80 +1418,46 @@ jab_prob_ests <- lopo_prob_ests %>%
             var_mse_jab = jack.var(mse_prob_lopo),
             # JAB variance estimate of RMSE estimate
             var_rmse_jab = jack.var(rmse_prob_lopo),
-            # JAB variance estimate of MARE estimate
-            var_mare_jab = jack.var(mare_prob_lopo),            
             # JAB variance estimate of bias estimate
             var_bias_jab = jack.var(bias_prob_lopo)) %>%
   mutate(se_var_jab = sqrt(var_var_jab),
          se_mse_jab = sqrt(var_mse_jab),
          se_rmse_jab = sqrt(var_rmse_jab),
-         se_mare_jab = sqrt(var_mare_jab),
          se_bias_jab = sqrt(var_bias_jab))
 ```
 
 ### Calculate JAB-based uncertainty in estimated difference in RMSE and probs
 
-#### Get JAB uncertainty estimates in ASDR error differences within geo/age/sex group
-
-For the individual methods
+Our point estimate for the difference in RMSE between methods is the average of the
+RMSE estimate differences between each method, averaged over all city/age/sex groups
 
 ```{r}
 # this produces a tibble with one row for each
 # PSU x age-sex group (so, 10 times the number of PSUs, \approx 41,000)
 # note that, since each PSU is in exactly one city, each row here is
 # a LOPO estimate that corresponds to a city/age/sex cell
-lopo_ests_wide <- lopo_ests %>%
+lopo_agesexgeo_wide <- lopo_ests %>%
   # geo is stored in lopo_ests, and we don't want to duplicate it
   select(-geo) %>%
   unnest(lopo_ests) %>%
   pivot_wider(names_from = 'method',
-              values_from = c('rmse_asdr_lopo', 'mare_asdr_lopo'),
+              values_from = 'rmse_asdr_lopo',
               id_cols=c('cb_code', 'geo', 'agegp10', 'sex')) %>%
-  mutate(rmse_asdr_lopo_n_minus_s = rmse_asdr_lopo_Network - rmse_asdr_lopo_Sibling,
-         mare_asdr_lopo_n_minus_s = mare_asdr_lopo_Network - mare_asdr_lopo_Sibling) 
+  rename(rmse_asdr_lopo_net = Network,
+         rmse_asdr_lopo_sib = Sibling) %>%
+  mutate(rmse_asdr_lopo_n_minus_s = rmse_asdr_lopo_net - rmse_asdr_lopo_sib) 
 
 # use JAB to calculate
 # uncertainty in estimated difference in RMSE between the two methods in each city,
 # aggregating across age/sex groups
-jab_diff_ests <- lopo_ests_wide %>%
-  # this renaming is just for convenience
-  # (below, when we aggregate up to city, we do something else here)
-  mutate(mean_rmse_asdr_lopo_n_minus_s = rmse_asdr_lopo_n_minus_s,
-         mean_mare_asdr_lopo_n_minus_s = mare_asdr_lopo_n_minus_s) %>%
-  # and now take the LOPO estimates for 
-  # each city/age/sex/PSU, and aggregate these using the jackknife formula
-  # this produces an estimated variance of the estimated RMSE difference 
-  # within each city
-  group_by(geo, sex, agegp10) %>%
-  # estimated variance in city MSE difference estimate, using JAB
-  summarize(# aggregate across the LOPO values with the jackknife variance formula
-            var_rmse_n_minus_s_jab = jack.var(mean_rmse_asdr_lopo_n_minus_s),
-            var_mare_n_minus_s_jab = jack.var(mean_mare_asdr_lopo_n_minus_s),
-            # and this is the mean difference across LOPO values
-            mean_rmse_lopo_n_minus_s_jab = mean(mean_rmse_asdr_lopo_n_minus_s),
-            mean_mare_lopo_n_minus_s_jab = mean(mean_mare_asdr_lopo_n_minus_s),
-            .groups='drop') %>%
-  mutate(se_rmse_n_minus_s_jab = sqrt(var_rmse_n_minus_s_jab),
-         se_mare_n_minus_s_jab = sqrt(var_mare_n_minus_s_jab)) %>%
-  mutate(qty = 'asdr')
-```
-
-#### Get JAB uncertainty estimates in ASDR error differences at geo level
-
-```{r}
-# use JAB to calculate
-# uncertainty in estimated difference in RMSE between the two methods in each city,
-# aggregating across age/sex groups
-jab_geo_diff_ests <- lopo_ests_wide %>%
+jab_agesexgeo_rmse_diff <- lopo_agesexgeo_wide %>%
   ## now use the jackknife formula to get variance estimates for each city
   group_split(geo) %>%
   map_dfr(~ {
     .x %>%
       # aggregate LOPO estimates across age/sex groups within this city and PSU
       group_by(geo, cb_code) %>%
-      summarize(
-                 mean_rmse_asdr_lopo_n_minus_s = mean(rmse_asdr_lopo_n_minus_s),
-                 mean_mare_asdr_lopo_n_minus_s = mean(mare_asdr_lopo_n_minus_s),
+      summarize(mean_rmse_asdr_lopo_n_minus_s = mean(rmse_asdr_lopo_n_minus_s),
                 .groups='drop')
                 # this should be 10 (since there are 10 age/sex groups)
                 #num_gp_check = n())
@@ -1496,153 +1469,38 @@ jab_geo_diff_ests <- lopo_ests_wide %>%
   group_by(geo) %>%
   # estimated variance in city MSE difference estimate, using JAB
   summarize(# aggregate across the LOPO values with the jackknife variance formula
-            var_rmse_n_minus_s_jab = jack.var(mean_rmse_asdr_lopo_n_minus_s),
-            var_mare_n_minus_s_jab = jack.var(mean_mare_asdr_lopo_n_minus_s),
+            geo_var_rmse_asdr_lopo_n_minus_s_jab = jack.var(mean_rmse_asdr_lopo_n_minus_s),
             # and this is the mean difference across LOPO values
-            mean_rmse_lopo_n_minus_s_jab = mean(mean_rmse_asdr_lopo_n_minus_s),
-            mean_mare_lopo_n_minus_s_jab = mean(mean_mare_asdr_lopo_n_minus_s),
+            geo_mean_rmse_asdr_lopo_n_minus_s_jab = mean(mean_rmse_asdr_lopo_n_minus_s),
             .groups='drop') %>%
-  mutate(se_rmse_n_minus_s_jab = sqrt(var_rmse_n_minus_s_jab),
-         se_mare_n_minus_s_jab = sqrt(var_mare_n_minus_s_jab)) %>%
-  mutate(qty = 'asdr')
+  mutate(geo_se_rmse_diff_jab = sqrt(geo_var_rmse_asdr_lopo_n_minus_s_jab)) 
 ```
 
-
-#### Get JAB uncertainty estimates in ASDR error differences by age
-
-```{r}
-if (geo_name == 'city') {
-  NUM_GEO_UNITS <- 27
-} else if (geo_name == 'region') {
-  NUM_GEO_UNITS <- 5
-} else if (geo_name == 'national') {
-  NUM_GEO_UNITS <- 1
-}
-  
-# finally, aggregate the city-specific estimated variance of the estimated 
-# RMSE differences across cities
-jab_age_diff_ests <- jab_diff_ests %>% 
-  mutate(age_rmse_lopo_n_minus_s_jab = mean_rmse_lopo_n_minus_s_jab,
-         age_mare_lopo_n_minus_s_jab = mean_mare_lopo_n_minus_s_jab,
-         age_var_rmse_n_minus_s_jab = var_rmse_n_minus_s_jab,
-         age_var_mare_n_minus_s_jab = var_mare_n_minus_s_jab) %>%
-  ungroup() %>%
-  # to summarize across all rows in the tibble
-  group_by(agegp10) %>%
-  summarize(# overall estimate rmse diff is the average across cities
-            mean_rmse_lopo_n_minus_s_jab = mean(age_rmse_lopo_n_minus_s_jab),
-            mean_mare_lopo_n_minus_s_jab = mean(age_mare_lopo_n_minus_s_jab),
-            # overall estimated variance in mse diff is average of city-specific 
-            # variance estimates, which is (1/27)^2 times the sum of 
-            # the city-specific variances
-            # (we need (1/27)^2 because we're pulling a constant out of the
-            #  variance -- see the appendix notes)
-            var_rmse_n_minus_s_jab = ((1/NUM_GEO_UNITS)^2)*sum(age_var_rmse_n_minus_s_jab),
-            var_mare_n_minus_s_jab = ((1/NUM_GEO_UNITS)^2)*sum(age_var_mare_n_minus_s_jab)
-            ) %>%
-  mutate(se_rmse_n_minus_s_jab = sqrt(var_rmse_n_minus_s_jab),
-         se_mare_n_minus_s_jab = sqrt(var_mare_n_minus_s_jab))
-```
-
-#### Get JAB uncertainty estimates in ASDR error differences in total
+Repeat for probabilities
 
 ```{r}
-if (geo_name == 'city') {
-  NUM_GEO_UNITS <- 27
-} else if (geo_name == 'region') {
-  NUM_GEO_UNITS <- 5
-} else if (geo_name == 'national') {
-  NUM_GEO_UNITS <- 1
-}
-  
-# finally, aggregate the city-specific estimated variance of the estimated 
-# RMSE differences across cities
-jab_tot_diff_ests <- jab_geo_diff_ests %>% 
-  mutate(city_rmse_lopo_n_minus_s_jab = mean_rmse_lopo_n_minus_s_jab,
-         city_mare_lopo_n_minus_s_jab = mean_mare_lopo_n_minus_s_jab,
-         city_var_rmse_n_minus_s_jab = var_rmse_n_minus_s_jab,
-         city_var_mare_n_minus_s_jab = var_mare_n_minus_s_jab) %>%
-  ungroup() %>%
-  # to summarize across all rows in the tibble
-  group_by(qty) %>%
-  summarize(# overall estimate rmse diff is the average across cities
-            mean_rmse_lopo_n_minus_s_jab = mean(city_rmse_lopo_n_minus_s_jab),
-            mean_mare_lopo_n_minus_s_jab = mean(city_mare_lopo_n_minus_s_jab),
-            # overall estimated variance in mse diff is average of city-specific 
-            # variance estimates, which is (1/27)^2 times the sum of 
-            # the city-specific variances
-            # (we need (1/27)^2 because we're pulling a constant out of the
-            #  variance -- see the appendix notes)
-            var_rmse_n_minus_s_jab = ((1/NUM_GEO_UNITS)^2)*sum(city_var_rmse_n_minus_s_jab),
-            var_mare_n_minus_s_jab = ((1/NUM_GEO_UNITS)^2)*sum(city_var_mare_n_minus_s_jab)
-            ) %>%
-  mutate(se_rmse_n_minus_s_jab = sqrt(var_rmse_n_minus_s_jab),
-         se_mare_n_minus_s_jab = sqrt(var_mare_n_minus_s_jab))
-```
-
-
-#### Get JAB uncertainty estimates in prob error differences within geo/age/sex group
-
-```{r}
-# this produces a tibble with one row for each
-# PSU x sex group (so, 2 times the number of PSUs, \approx 8,000)
-# note that, since each PSU is in exactly one city, each row here is
-# a LOPO estimate that corresponds to a city/sex cell
-lopo_prob_ests_wide <- lopo_prob_ests %>%
+lopo_agesexgeo_prob_wide <- lopo_prob_ests %>%
   # geo is stored in lopo_ests, and we don't want to duplicate it
   select(-geo) %>%
   unnest(lopo_ests) %>%
   pivot_wider(names_from = 'method',
-              values_from = c('rmse_prob_lopo', 'mare_prob_lopo'),
+              values_from = 'rmse_prob_lopo',
               id_cols=c('cb_code', 'geo', 'sex')) %>%
-  mutate(rmse_prob_lopo_n_minus_s = rmse_prob_lopo_Network - rmse_prob_lopo_Sibling,
-         mare_prob_lopo_n_minus_s = mare_prob_lopo_Network - mare_prob_lopo_Sibling) 
+  rename(rmse_prob_lopo_net = Network,
+         rmse_prob_lopo_sib = Sibling) %>%
+  mutate(rmse_prob_lopo_n_minus_s = rmse_prob_lopo_net - rmse_prob_lopo_sib) 
 
-# use JAB to calculate
-# uncertainty in estimated difference in RMSE between the two methods in each city,
-# aggregating across sexes
-jab_prob_diff_ests <- lopo_prob_ests_wide %>%
-  # this renaming is just for convenience
-  # (below, when we aggregate up to city, we do something else here)
-  mutate(mean_rmse_prob_lopo_n_minus_s = rmse_prob_lopo_n_minus_s,
-         mean_mare_prob_lopo_n_minus_s = mare_prob_lopo_n_minus_s) %>%
-  # and now take the aggregated (across age/sex) LOPO estimates for 
-  # each city/PSU, and aggregate these using the jackknife formula
-  # this produces an estimated variance of the estimated RMSE difference 
-  # within each city
-  group_by(geo, sex) %>%
-  # estimated variance in city MSE difference estimate, using JAB
-  summarize(# aggregate across the LOPO values with the jackknife variance formula
-            var_rmse_n_minus_s_jab = jack.var(mean_rmse_prob_lopo_n_minus_s),
-            var_mare_n_minus_s_jab = jack.var(mean_mare_prob_lopo_n_minus_s),
-            # and this is the mean difference across LOPO values
-            mean_rmse_lopo_n_minus_s_jab = mean(mean_rmse_prob_lopo_n_minus_s),
-            mean_mare_lopo_n_minus_s_jab = mean(mean_mare_prob_lopo_n_minus_s),
-            .groups='drop') %>%
-  mutate(se_rmse_n_minus_s_jab = sqrt(var_rmse_n_minus_s_jab),
-         se_mare_n_minus_s_jab = sqrt(var_mare_n_minus_s_jab)) %>%
-  mutate(qty = 'prob')
-```
-
-
-#### Get JAB uncertainty estimates in prob error differences at geo level
-
-```{r}
-# use JAB to calculate
-# uncertainty in estimated difference in RMSE between the two methods in each city,
-# aggregating across sexes
-jab_prob_geo_diff_ests <- lopo_prob_ests_wide %>%
+# uncertainty in estimated point estimates of probabilities (based on JAB)
+jab_agesexgeo_prob_diff <- lopo_agesexgeo_prob_wide %>%
   ## now use the jackknife formula to get variance estimates for each city
   group_split(geo) %>%
   map_dfr(~ {
     .x %>%
-      # aggregate LOPO estimates across age/sex groups within this city and PSU
+      # aggregate LOPO estimates across sexes within this city and PSU
       group_by(geo, cb_code) %>%
-      summarize(
-                 mean_rmse_prob_lopo_n_minus_s = mean(rmse_prob_lopo_n_minus_s),
-                 mean_mare_prob_lopo_n_minus_s = mean(mare_prob_lopo_n_minus_s),
+      summarize(mean_rmse_prob_lopo_n_minus_s = mean(rmse_prob_lopo_n_minus_s),
                 .groups='drop')
-                # this should be 2 (since there are 2 sexes)
+                # this should be 10 (since there are 10 age/sex groups)
                 #num_gp_check = n())
   }) %>%
   # and now take the aggregated (across age/sex) LOPO estimates for 
@@ -1651,163 +1509,141 @@ jab_prob_geo_diff_ests <- lopo_prob_ests_wide %>%
   # within each city
   group_by(geo) %>%
   # estimated variance in city MSE difference estimate, using JAB
-  summarize(# aggregate across the LOPO values with the jackknife variance formula
-            var_rmse_n_minus_s_jab = jack.var(mean_rmse_prob_lopo_n_minus_s),
-            var_mare_n_minus_s_jab = jack.var(mean_mare_prob_lopo_n_minus_s),
-            # and this is the mean difference across LOPO values
-            mean_rmse_lopo_n_minus_s_jab = mean(mean_rmse_prob_lopo_n_minus_s),
-            mean_mare_lopo_n_minus_s_jab = mean(mean_mare_prob_lopo_n_minus_s),
+  summarize(geo_var_rmse_prob_lopo_n_minus_s_jab = jack.var(mean_rmse_prob_lopo_n_minus_s),
+            geo_mean_rmse_prob_lopo_n_minus_s_jab = mean(mean_rmse_prob_lopo_n_minus_s),
             .groups='drop') %>%
-  mutate(se_rmse_n_minus_s_jab = sqrt(var_rmse_n_minus_s_jab),
-         se_mare_n_minus_s_jab = sqrt(var_mare_n_minus_s_jab)) %>%
-  mutate(qty = 'prob')
+  mutate(geo_se_rmse_prob_diff_jab = sqrt(geo_var_rmse_prob_lopo_n_minus_s_jab)) 
+
 ```
 
-#### Get JAB uncertainty estimates in prob error differences in total
+
+## Calculate summary measures of error
+
+### Point estimates by method
+
+#### Age/sex/geo - point estimates and associated standard errors
+
+For ASDRS...
 
 ```{r}
-if (geo_name == 'city') {
-  NUM_GEO_UNITS <- 27
-} else if (geo_name == 'region') {
-  NUM_GEO_UNITS <- 5
-} else if (geo_name == 'national') {
-  NUM_GEO_UNITS <- 1
-}
-  
-# finally, aggregate the city-specific estimated variance of the estimated 
-# RMSE differences across cities
-jab_prob_tot_diff_ests <- jab_prob_geo_diff_ests %>% 
-  mutate(city_rmse_lopo_n_minus_s_jab = mean_rmse_lopo_n_minus_s_jab,
-         city_mare_lopo_n_minus_s_jab = mean_mare_lopo_n_minus_s_jab,
-         city_var_rmse_n_minus_s_jab = var_rmse_n_minus_s_jab,
-         city_var_mare_n_minus_s_jab = var_mare_n_minus_s_jab) %>%
-  ungroup() %>%
-  # to summarize across all rows in the tibble
-  group_by(qty) %>%
-  summarize(# overall estimate rmse diff is the average across cities
-            mean_rmse_lopo_n_minus_s_jab = mean(city_rmse_lopo_n_minus_s_jab),
-            mean_mare_lopo_n_minus_s_jab = mean(city_mare_lopo_n_minus_s_jab),
-            # overall estimated variance in mse diff is average of city-specific 
-            # variance estimates, which is (1/27)^2 times the sum of 
-            # the city-specific variances
-            # (we need (1/27)^2 because we're pulling a constant out of the
-            #  variance -- see the appendix notes)
-            var_rmse_n_minus_s_jab = ((1/NUM_GEO_UNITS)^2)*sum(city_var_rmse_n_minus_s_jab),
-            var_mare_n_minus_s_jab = ((1/NUM_GEO_UNITS)^2)*sum(city_var_mare_n_minus_s_jab)
-            ) %>%
-  mutate(se_rmse_n_minus_s_jab = sqrt(var_rmse_n_minus_s_jab),
-         se_mare_n_minus_s_jab = sqrt(var_mare_n_minus_s_jab))
-```
-
-## Calculate summary measures of estimator properties
-
-### Make a dataframe with estimator properties and uncertainty for each method/age/sex/geo
-
-Combine the point estimates with the JAB-based estimates of standard errors
-
-```{r}
-asdr_properties <- asdr_properties_point_estimates %>%
+## point estimates of ASDR estimator properties
+## using bootstrap reps for point estimates and
+## JAB for standard errors
+point_estimates_properties <- 
+  comp_asdrs_boot %>%
+  ## for each method,
+  ## aggregating across the cities w/in each age/sex group + bootstrap rep
+  group_by(sex, agegp10, geo, method) %>%
+  summarize(gs_val = mean(gs_asdr),
+            # NB: gs_asdr values are all the same, so gs_asdr[1] just
+            # picks out one of them
+            bias = mean(post_mean_asdr) - gs_asdr[1],
+            var = var(post_mean_asdr),
+            mse = mean((post_mean_asdr - gs_asdr)^2)) %>%
+  mutate(rmse = sqrt(mse)) %>%
   left_join(jab_ests %>%
-              select(geo, sex, agegp10, method, starts_with('se_')))
+              select(geo, sex, agegp10, method, starts_with("se_"))) %>%
+  ungroup() 
+```
 
-prob_properties <- prob_properties_point_estimates %>%
+For probabilities...
+
+```{r}
+## point estimates of probability estimator properties
+## using bootstrap reps for point estimates and
+## JAB for standard errors
+point_estimates_prob_properties <- 
+  comp_probs_boot %>%
+  ## for each method,
+  ## aggregating across the cities w/in each age/sex group + bootstrap rep
+  group_by(sex, geo, method) %>%
+  summarize(gs_val = mean(gs_prob),
+            # NB: gs_prob values are all the same, so gs_prob[1] just
+            # picks out one of them
+            bias = mean(post_mean_q) - gs_prob[1],
+            var = var(post_mean_q),
+            mse = mean((post_mean_q - gs_prob)^2)) %>%
+  mutate(rmse = sqrt(mse)) %>%
   left_join(jab_prob_ests %>%
-              select(geo, sex, method, starts_with('se_')))
+              select(geo, sex, method, starts_with("se_"))) %>%
+  ungroup() 
 ```
 
-Combine the point estimates for differences between network and sibling
-with the JAB-based estimates of standard errors
 
-### Make a dataframe with properties of difference between two methods and uncertainty for each age/sex/geo
+### Differences between methods 
+
+#### Differences within age/sex/geo - point estimates and associated standard errors
 
 ```{r}
-# NB: the point estimate is comparing est_rmse_n_minus_s 
-#     and the mean of the LOPO estimates is mean_rmse_lopo_n_minus_s_jab
-# these two are close, which is reassuring
-# (... and analogous for other vars)
-asdr_diff_properties <- asdr_diff_properties_point_estimates %>%
-  select(-ends_with('Network'), -ends_with('Sibling')) %>%
-  left_join(jab_diff_ests %>% select(-starts_with('var')))
-
-prob_diff_properties <- prob_diff_properties_point_estimates %>%
-  select(-ends_with('Network'), -ends_with('Sibling')) %>%
-  left_join(jab_prob_diff_ests %>% select(-starts_with('var')))
+estimated_difference_properties <-
+  point_estimates_properties %>%
+  select(sex, agegp10, geo, mse, rmse, method) %>%
+  pivot_wider(values_from=c('mse', 'rmse'),
+              names_from='method') %>%
+  mutate(mse_asdr_n_minus_s = mse_Network - mse_Sibling,
+         rmse_asdr_n_minus_s = rmse_Network - rmse_Sibling) %>%
+  ## join on JAB standard errors
+  left_join(jab_agesexgeo_rmse_diff %>%
+              select(geo, 
+                     geo_mean_rmse_asdr_lopo_n_minus_s_jab,
+                     se_rmse_asdr_n_minus_s_jab = geo_se_rmse_diff_jab))
 ```
 
-### Make a dataframe with properties of difference between two methods and uncertainty for geo
+
+TODO - LEFT OFF HERE...
 
 ```{r}
-asdr_geo_diff_properties <- asdr_diff_properties_point_estimates %>%
-  mutate(cell_est_rmse_n_minus_s = est_rmse_n_minus_s,
-         cell_est_mare_n_minus_s = est_mare_n_minus_s) %>%
-  group_by(geo, qty) %>%
-  summarize(est_rmse_n_minus_s = mean(cell_est_rmse_n_minus_s),
-            est_mare_n_minus_s = mean(cell_est_mare_n_minus_s)) %>%
-  left_join(jab_geo_diff_ests %>% select(-starts_with('var')))
-
-prob_geo_diff_properties <- prob_diff_properties_point_estimates %>%
-  mutate(cell_est_rmse_n_minus_s = est_rmse_n_minus_s,
-         cell_est_mare_n_minus_s = est_mare_n_minus_s) %>%
-  group_by(geo, qty) %>%
-  summarize(est_rmse_n_minus_s = mean(cell_est_rmse_n_minus_s),
-            est_mare_n_minus_s = mean(cell_est_mare_n_minus_s)) %>%
-  left_join(jab_prob_geo_diff_ests %>% select(-starts_with('var')))
-```
-
-### Make a dataframe with properties of difference between two methods and uncertainty for age (ASDR only)
-
-```{r}
-asdr_age_diff_properties <- asdr_diff_properties_point_estimates %>%
-  mutate(cell_est_rmse_n_minus_s = est_rmse_n_minus_s,
-         cell_est_mare_n_minus_s = est_mare_n_minus_s) %>%
-  group_by(agegp10, qty) %>%
-  summarize(est_rmse_n_minus_s = mean(cell_est_rmse_n_minus_s),
-            est_mare_n_minus_s = mean(cell_est_mare_n_minus_s)) %>%
-  left_join(jab_age_diff_ests %>% select(-starts_with('var')))
-
-```
-
-### Make a dataframe with properties of difference between two methods and uncertainty overall 
-
-
-```{r}
-asdr_tot_diff_properties <- asdr_diff_properties_point_estimates %>%
-  mutate(cell_est_rmse_n_minus_s = est_rmse_n_minus_s,
-         cell_est_mare_n_minus_s = est_mare_n_minus_s) %>%
-  group_by(qty) %>%
-  summarize(est_rmse_n_minus_s = mean(cell_est_rmse_n_minus_s),
-            est_mare_n_minus_s = mean(cell_est_mare_n_minus_s)) %>%
-  left_join(jab_tot_diff_ests %>% select(-starts_with('var')))
-
-prob_tot_diff_properties <- prob_diff_properties_point_estimates %>%
-  mutate(cell_est_rmse_n_minus_s = est_rmse_n_minus_s,
-         cell_est_mare_n_minus_s = est_mare_n_minus_s) %>%
-  group_by(qty) %>%
-  summarize(est_rmse_n_minus_s = mean(cell_est_rmse_n_minus_s),
-            est_mare_n_minus_s = mean(cell_est_mare_n_minus_s)) %>%
-  left_join(jab_prob_tot_diff_ests %>% select(-starts_with('var')))
+estimated_difference_properties %>%
+  ggplot(.) +
+  geom_point(aes(x=rmse_asdr_n_minus_s,
+                 y=geo_mean_rmse_asdr_lopo_n_minus_s_jab)) +
+  theme_minimal() +
+  geom_abline(intercept=0,slope=1)
 ```
 
 
+TODO
+
+#### Differences wihtin geo - point estimates and associated standard errors
+
+TODO
+
+#### Overall Differences - point estimates and associated standard errors
+
+TODO
+
+## Save results for plots
+
+TODO
 
 
 ## Investigate the Var/MSE/Bias estimates in various ways
 
 
+
+
 ```{r}
 # point estimate (not based on JAB)
-rmse_geo_diff <- asdr_geo_diff_properties %>%
-  rename(est_rmse_diff = est_rmse_n_minus_s,
-         est_mare_diff = est_mare_n_minus_s,
-         se_rmse_diff = se_rmse_n_minus_s_jab,
-         se_mare_diff = se_mare_n_minus_s_jab) %>%
-  mutate(est_rmse_diff_ci_low = est_rmse_diff - 1.96*se_rmse_diff,
-         est_rmse_diff_ci_high = est_rmse_diff + 1.96*se_rmse_diff)
+rmse_geo_diff <- point_estimates_properties %>%
+  ## TODO ADAPT THIS - point_estimates_properties is long, need it to be wide...
+  #%>%
+#  pivot_wider(names_from = 'method',
+#              values_from = c('bias', 'var', 'fp.var', 'mse', 'rmse',
+#                              starts_with('var'))) %>%
+#  mutate(qty = 'asdr') %>%
+  mutate(rmse_asdr_n_minus_s = rmse_Network - rmse_Sibling) %>%
+  group_by(geo) %>%
+  summarize(geo_rmse_diff = mean(rmse_asdr_n_minus_s)) %>%
+  # join on the uncertainty in estimated RMSE diffs, based on JAB
+  left_join(lopo_rmse_geo_diff) %>%
+  mutate(geo_rmse_diff_ci_low = geo_rmse_diff - 1.96*geo_se_rmse_diff,
+         geo_rmse_diff_ci_high = geo_rmse_diff + 1.96*geo_se_rmse_diff)
+
 ```
 
 ```{r}
-biggestdiff <- max(c(1000*rmse_geo_diff$est_rmse_diff_ci_low,
-                     1000*rmse_geo_diff$est_rmse_diff_ci_high))
+biggestdiff <- max(c(1000*rmse_geo_diff$geo_rmse_diff_ci_low,
+                     1000*rmse_geo_diff$geo_rmse_diff_ci_high))
 
 if(geo_name == 'city') {
   annscale <- .8
@@ -1821,73 +1657,12 @@ if(geo_name == 'city') {
 }
 
 rmse_geo_diff %>%
-  ungroup() %>%
-  mutate(geo = fct_reorder(geo, 
-                           est_rmse_diff)) %>%
+  mutate(geo = fct_reorder(geo, geo_rmse_diff)) %>%
   ggplot(.) +
   geom_pointrange(aes(x = geo,
-                      y = 1000*est_rmse_diff,
-                      ymin = 1000*est_rmse_diff_ci_low,
-                      ymax = 1000*est_rmse_diff_ci_high)) +
-  geom_hline(yintercept=0) +
-  xlab("") +
-  ylab("Estimated RMSE Difference (x 1,000)\nNetwork RMSE - Sibling RMSE") +
-  expand_limits(y = c(-6, 6)) +
-  annotate(geom='text',
-         label="<- Network is better ",
-         #x='SE',
-         x=annxoff,
-         y=-biggestdiff*annscale,
-         size=rel(3),
-         color='red',
-         angle=90) +
-  annotate(geom='text',
-           label="Sibling is better ->",
-           #x='SE',
-           x=annxoff,
-           y=biggestdiff*annscale,
-           size=rel(3),
-           color='red',
-           angle=90) +
-  theme_minimal() +
-  coord_cartesian(clip = "off")
-```
-
-
-
-```{r}
-# point estimate (not based on JAB)
-rmse_age_diff <- asdr_age_diff_properties %>%
-  rename(est_rmse_diff = est_rmse_n_minus_s,
-         est_mare_diff = est_mare_n_minus_s,
-         se_rmse_diff = se_rmse_n_minus_s_jab,
-         se_mare_diff = se_mare_n_minus_s_jab) %>%
-  mutate(est_rmse_diff_ci_low = est_rmse_diff - 1.96*se_rmse_diff,
-         est_rmse_diff_ci_high = est_rmse_diff + 1.96*se_rmse_diff)
-```
-
-```{r}
-biggestdiff <- max(c(1000*rmse_age_diff$est_rmse_diff_ci_low,
-                     1000*rmse_age_diff$est_rmse_diff_ci_high))
-
-if(geo_name == 'city') {
-  annscale <- .8
-  annxoff <- 0.2 
-} else if (geo_name == 'region') {
-  annscale <- 1.4 
-  annxoff <- 0.2
-} else if (geo_name == 'national') {
-  annscale <- 1.8
-  annxoff <- 0.2
-}
-
-rmse_age_diff %>%
-  ungroup() %>%
-  ggplot(.) +
-  geom_pointrange(aes(x = agegp10,
-                      y = 1000*est_rmse_diff,
-                      ymin = 1000*est_rmse_diff_ci_low,
-                      ymax = 1000*est_rmse_diff_ci_high)) +
+                      y = 1000*geo_rmse_diff,
+                      ymin = 1000*geo_rmse_diff_ci_low,
+                      ymax = 1000*geo_rmse_diff_ci_high)) +
   geom_hline(yintercept=0) +
   xlab("") +
   ylab("Estimated RMSE Difference (x 1,000)\nNetwork RMSE - Sibling RMSE") +
@@ -1916,32 +1691,58 @@ rmse_age_diff %>%
 Get the total estimated difference in RMSE (averaged across all cities)
 
 ```{r}
-# point estimate (not based on JAB)
-rmse_tot_diff <- asdr_tot_diff_properties %>%
-  rename(est_rmse_diff = est_rmse_n_minus_s,
-         est_mare_diff = est_mare_n_minus_s,
-         se_rmse_diff = se_rmse_n_minus_s_jab,
-         se_mare_diff = se_mare_n_minus_s_jab) %>%
-  mutate(est_rmse_diff_ci_low = est_rmse_diff - 1.96*se_rmse_diff,
-         est_rmse_diff_ci_high = est_rmse_diff + 1.96*se_rmse_diff)
+if (geo_name == 'city') {
+  NUM_GEO_UNITS <- 27
+} else if (geo_name == 'region') {
+  NUM_GEO_UNITS <- 5
+} else if (geo_name == 'national') {
+  NUM_GEO_UNITS <- 1
+}
+  
+# finally, aggregate the city-specific estimated variance of the estimated 
+# RMSE differences across cities
+rmse_tot_diff <- rmse_geo_diff %>%
+  ungroup() %>%
+  # to summarize across all rows in the tibble
+  group_by(1) %>%
+  summarize(# overall estimate mse diff is the average across cities
+            est_rmse_diff = mean(geo_rmse_diff),
+            # overall estimated variance in mse diff is average of city-specific 
+            # variance estimates, which is (1/27)^2 times the sum of 
+            # the city-specific variances
+            # (we need (1/27)^2 because we're pulling a constant out of the
+            #  variance -- see the appendix notes)
+            est_var_rmse_diff = ((1/NUM_GEO_UNITS)^2)*sum(geo_var_rmse_asdr_lopo_n_minus_s)) %>%
+  mutate(est_se_rmse_diff = sqrt(est_var_rmse_diff)) %>%
+  mutate(est_ci_low_rmse_diff = est_rmse_diff - 2*est_se_rmse_diff,
+         est_ci_high_rmse_diff = est_rmse_diff + 2*est_se_rmse_diff)
 ```
 
 ```{r}
-biggestdiff <- max(abs(c(1000*rmse_tot_diff$est_rmse_diff_ci_low, 
-                     1000*rmse_tot_diff$est_rmse_diff_ci_high)))
+if (geo_name == 'city') {
+  annscale <- -3  
+  cur_lims <- c(-2,2)
+} else if (geo_name == 'region') {
+  annscale <- 4  
+  cur_lims <- c(-.5,.5)
+} else if (geo_name == 'national') {
+  annscale <- 2  
+  cur_lims <- c(-6,6)
+}
 
-annscale <- .5
+biggestdiff <- max(c(1000*rmse_tot_diff$est_ci_low_rmse_diff, 
+                     1000*rmse_tot_diff$est_ci_high_rmse_diff))
 
 rmse_tot_diff %>%
   ggplot(.) +
   geom_pointrange(aes(x = 'Average Overall RMSE Difference',
                       y = 1000*est_rmse_diff,
-                      ymin = 1000*est_rmse_diff_ci_low,
-                      ymax = 1000*est_rmse_diff_ci_high)) +
+                      ymin = 1000*est_ci_low_rmse_diff,
+                      ymax = 1000*est_ci_high_rmse_diff)) +
   geom_hline(yintercept=0) +
   xlab("") +
   ylab("Estimated RMSE Difference (x 1,000)\nNetwork RMSE - Sibling RMSE") +
-  expand_limits(y = c(biggestdiff,-biggestdiff)) +
+  expand_limits(y = cur_lims) +
   annotate(geom='text',
            label="<- Network is better ",
            #x='SE',
@@ -1961,14 +1762,14 @@ rmse_tot_diff %>%
   theme_minimal()
 ```
 
+### Headline variance, bias, MSE
 
-## Save results for plots
+TODO
 
-TODO - LEFT OFF HERE
-- save for plots
-- run for vr / adj vr and for all geos
-- then go to 06_plots and fix to work with these results
-- ALSO revisit heatmaps and get margins to use these results
+
+### Age/sex breakdown of variance, bias, MSE 
+
+TODO
 
 
 

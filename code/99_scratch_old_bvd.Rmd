@@ -6,6 +6,99 @@ output: html_notebook
 ## Removed 20260113
 
 
+### Point estimates by method
+
+#### Age/sex/geo - point estimates and associated standard errors
+
+For ASDRS...
+
+```{r}
+## point estimates of ASDR estimator properties
+## using bootstrap reps for point estimates and
+## JAB for standard errors
+point_estimates_properties <- 
+  comp_asdrs_boot %>%
+  ## for each method,
+  ## aggregating across the cities w/in each age/sex group + bootstrap rep
+  group_by(sex, agegp10, geo, method) %>%
+  summarize(gs_val = mean(gs_asdr),
+            # NB: gs_asdr values are all the same, so gs_asdr[1] just
+            # picks out one of them
+            bias = mean(post_mean_asdr) - gs_asdr[1],
+            var = var(post_mean_asdr),
+            mse = mean((post_mean_asdr - gs_asdr)^2)) %>%
+  mutate(rmse = sqrt(mse)) %>%
+  left_join(jab_ests %>%
+              select(geo, sex, agegp10, method, starts_with("se_"))) %>%
+  ungroup() 
+```
+
+For probabilities...
+
+```{r}
+## point estimates of probability estimator properties
+## using bootstrap reps for point estimates and
+## JAB for standard errors
+point_estimates_prob_properties <- 
+  comp_probs_boot %>%
+  ## for each method,
+  ## aggregating across the cities w/in each age/sex group + bootstrap rep
+  group_by(sex, geo, method) %>%
+  summarize(gs_val = mean(gs_prob),
+            # NB: gs_prob values are all the same, so gs_prob[1] just
+            # picks out one of them
+            bias = mean(post_mean_q) - gs_prob[1],
+            var = var(post_mean_q),
+            mse = mean((post_mean_q - gs_prob)^2)) %>%
+  mutate(rmse = sqrt(mse)) %>%
+  left_join(jab_prob_ests %>%
+              select(geo, sex, method, starts_with("se_"))) %>%
+  ungroup() 
+```
+
+
+### Differences between methods 
+
+#### Differences within age/sex/geo - point estimates and associated standard errors
+
+```{r}
+estimated_difference_properties <-
+  point_estimates_properties %>%
+  select(sex, agegp10, geo, mse, rmse, method) %>%
+  pivot_wider(values_from=c('mse', 'rmse'),
+              names_from='method') %>%
+  mutate(mse_asdr_n_minus_s = mse_Network - mse_Sibling,
+         rmse_asdr_n_minus_s = rmse_Network - rmse_Sibling) %>%
+  ## join on JAB standard errors
+  left_join(jab_agesexgeo_rmse_diff %>%
+              select(geo, 
+                     geo_mean_rmse_asdr_lopo_n_minus_s_jab,
+                     se_rmse_asdr_n_minus_s_jab = geo_se_rmse_diff_jab))
+```
+
+
+TODO - LEFT OFF HERE...
+
+```{r}
+estimated_difference_properties %>%
+  ggplot(.) +
+  geom_point(aes(x=rmse_asdr_n_minus_s,
+                 y=geo_mean_rmse_asdr_lopo_n_minus_s_jab)) +
+  theme_minimal() +
+  geom_abline(intercept=0,slope=1)
+```
+
+
+TODO
+
+#### Differences wihtin geo - point estimates and associated standard errors
+
+TODO
+
+#### Overall Differences - point estimates and associated standard errors
+
+TODO
+
 # Summaries of errors
 
 ### TODO - OLD METHOD calculate errors for file
@@ -200,6 +293,14 @@ comp_rel_probs_bygeos_wide <- comp_probs_bygeos %>%
   pivot_wider(names_from=method, values_from=geo_are) %>%
   mutate(n.minus.s = Network - Sibling)
 ```
+
+
+
+
+
+
+
+
 
 
 
