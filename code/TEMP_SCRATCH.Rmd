@@ -1,137 +1,38 @@
----
-title: "Plots combining results"
-output: html_notebook
----
 
-```{r}
-library(here)
-library(rmarkdown)
-library(tidyverse)
-library(patchwork)
-library(latex2exp)
-library(glue)
-```
+need overall
 
-```{r}
-code_dir <- here('code')
-out_dir <- here('out')
-data_dir <- here('data')
-```
+ASDR MARE diff and SE
+ASDR RMSE diff and SE
+Prob MARE diff and SE
+Prob RMSE diff and SE
 
 
-```{r}
-vr_dir <- file.path(out_dir, 'vr_comparison')
-vradj_dir <- file.path(out_dir, 'vr_adj_comparison')
+For errors, need:
 
-vr_city_dir <- file.path(vr_dir, 'city')
-vr_region_dir <- file.path(vr_dir, 'region')
-vr_national_dir <- file.path(vr_dir, 'national')
+diff_nminuss_mean,
+ymin=diff_nminuss_ci_low,
+ymax=diff_nminuss_ci_high,
 
-vradj_city_dir <- file.path(vradj_dir, 'city')
-vradj_region_dir <- file.path(vradj_dir, 'region')
-vradj_national_dir <- file.path(vradj_dir, 'national')
-```
-
-```{r}
-# load city info
-cities <- read_csv(file.path(data_dir, "cities.csv"))
-```
-
-### Plot direct comparisons between sibling and network estimates
-
-```{r}
-p1_ca <- readRDS(file.path(vr_city_dir, 'direct_asdr_logged.rds'))
-p1_cp <- readRDS(file.path(vr_city_dir, 'direct_probs_logged.rds'))
-p1_ra <- readRDS(file.path(vr_region_dir, 'direct_asdr_logged.rds'))
-p1_rp <- readRDS(file.path(vr_region_dir, 'direct_probs_logged.rds'))
-p1_na <- readRDS(file.path(vr_national_dir, 'direct_asdr_logged.rds'))
-p1_np <- readRDS(file.path(vr_national_dir, 'direct_probs_logged.rds'))
-```
-
-```{r}
-design <- "
-  1122
-  3344
-  5555
-"
-p1 <- (p1_cp + ggtitle("      City, Probability")) + 
-      (p1_ca + ggtitle("      City, Age-specific death rate")) + 
-      (p1_rp + ggtitle("      Region, Probability")) +
-      (p1_ra + ggtitle("      Region, Age-specific death rate")) +
-  plot_layout(guides='collect', design=design) & 
-  theme(text = element_text(size=7),
-        axis.title = element_text(size=6),
-        legend.position='bottom',
-        legend.box='vertical',
-        legend.spacing.y=unit(-.3, 'cm')) &
-  guides(color=guide_legend(nrow=2, title="Age", override.aes=list(alpha=1)))
-
-ggsave(filename=file.path(out_dir, "direct_estimates.pdf"),
-       p1)
-knitr::plot_crop(file.path(out_dir, "direct_estimates.pdf"))
-
-# for talks, save individual versions of these plots
-p_dim <- 4
-ggsave(filename=file.path(out_dir, "direct_sib_net_city_prob.png"), p1_cp, width=p_dim, height=p_dim)
-ggsave(filename=file.path(out_dir, "direct_sib_net_city_asdr.png"), p1_ca, width=p_dim, height=p_dim)
-ggsave(filename=file.path(out_dir, "direct_sib_net_region_prob.png"), p1_rp, width=p_dim, height=p_dim)
-ggsave(filename=file.path(out_dir, "direct_sib_net_region_asdr.png"), p1_ra, width=p_dim, height=p_dim)
-
-p1
-```
+for each city/region/national and vr/adjusted vr
 
 
-### Scatterplot w/ estimates and VR 
+columns:
 
-```{r}
-p1.5_asdr_c <- readRDS(file.path(vr_city_dir, 'asdr_point_scatter_log.rds'))
-p1.5_asdr_r <- readRDS(file.path(vr_region_dir, 'asdr_point_scatter_log.rds'))
-p1.5_prob_c <- readRDS(file.path(vr_city_dir, 'prob_point_scatter.rds'))
-p1.5_prob_r <- readRDS(file.path(vr_region_dir, 'prob_point_scatter.rds'))
-```
+loss
+qty
+geo
 
-```{r}
-design <- "
-  1122
-  3344
-"
+REAL COLS
 
-p1.5 <- (((p1.5_prob_c + ggtitle("City, Probability")) 
-          + (p1.5_asdr_c + ggtitle("City, Age-specific death rate"))) / 
-           ((p1.5_prob_r + ggtitle("Region, Probability")) + 
-             p1.5_asdr_r + ggtitle("Region, Age-specific death rate"))) +
-  plot_layout(guides='collect') &
-  theme(text = element_text(size=7),
-        legend.position='bottom',
-        legend.box='vertical',
-        legend.spacing.y=unit(-.3, 'cm')) &
-  guides(color=guide_legend(nrow=2, title="Age", override.aes=list(alpha=1)))
-  #plot_layout(guides='collect', design=design) & 
-#  plot_layout(guides='collect', design=design)
-  #theme(text = element_text(size=7),
-  #      legend.position='bottom',
-  #      legend.box='vertical',
-  #      legend.spacing.y=unit(-.3, 'cm')) &
-  #guides(color=guide_legend(nrow=2, title="Age"))
-  #theme(text = element_text(size=7))
 
-ggsave(filename=file.path(out_dir, "est_point_scatter_log.pdf"),
-       p1.5)
-
-# for talks, save individual versions of these plots
-p_dim <- 4
-ggsave(filename=file.path(out_dir, "vr_compare_sib_net_city_prob.png"), p1.5_prob_c, 
-       width=p_dim, height=p_dim)
-ggsave(filename=file.path(out_dir, "vr_compare_sib_net_city_asdr.png"), p1.5_asdr_c, 
-       width=p_dim, height=p_dim)
-ggsave(filename=file.path(out_dir, "vr_compare_sib_net_region_prob.png"), p1.5_prob_r, 
-       width=p_dim, height=p_dim)
-ggsave(filename=file.path(out_dir, "vr_compare_sib_net_region_asdr.png"), p1.5_asdr_r, 
-       width=p_dim, height=p_dim)
-
-p1.5
-```
-
+boot_idx
+err.n.minus.s
+err.n
+err.s
+loss
+qty
+comparison_name (eg 'vr_comparison')
+geo_name
 
 
 ### Error difference pointrange figure
@@ -144,27 +45,47 @@ et cetera
 errs_cv <- read_csv(file.path(vr_city_dir, 'err_diffs_jab.csv'))
 errs_rv <- read_csv(file.path(vr_region_dir, 'err_diffs_jab.csv'))
 errs_nv <- read_csv(file.path(vr_national_dir, 'err_diffs_jab.csv'))
+#errs_cv <- read_csv(file.path(vr_city_dir, 'err_diffs_boot.csv'))
+#errs_rv <- read_csv(file.path(vr_region_dir, 'err_diffs_boot.csv'))
+#errs_nv <- read_csv(file.path(vr_national_dir, 'err_diffs_boot.csv'))
 
 errs_ca <- read_csv(file.path(vradj_city_dir, 'err_diffs_jab.csv'))
 errs_ra <- read_csv(file.path(vradj_region_dir, 'err_diffs_jab.csv'))
 errs_na <- read_csv(file.path(vradj_national_dir, 'err_diffs_jab.csv'))
+#errs_ca <- read_csv(file.path(vradj_city_dir, 'err_diffs_boot.csv'))
+#errs_ra <- read_csv(file.path(vradj_region_dir, 'err_diffs_boot.csv'))
+#errs_na <- read_csv(file.path(vradj_national_dir, 'err_diffs_boot.csv'))
 ```
 
 ### Err diffs boot
 
+TODO - this is the part that I think we need to change to reflect the
+jackknife-after-bootstrap results
+
 ```{r}
-err_diffs_summ <- bind_rows(errs_cv,
-                           errs_rv,
-                           errs_nv,
-                           errs_ca,
-                           errs_ra,
-                           errs_na) %>%
-  # make RMSE values x 1,000 (like death rates typically are)
-  mutate(value = ifelse(qty == 'asdr' & loss == 'rmse',
-                        value*1000,
-                        value)) %>%
-  pivot_wider(names_from = name,
-              values_from = value)
+err_diffs_isum <- bind_rows(errs_cv,
+                            errs_rv,
+                            errs_nv,
+                            errs_ca,
+                            errs_ra,
+                            errs_na)
+
+err_diffs_summ <- err_diffs_boot %>%
+  group_by(comparison_name, geo_name, qty, loss) %>%
+  summarize(diff_nminuss_mean = mean(err.n.minus.s),
+            diff_nminuss_ci_low = quantile(err.n.minus.s, .025),
+            diff_nminuss_ci_high = quantile(err.n.minus.s, .975),
+            network_err = mean(err.n),
+            network_err_ci_low = quantile(err.n, .025),
+            network_err_ci_high = quantile(err.n, .975),
+            network_err_sd = sd(err.n),
+            network_err_ci_width = quantile(err.n, .975) - quantile(err.n, .025),
+            sibling_err = mean(err.s),
+            sibling_err_ci_low = quantile(err.s, .025),
+            sibling_err_ci_high = quantile(err.s, .975),
+            sibling_err_sd = sd(err.s),
+            sibling_err_ci_width = quantile(err.s, .975) - quantile(err.s, .025),
+            .groups='drop')
 
 err_diffs_summ
 ```
@@ -218,9 +139,9 @@ make_pr_plot <- function(for_pr_df) {
     ggplot(.) +
     geom_hline(aes(yintercept = 0), color='darkgrey') +
     geom_pointrange(aes(x=geo_name,
-                        y=est_diff,
-                        ymin=est_diff_ci_low,
-                        ymax=est_diff_ci_high,
+                        y=diff_nminuss_mean,
+                        ymin=diff_nminuss_ci_low,
+                        ymax=diff_nminuss_ci_high,
                         shape = geo_name,
                         linetype = geo_name)) +
     theme_bw() +
@@ -259,9 +180,9 @@ make_pr_plot <- function(for_pr_df) {
     ggplot(.) +
     geom_hline(aes(yintercept = 0), color='darkgrey') +
     geom_pointrange(aes(x=geo_name,
-                        y=est_diff,
-                        ymin=est_diff_ci_low,
-                        ymax=est_diff_ci_high,
+                        y=diff_nminuss_mean,
+                        ymin=diff_nminuss_ci_low,
+                        ymax=diff_nminuss_ci_high,
                         shape = geo_name,
                         linetype=geo_name)) +
     theme_bw() +
@@ -300,9 +221,9 @@ make_pr_plot <- function(for_pr_df) {
     ggplot(.) +
     geom_hline(aes(yintercept = 0), color='darkgrey') +
     geom_pointrange(aes(x=geo_name,
-                        y=est_diff,
-                        ymin=est_diff_ci_low,
-                        ymax=est_diff_ci_high,
+                        y=diff_nminuss_mean,
+                        ymin=diff_nminuss_ci_low,
+                        ymax=diff_nminuss_ci_high,
                         shape = geo_name,
                         linetype=geo_name)) +
     theme_bw() +
@@ -340,9 +261,9 @@ make_pr_plot <- function(for_pr_df) {
     ggplot(.) +
     geom_hline(aes(yintercept = 0), color='darkgrey') +
     geom_pointrange(aes(x=geo_name,
-                        y=est_diff,
-                        ymin=est_diff_ci_low,
-                        ymax=est_diff_ci_high,
+                        y=diff_nminuss_mean,
+                        ymin=diff_nminuss_ci_low,
+                        ymax=diff_nminuss_ci_high,
                         shape = geo_name,
                         linetype=geo_name)) +
     theme_bw() +
@@ -380,9 +301,9 @@ make_pr_plot <- function(for_pr_df) {
     ggplot(.) +
     geom_hline(aes(yintercept = 0), color='darkgrey') +
     geom_pointrange(aes(x=geo_name,
-                        y=est_diff,
-                        ymin=est_diff_ci_low,
-                        ymax=est_diff_ci_high,
+                        y=diff_nminuss_mean,
+                        ymin=diff_nminuss_ci_low,
+                        ymax=diff_nminuss_ci_high,
                         shape = geo_name,
                         linetype=geo_name)) +
     theme_bw() +
@@ -420,9 +341,9 @@ make_pr_plot <- function(for_pr_df) {
     ggplot(.) +
     geom_hline(aes(yintercept = 0), color='darkgrey') +
     geom_pointrange(aes(x=geo_name,
-                        y=est_diff,
-                        ymin=est_diff_ci_low,
-                        ymax=est_diff_ci_high,
+                        y=diff_nminuss_mean,
+                        ymin=diff_nminuss_ci_low,
+                        ymax=diff_nminuss_ci_high,
                         shape = geo_name,
                         linetype=geo_name)) +
     theme_bw() +
@@ -694,49 +615,3 @@ ggsave(filename=file.path(out_dir, "vd_as_city.pdf"),
 
 vd_as_city
 ```
-
-### Bias-variance decomposition (BVD) plot from VR sensitivity check
-
-
-```{r}
-p_bvd_as_bias_vrsens <- readRDS(file.path(vradj_city_dir, 'bvd_as_bias_plot.rds'))
-
-p_bvd_as_se_vrsens <- readRDS(file.path(vradj_city_dir, 'bvd_as_se_plot.rds'))
-
-p_bvd_as_rmse_vrsens <- readRDS(file.path(vradj_city_dir, 'bvd_as_rmse_plot.rds'))
-```
-
-
-```{r}
-bvd_as_city_vrsens <- 
-  p_bvd_as_se_vrsens +
-  p_bvd_as_bias_vrsens +
-  p_bvd_as_rmse_vrsens +
-  #p_bvd_as_se /
-  #p_bvd_as_bias /     
-  #p_bvd_as_rmse +
-  plot_layout(guides='collect') &
-  #theme(text = element_text(size=7)) &
-  theme(text = element_text(size=7),
-        legend.position='bottom',
-        legend.box='vertical',
-        legend.spacing.y=unit(-.3, 'cm')) & 
-  #guides(color=guide_legend(nrow=2, title="Age"))
-  guides(color=guide_legend(title="Age"))
-
-ggsave(filename=file.path(out_dir, "bvd_as_city_vrsens.pdf"),
-       bvd_as_city_vrsens)
-
-bvd_as_city_vrsens
-```
-
-
-
-
-
-
-
-
-
-
-

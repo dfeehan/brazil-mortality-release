@@ -1989,8 +1989,10 @@ diff_rmse_tot_plot
 ## Save results for plots
 
 TODO - LEFT OFF HERE
-- save for plots
-- run for vr / adj vr and for all geos
+- TO ADD to save for plots
+  - network and sibling errs and cis (not just difference)
+  - re-run to get CIs for MARE results
+- re-run for vr / adj vr and for all geos
 - then go to 06_plots and fix to work with these results
 - ALSO revisit heatmaps and get margins to use these results
 
@@ -2005,6 +2007,8 @@ asdr_tot_err_diffs_jab <-
            se_mare_diff = se_mare_n_minus_s_jab) %>%
     mutate(est_rmse_diff_ci_low = est_rmse_diff - 1.96*se_rmse_diff,
            est_rmse_diff_ci_high = est_rmse_diff + 1.96*se_rmse_diff) %>%
+    mutate(est_mare_diff_ci_low = est_mare_diff - 1.96*se_mare_diff,
+           est_mare_diff_ci_high = est_mare_diff + 1.96*se_mare_diff) %>%
   pivot_longer(
     cols=-qty
   ) %>%
@@ -2020,6 +2024,8 @@ prob_tot_err_diffs_jab <-
            se_mare_diff = se_mare_n_minus_s_jab) %>%
     mutate(est_rmse_diff_ci_low = est_rmse_diff - 1.96*se_rmse_diff,
            est_rmse_diff_ci_high = est_rmse_diff + 1.96*se_rmse_diff) %>%
+    mutate(est_mare_diff_ci_low = est_mare_diff - 1.96*se_mare_diff,
+           est_mare_diff_ci_high = est_mare_diff + 1.96*se_mare_diff) %>%
   pivot_longer(
     cols=-qty
   ) %>%
