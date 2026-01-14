@@ -3,6 +3,341 @@ title: "SCRATCH - old BVD stuff"
 output: html_notebook
 ---
 
+## Removed 20260113
+
+
+# Summaries of errors
+
+### TODO - OLD METHOD calculate errors for file
+
+
+
+### Errors in ASDRs estimates, summarized in various ways 
+
+All ests, by geography
+
+```{r calculate-errs-in-asdrs-by-geo}
+comp_asdrs_bygeo <- comp_asdrs %>%
+  group_by(method, geo) %>%
+  summarize(geo_mse = mean(delta2),
+            #geo_are = sum(abs(delta_rel))) 
+            # this should be the mean, right?
+            geo_are = mean(abs(delta_rel))) 
+
+comp_asdrs_bygeo_boot <- comp_asdrs_boot %>%
+  group_by(method, geo, boot_idx) %>%
+  summarize(geo_mse = mean(delta2),
+            #geo_are = sum(abs(delta_rel))) 
+            # this should be the mean, right?
+            geo_are = mean(abs(delta_rel))) 
+
+# difference in MSE (network - sibling)
+comp_asdrs_bygeo_wide <- comp_asdrs_bygeo %>%
+  select(-geo_are) %>%
+  pivot_wider(names_from=method, values_from=geo_mse)  %>%
+  mutate(n.minus.s = Network - Sibling)
+
+comp_asdrs_bygeo_wide_boot <- comp_asdrs_bygeo_boot %>%
+  select(-geo_are) %>%
+  pivot_wider(names_from=method, values_from=geo_mse)  %>%
+  mutate(n.minus.s = Network - Sibling)
+
+# difference in ARE (network - sibling)
+comp_rel_asdrs_bygeo_wide <- comp_asdrs_bygeo %>%
+  select(-geo_mse) %>%
+  pivot_wider(names_from=method, values_from=geo_are) %>%
+  mutate(n.minus.s = Network - Sibling)
+
+comp_rel_asdrs_bygeo_wide_boot <- comp_asdrs_bygeo_boot %>%
+  select(-geo_mse) %>%
+  pivot_wider(names_from=method, values_from=geo_are) %>%
+  mutate(n.minus.s = Network - Sibling)
+```
+
+
+By age/sex/geography
+
+```{r asdr-errs-by-age-sex-geo}
+comp_asdrs_bygeoas <- comp_asdrs %>%
+  group_by(method, geo, sex, agegp10) %>%
+  summarize(geo_mse = mean(delta2),
+            # this should be the mean, right?
+            geo_are = mean(abs(delta_rel)),
+            # not absolute relative error (so, can be negative)
+            geo_re = mean(delta_rel_notabs)) %>%
+  ungroup() %>%
+  mutate(geo_rmse = sqrt(geo_mse))
+
+# difference in MSE (network - sibling)
+comp_asdrs_bygeoas_wide <- comp_asdrs_bygeoas %>%
+  select(-geo_are, -geo_re, -geo_rmse) %>%
+  pivot_wider(names_from=method, values_from=geo_mse)  %>%
+  mutate(n.minus.s = Network - Sibling)
+
+# difference in RMSE (network - sibling)
+comp_rmse_asdrs_bygeoas_wide <- comp_asdrs_bygeoas %>%
+  select(-geo_are, -geo_re, -geo_mse) %>%
+  pivot_wider(names_from=method, values_from=geo_rmse)  %>%
+  mutate(n.minus.s = Network - Sibling)
+  # alternate approach:
+  # square root of difference in MSE (network - sibling)
+  # that is,
+  #   sign(MSE(net) - MSE(sib)) * sqrt(MSE(net) - MSE(sib))
+  #mutate(n.minus.s = sign(Network - Sibling) * sqrt(abs(Network - Sibling)))
+
+# difference in ARE (network - sibling)
+comp_rel_asdrs_bygeoas_wide <- comp_asdrs_bygeoas %>%
+  select(-geo_mse, -geo_re, -geo_rmse) %>%
+  pivot_wider(names_from=method, values_from=geo_are) %>%
+  mutate(n.minus.s = Network - Sibling)
+```
+
+By age/sex
+
+```{r asdr-errs-by-age-sex}
+comp_asdrs_byas <- comp_asdrs %>%
+  group_by(method, sex, agegp10) %>%
+  summarize(as_mse = mean(delta2),
+            as_are = mean(abs(delta_rel)),
+            # not absolute relative error (so, can be negative)
+            as_re = mean(delta_rel_notabs))  
+
+# with bootstraps
+comp_asdrs_byas_boot <- comp_asdrs_boot %>%
+  group_by(method, sex, agegp10, boot_idx) %>%
+  summarize(as_mse = mean(delta2),
+            as_are = mean(abs(delta_rel)),
+            # not absolute relative error (so, can be negative)
+            as_re = mean(delta_rel_notabs),
+            .groups='drop') %>%
+  group_by(method, sex, agegp10) %>%
+  summarize(as_mse_ci_low = quantile(as_mse, .025),
+            as_mse_ci_high = quantile(as_mse, .975),
+            as_mse = mean(as_mse),
+            as_are_ci_low = quantile(as_are, .025),
+            as_are_ci_high = quantile(as_are, .975),
+            as_are = mean(as_are),
+            # not absolute relative error (so, can be negative)
+            as_re_ci_low = quantile(as_re, .025),
+            as_re_ci_high = quantile(as_re, .975),
+            as_re = mean(as_re))
+
+# difference in MSE (network - sibling)
+comp_asdrs_byas_wide <- comp_asdrs_byas %>%
+  select(-as_are, -as_re) %>%
+  pivot_wider(names_from=method, values_from=as_mse)  %>%
+  mutate(n.minus.s = Network - Sibling)
+
+# difference in ARE (network - sibling)
+comp_rel_asdrs_byas_wide <- comp_asdrs_byas %>%
+  select(-as_mse, -as_re) %>%
+  pivot_wider(names_from=method, values_from=as_are) %>%
+  mutate(n.minus.s = Network - Sibling)
+```
+
+### Errors in probability estimates, summarized in various ways 
+
+All ests, by geography (probs)
+
+```{r calculate-errs-in-probs-by-geo}
+comp_probs_bygeo <- comp_probs %>%
+  group_by(method, geo) %>%
+  summarize(geo_mse = mean(delta2),
+            #geo_are = sum(abs(delta_rel))) 
+            # this should be the mean, right?
+            geo_are = mean(abs(delta_rel))) 
+
+comp_probs_bygeo_boot <- comp_probs_boot %>%
+  group_by(method, geo, boot_idx) %>%
+  summarize(geo_mse = mean(delta2),
+            #geo_are = sum(abs(delta_rel))) 
+            # this should be the mean, right?
+            geo_are = mean(abs(delta_rel))) 
+
+# difference in MSE (network - sibling)
+comp_probs_bygeo_wide <- comp_probs_bygeo %>%
+  select(-geo_are) %>%
+  pivot_wider(names_from=method, values_from=geo_mse)  %>%
+  mutate(n.minus.s = Network - Sibling)
+
+comp_probs_bygeo_wide_boot <- comp_probs_bygeo_boot %>%
+  select(-geo_are) %>%
+  pivot_wider(names_from=method, values_from=geo_mse)  %>%
+  mutate(n.minus.s = Network - Sibling)
+
+# difference in ARE (network - sibling)
+comp_rel_probs_bygeo_wide <- comp_probs_bygeo %>%
+  select(-geo_mse) %>%
+  pivot_wider(names_from=method, values_from=geo_are) %>%
+  mutate(n.minus.s = Network - Sibling)
+
+comp_rel_probs_bygeo_wide_boot <- comp_probs_bygeo_boot %>%
+  select(-geo_mse) %>%
+  pivot_wider(names_from=method, values_from=geo_are) %>%
+  mutate(n.minus.s = Network - Sibling)
+```
+
+
+By age/sex/geography (probs)
+
+```{r prob-errs-by-age-sex-geo}
+comp_probs_bygeos <- comp_probs %>%
+  group_by(method, geo, sex) %>%
+  summarize(geo_mse = mean(delta2),
+            #geo_are = sum(abs(delta_rel))) 
+            # this should be the mean, right?
+            geo_are = mean(abs(delta_rel)))  
+
+# difference in MSE (network - sibling)
+comp_probs_bygeos_wide <- comp_probs_bygeos %>%
+  select(-geo_are) %>%
+  pivot_wider(names_from=method, values_from=geo_mse)  %>%
+  mutate(n.minus.s = Network - Sibling)
+
+# difference in ARE (network - sibling)
+comp_rel_probs_bygeos_wide <- comp_probs_bygeos %>%
+  select(-geo_mse) %>%
+  pivot_wider(names_from=method, values_from=geo_are) %>%
+  mutate(n.minus.s = Network - Sibling)
+```
+
+
+
+## TODO OLD METHOD - Error distns to save to file
+
+TODO - If we still use these results (not sure), then I think these need to be 
+updated for the MSE based on bootstrap we're using now...
+
+```{r}
+mse_diff_hist <- comp_asdrs_wide_boot %>%
+  group_by(boot_idx) %>%
+  summarize(mean.delta2.n.minus.s = mean(delta2.n.minus.s),
+            mean.delta2.n = mean(delta2_Network),
+            mean.delta2.s = mean(delta2_Sibling))
+
+errs_boot_asdr_mse <- mse_diff_hist  %>% 
+  rename(err.n.minus.s = mean.delta2.n.minus.s,
+         err.n = mean.delta2.n,
+         err.s = mean.delta2.s) %>%
+  bind_cols(loss = 'mse',
+            qty = 'asdr',
+            comparison_name = params$comparison_name,
+            geo_name = params$geo_name)
+
+mse_diff_probs_hist <- comp_probs_wide_boot %>%
+  group_by(boot_idx) %>%
+  summarize(mean.delta2.n.minus.s = mean(delta2.n.minus.s),
+            mean.delta2.n = mean(delta2_Network),
+            mean.delta2.s = mean(delta2_Sibling))
+
+errs_boot_probs_mse <- mse_diff_probs_hist  %>% 
+  rename(err.n.minus.s = mean.delta2.n.minus.s,
+         err.n = mean.delta2.n,
+         err.s = mean.delta2.s) %>%
+  bind_cols(loss = 'mse',
+            qty = 'prob',
+            comparison_name = params$comparison_name,
+            geo_name = params$geo_name)
+
+rel_diff_hist <- comp_asdrs_wide_boot %>%
+  group_by(boot_idx) %>%
+  summarize(mean.err = mean(delta_rel.n.minus.s),
+            mean.net.err = mean(delta_rel_Network),
+            mean.sib.err = mean(delta_rel_Sibling))
+  
+errs_boot_asdr_mare <- rel_diff_hist  %>% 
+  rename(err.n.minus.s = mean.err,
+         err.n = mean.net.err,
+         err.s = mean.sib.err) %>%
+  bind_cols(loss = 'mare',
+            qty = 'asdr',
+            comparison_name = params$comparison_name,
+            geo_name = params$geo_name)
+
+rel_diff_prob_hist <- comp_probs_wide_boot %>%
+  group_by(boot_idx) %>%
+  summarize(mean.err = mean(delta_rel.n.minus.s),
+            mean.err.n = mean(delta_rel_Network),
+            mean.err.s = mean(delta_rel_Sibling))
+  
+
+errs_boot_probs_mare <- rel_diff_prob_hist  %>% 
+  rename(err.n.minus.s = mean.err,
+         err.n = mean.err.n,
+         err.s = mean.err.s) %>%
+  bind_cols(loss = 'mare',
+            qty = 'prob',
+            comparison_name = params$comparison_name,
+            geo_name = params$geo_name)
+```
+
+
+```{r}
+# convert MSE results to RMSE
+errs_boot_asdr_rmse <- errs_boot_asdr_mse %>% 
+  mutate(err.n = sqrt(err.n),
+         err.s = sqrt(err.s),
+         err.n.minus.s = err.n - err.s,
+         loss = 'rmse')
+errs_boot_probs_rmse <- errs_boot_probs_mse %>% 
+  mutate(err.n = sqrt(err.n),
+         err.s = sqrt(err.s),
+         err.n.minus.s = err.n - err.s,
+         loss = 'rmse')
+
+errs_boot_both_rmse <-
+  bind_rows(errs_boot_asdr_rmse,
+            errs_boot_probs_rmse)
+
+err_diffs_boot <- bind_rows(errs_boot_asdr_mare, 
+                            errs_boot_asdr_mse, 
+                            errs_boot_probs_mare, 
+                            errs_boot_probs_mse)
+
+# NB: this file is used
+write_csv(bind_rows(err_diffs_boot,
+                    errs_boot_both_rmse),
+          file.path(comp_out_dir, "err_diffs_boot.csv"))
+
+err_diffs_boot
+```
+
+OVERALL ERROR
+
+
+Total diff
+
+```{r}
+#errs_boot_asdr_rmse
+
+errs_boot_asdr_rmse_summ <- errs_boot_asdr_rmse %>%
+  group_by(1) %>%
+  summarize(diff_nminuss_mean = mean(err.n.minus.s),
+            diff_nminuss_ci_low = quantile(err.n.minus.s, .025),
+            diff_nminuss_ci_high = quantile(err.n.minus.s, .975),
+            network_err = mean(err.n),
+            network_err_ci_low = quantile(err.n, .025),
+            network_err_ci_high = quantile(err.n, .975),
+            network_err_sd = sd(err.n),
+            network_err_ci_width = quantile(err.n, .975) - quantile(err.n, .025),
+            sibling_err = mean(err.s),
+            sibling_err_ci_low = quantile(err.s, .025),
+            sibling_err_ci_high = quantile(err.s, .975),
+            sibling_err_sd = sd(err.s),
+            sibling_err_ci_width = quantile(err.s, .975) - quantile(err.s, .025),
+            .groups='drop')
+
+glue::glue("
+           Average network RMSE: {errs_boot_asdr_rmse_summ$network_err}
+           Average sibling RMSE: {errs_boot_asdr_rmse_summ$sibling_err}
+           On average, network estimates were about {errs_boot_asdr_rmse_summ$diff_nminuss_mean} RMSE units better than sibling estimates.  
+           This is {round(100*errs_boot_asdr_rmse_summ$diff_nminuss_mean/errs_boot_asdr_rmse_summ$network_err,2)}% RMSE units better than sibling estimates.  
+          CI:
+          ({round(100*errs_boot_asdr_rmse_summ$diff_nminuss_ci_low/errs_boot_asdr_rmse_summ$network_err,2)}%,  {round(100*errs_boot_asdr_rmse_summ$diff_nminuss_ci_high/errs_boot_asdr_rmse_summ$network_err,2)}%)
+           ")
+```
+
+
 ## Removed 20260105
 
 
@@ -150,6 +485,213 @@ for(i in 1:np) {
 }
 dev.off()
 ```
+
+
+#### START --  OLD WAY OF CALCULATING BIAS/VAR/MSE
+
+
+Get uncertainty around BVD ests
+
+```{r}
+# summary of results across cities within each bootstrap for each age/sex group
+acrosscity_boot_res <- comp_asdrs_boot %>%
+  ## for each method,
+  ## aggregating across the cities w/in each age/sex group + bootstrap rep
+  group_by(sex, agegp10, boot_idx, method) %>%
+  summarize(bias = mean(delta),
+            var = var(delta),
+            fp.var = fp.var(delta),            
+            mse = mean(delta2),
+            rmse = sqrt(mean(delta2))) %>%
+  ungroup() %>%
+  pivot_wider(names_from = 'method',
+              values_from = c('bias', 'var', 'fp.var', 'mse', 'rmse'))
+
+# summary of results across bootstrap reps within each city for each age/sex group
+acrossboot_city_res <- comp_asdrs_boot %>%
+  ## for each method,
+  ## aggregating across the cities w/in each age/sex group + bootstrap rep
+  group_by(sex, agegp10, geo, method) %>%
+  summarize(bias = mean(delta),
+            var = var(delta),
+            fp.var = fp.var(delta),
+            mse = mean(delta2),
+            rmse = sqrt(mean(delta2))) %>%
+  ungroup() %>%
+  pivot_wider(names_from = 'method',
+              values_from = c('bias', 'var', 'fp.var', 'mse', 'rmse'))
+```
+
+### Calculating bias / variance / MSE within each age/sex/city
+
+Here, we estimating design-based bias, variance, and MSE
+ie, if we conducted this study in these 27 cities again, selecting 
+a different random sample, what would our results show?
+
+```{r}
+#across_boot_long_res <- 
+estimated_properties_long <- 
+  comp_asdrs_boot %>%
+  ## for each method,
+  ## aggregating across the cities w/in each age/sex group + bootstrap rep
+  group_by(sex, agegp10, geo, method) %>%
+  summarize(avg_estimate = mean(post_mean_asdr),
+            gs_val = mean(gs_asdr),
+            # NB: gs_asdr values are all the same, so gs_asdr[1] just
+            # picks out one of them
+            bias = mean(post_mean_asdr) - gs_asdr[1],
+            #bias_check = mean(post_mean_asdr) - avg_estimate,
+            var = var(post_mean_asdr),
+            fp.var = fp.var(post_mean_asdr),            
+            mse = mean((post_mean_asdr - gs_asdr)^2)) %>%
+            #rmse = sqrt(mean(delta2))) %>%
+            #var = var(delta),
+            #fp.var = fp.var(delta),            
+            #mse = mean(delta2),
+            #rmse = sqrt(mean(delta2))) %>%
+  mutate(rmse = sqrt(mse)) %>%
+  ungroup() %>%
+  mutate(frac_mse_bias2 = bias^2/mse,
+         frac_mse_var = fp.var / mse)
+  #%>%
+  # uncomment to check that bias-variance decomposition holds
+  # (it does!)
+  #mutate(bias_alt = 1000*(avg_estimate - gs_val)) %>%
+  #mutate(bias_check = bias_alt - bias,
+  #       bvd_check = mse - (fp.var + bias^2))
+
+#across_boot_res <- across_boot_long_res %>%
+estimated_properties <- 
+  estimated_properties_long %>%
+  select(-avg_estimate) %>%
+  pivot_wider(names_from = 'method',
+              values_from = c('bias', 
+                              #'bias_alt',
+                              #'bias_check', 'bvd_check',
+                              'var', 'fp.var', 'mse', 'rmse',
+                              'frac_mse_bias2', 'frac_mse_var'))
+
+#across_boot_city_avg_res <- across_boot_res %>%
+estimated_properties_city_avg <- 
+  estimated_properties_long %>%
+  # average of estimator properties across cities
+  group_by(method, geo) %>%
+  summarize(across(c(starts_with('bias'), 
+                     starts_with('var'),
+                     starts_with('fp.var'),
+                     starts_with('mse'),
+                     starts_with('rmse'),
+                     starts_with('frac_mse')),
+                   list(mean = mean)))
+
+estimated_properties_agesex_avg <- 
+  estimated_properties_long %>%
+  # average of estimator properties across cities
+  group_by(method, sex, agegp10) %>%
+  summarize(across(c(starts_with('bias'), 
+                     starts_with('var'),
+                     starts_with('fp.var'),
+                     starts_with('mse'),
+                     starts_with('rmse'),
+                     starts_with('frac_mse')),
+                   list(mean = mean)))
+```
+
+#### Share of MSE that is bias2 and variance
+
+Plot the share of MSE that is bias2 and variance for each method
+
+```{r}
+estimated_properties_long %>%
+  ggplot(.) +
+  geom_point(aes(x = frac_mse_bias2,
+                 y = method,
+                 color = method),
+             position = position_jitter(width = 0, height = 0.2)) +
+  geom_point(data = estimated_properties_agesex_avg,
+             aes(x = frac_mse_bias2_mean,
+                 y = method,
+                 color = method),
+             shape = 'X',      
+             size = 8) +      
+  facet_grid(agegp10 ~ sex) +
+  ylab("") +
+  xlab("Fraction of MSE that is Bias^2") +
+  guides(color = guide_legend(title="")) +
+  theme_minimal()
+
+estimated_properties_long %>%
+  ggplot(.) +
+  geom_point(aes(x = frac_mse_var,
+                 y = method,
+                 color = method),
+             position = position_jitter(width = 0, height = 0.2)) +
+  geom_point(data = estimated_properties_agesex_avg,
+             aes(x = frac_mse_var_mean,
+                 y = method,
+                 color = method),
+             shape = 'X',      
+             size = 8) +      
+  facet_grid(agegp10 ~ sex) +
+  ylab("") +
+  xlab("Fraction of MSE that is from variance") +
+  guides(color = guide_legend(title="")) +
+  theme_minimal()
+```
+
+```{r}
+# one method in each panel
+estimated_properties_agesex_avg %>%
+  ggplot(.) +
+  geom_point(aes(x = agegp10, 
+                 y = frac_mse_bias2_mean, 
+                 color=sex,
+                 shape=sex),
+             size=2) +
+  facet_wrap(~method) +
+  theme_minimal()
+
+# one sex in each panel
+estimated_properties_agesex_avg %>%
+  ggplot(.) +
+  geom_point(aes(x = agegp10, 
+                 y = frac_mse_bias2_mean, 
+                 color=method,
+                 shape=method),
+             size=2) +
+  facet_wrap(~sex) +
+  theme_minimal()
+```
+
+... above, as a stacked bar char
+
+```{r}
+# reshape data for stacked bar chart
+tmp_agg_long <- estimated_properties_agesex_avg %>%
+#tmp_agg_long <- tmp_agg %>%
+  pivot_longer(cols = c(frac_mse_bias2_mean, frac_mse_var_mean),
+               names_to = "component", 
+               values_to = "fraction") %>%
+  mutate(component = case_when(
+    component == "frac_mse_bias2_mean" ~ "Bias²",
+    component == "frac_mse_var_mean" ~ "Variance"
+  ))
+
+# Stacked bar chart with one method in each panel
+tmp_agg_long %>%
+  ggplot(aes(x = agegp10, y = fraction, fill = component)) +
+  geom_col(position = "stack") +
+  #facet_grid(sex ~ method) + 
+  facet_grid(method ~ sex) + 
+  scale_y_continuous(labels = scales::percent) +
+  theme_minimal() +
+  xlab("") + ylab("")
+
+```
+
+
+
+#### END --  OLD WAY OF CALCULATING BIAS/VAR/MSE
 
 
 ## Plausibility plots
@@ -970,7 +1512,7 @@ lopo_diff_ests <- jab_df %>%
 toc()
 ```
 
-```{r old-leave-one-psu-out-diff-estimates, eval=FALSE}
+```{r old-leave-one-psu-out-diff-estimates2, eval=FALSE}
 
 tic("Calculating leave-one PSU out estimates to use with jackknife after bootstrap for differences")
 lopo_diff_ests <- jab_df %>%
@@ -2939,7 +3481,7 @@ TODO - THINK ABOUT THIS MORE: we are aggregating across states - how to handle t
 PSU is in one state, it seems like it would under-estimate variance to treat them all as separate;
 in other words, we need some kind of stratification in here, I think?
 
-```{r leave-one-psu-out-diff-estimates}
+```{r leave-one-psu-out-diff-estimates2}
 
 tic("Calculating leave-one PSU out estimates to use with jackknife after bootstrap for differences")
 lopo_diff_ests <- jab_df %>%
@@ -3060,7 +3602,7 @@ lopo_diff_ests %>%
   geom_histogram(aes(x=var_diff_nminuss_lopo))
 ```
 
-```{r jab-diff-estimates}
+```{r jab-diff-estimates2}
 jab_diff_ests <- lopo_diff_ests %>%
   select(-jab_indexes) %>%
   select(-`1`) %>%

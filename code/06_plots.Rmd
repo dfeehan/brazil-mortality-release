@@ -133,94 +133,6 @@ p1.5
 ```
 
 
-### Bias-variance decomposition (BVD) plot
-
-```{r}
-p_bvd_as_bias <- readRDS(file.path(vr_city_dir, 'bvd_as_bias_plot.rds'))
-
-p_bvd_as_se <- readRDS(file.path(vr_city_dir, 'bvd_as_se_plot.rds'))
-
-p_bvd_as_rmse <- readRDS(file.path(vr_city_dir, 'bvd_as_rmse_plot.rds'))
-```
-
-
-```{r}
-#bvd_as_city <- p_bvd_as_rmse / p_bvd_as_bias / p_bvd_as_se + 
-bvd_as_city <- 
-  (p_bvd_as_se + ggtitle("A")) +
-  (p_bvd_as_bias + ggtitle("B")) +
-  (p_bvd_as_rmse + ggtitle("C")) +
-  plot_layout(guides='collect') &
-  #theme(text = element_text(size=7)) &
-  theme(text = element_text(size=7),
-        legend.position='bottom',
-        legend.box='vertical',
-        legend.spacing.y=unit(-.3, 'cm')) & 
-  #guides(color=guide_legend(nrow=2, title="Age"))
-  guides(color=guide_legend(title="Age"))
-
-ggsave(filename=file.path(out_dir, "bvd_as_city.pdf"),
-       bvd_as_city)
-
-bvd_as_city
-```
-
-```{r}
-#bvd_as_city <- p_bvd_as_rmse / p_bvd_as_bias / p_bvd_as_se + 
-vd_as_city <- 
-  (p_bvd_as_se + ggtitle("A")) +
-  (p_bvd_as_bias + ggtitle("B")) +
-  plot_layout(guides='collect') &
-  #theme(text = element_text(size=7)) &
-  theme(text = element_text(size=7),
-        legend.position='bottom',
-        legend.box='vertical',
-        legend.spacing.y=unit(-.3, 'cm')) & 
-  #guides(color=guide_legend(nrow=2, title="Age"))
-  guides(color=guide_legend(title="Age"))
-
-ggsave(filename=file.path(out_dir, "vd_as_city.pdf"),
-       height=6,
-       vd_as_city)
-
-vd_as_city
-```
-
-### Bias-variance decomposition (BVD) plot from VR sensitivity check
-
-
-```{r}
-p_bvd_as_bias_vrsens <- readRDS(file.path(vradj_city_dir, 'bvd_as_bias_plot.rds'))
-
-p_bvd_as_se_vrsens <- readRDS(file.path(vradj_city_dir, 'bvd_as_se_plot.rds'))
-
-p_bvd_as_rmse_vrsens <- readRDS(file.path(vradj_city_dir, 'bvd_as_rmse_plot.rds'))
-```
-
-
-```{r}
-bvd_as_city_vrsens <- 
-  p_bvd_as_se_vrsens +
-  p_bvd_as_bias_vrsens +
-  p_bvd_as_rmse_vrsens +
-  #p_bvd_as_se /
-  #p_bvd_as_bias /     
-  #p_bvd_as_rmse +
-  plot_layout(guides='collect') &
-  #theme(text = element_text(size=7)) &
-  theme(text = element_text(size=7),
-        legend.position='bottom',
-        legend.box='vertical',
-        legend.spacing.y=unit(-.3, 'cm')) & 
-  #guides(color=guide_legend(nrow=2, title="Age"))
-  guides(color=guide_legend(title="Age"))
-
-ggsave(filename=file.path(out_dir, "bvd_as_city_vrsens.pdf"),
-       bvd_as_city_vrsens)
-
-bvd_as_city_vrsens
-```
-
 
 ### Error difference pointrange figure
 
@@ -239,6 +151,9 @@ errs_na <- read_csv(file.path(vradj_national_dir, 'err_diffs_boot.csv'))
 ```
 
 ### Err diffs boot
+
+TODO - this is the part that I think we need to change to reflect the
+jackknife-after-bootstrap results
 
 ```{r}
 err_diffs_boot <- bind_rows(errs_cv,
@@ -267,6 +182,7 @@ err_diffs_summ <- err_diffs_boot %>%
 
 err_diffs_summ
 ```
+
 
 
 ```{r}
@@ -737,7 +653,97 @@ ggsave(filename=file.path(out_dir, "err_compare_all_vrsens.png"),
 
 vrsens_err_compare
 ```
-## Who reports whom and age-related plots
+
+
+
+### Bias-variance decomposition (BVD) plot
+
+```{r}
+p_bvd_as_bias <- readRDS(file.path(vr_city_dir, 'bvd_as_bias_plot.rds'))
+
+p_bvd_as_se <- readRDS(file.path(vr_city_dir, 'bvd_as_se_plot.rds'))
+
+p_bvd_as_rmse <- readRDS(file.path(vr_city_dir, 'bvd_as_rmse_plot.rds'))
+```
+
+
+```{r}
+#bvd_as_city <- p_bvd_as_rmse / p_bvd_as_bias / p_bvd_as_se + 
+bvd_as_city <- 
+  (p_bvd_as_se + ggtitle("A")) +
+  (p_bvd_as_bias + ggtitle("B")) +
+  (p_bvd_as_rmse + ggtitle("C")) +
+  plot_layout(guides='collect') &
+  #theme(text = element_text(size=7)) &
+  theme(text = element_text(size=7),
+        legend.position='bottom',
+        legend.box='vertical',
+        legend.spacing.y=unit(-.3, 'cm')) & 
+  #guides(color=guide_legend(nrow=2, title="Age"))
+  guides(color=guide_legend(title="Age"))
+
+ggsave(filename=file.path(out_dir, "bvd_as_city.pdf"),
+       bvd_as_city)
+
+bvd_as_city
+```
+
+```{r}
+#bvd_as_city <- p_bvd_as_rmse / p_bvd_as_bias / p_bvd_as_se + 
+vd_as_city <- 
+  (p_bvd_as_se + ggtitle("A")) +
+  (p_bvd_as_bias + ggtitle("B")) +
+  plot_layout(guides='collect') &
+  #theme(text = element_text(size=7)) &
+  theme(text = element_text(size=7),
+        legend.position='bottom',
+        legend.box='vertical',
+        legend.spacing.y=unit(-.3, 'cm')) & 
+  #guides(color=guide_legend(nrow=2, title="Age"))
+  guides(color=guide_legend(title="Age"))
+
+ggsave(filename=file.path(out_dir, "vd_as_city.pdf"),
+       height=6,
+       vd_as_city)
+
+vd_as_city
+```
+
+### Bias-variance decomposition (BVD) plot from VR sensitivity check
+
+
+```{r}
+p_bvd_as_bias_vrsens <- readRDS(file.path(vradj_city_dir, 'bvd_as_bias_plot.rds'))
+
+p_bvd_as_se_vrsens <- readRDS(file.path(vradj_city_dir, 'bvd_as_se_plot.rds'))
+
+p_bvd_as_rmse_vrsens <- readRDS(file.path(vradj_city_dir, 'bvd_as_rmse_plot.rds'))
+```
+
+
+```{r}
+bvd_as_city_vrsens <- 
+  p_bvd_as_se_vrsens +
+  p_bvd_as_bias_vrsens +
+  p_bvd_as_rmse_vrsens +
+  #p_bvd_as_se /
+  #p_bvd_as_bias /     
+  #p_bvd_as_rmse +
+  plot_layout(guides='collect') &
+  #theme(text = element_text(size=7)) &
+  theme(text = element_text(size=7),
+        legend.position='bottom',
+        legend.box='vertical',
+        legend.spacing.y=unit(-.3, 'cm')) & 
+  #guides(color=guide_legend(nrow=2, title="Age"))
+  guides(color=guide_legend(title="Age"))
+
+ggsave(filename=file.path(out_dir, "bvd_as_city_vrsens.pdf"),
+       bvd_as_city_vrsens)
+
+bvd_as_city_vrsens
+```
+
 
 
 
