@@ -450,6 +450,24 @@ if(params$do_12mo) {
 
 # Summarize estimates
 
+```{r}
+# helper: calculate finite population variance
+# of the values in some vector x
+fp.var <- function(x) {
+  return(mean((x - mean(x))^2))
+}
+
+# helper: jackknife variance estimate formula
+# see, eg, the Efron book
+# if x is a vector of jackknife (leave-one-out)
+# variance estimates, this function combines them into
+# an overall variance estimate
+jack.var <- function(x) {
+  P <- length(x)
+  return( ((P-1)/P)*sum((x - mean(x))^2))
+}
+```
+
 ## Quantitative summaries
 
 MSE on natural scale
@@ -1195,23 +1213,6 @@ prob_diff_properties_point_estimates <- prob_properties_point_estimates %>%
 
 # Use JAB to calculate uncertainty in Bias/Variance/MSE
 
-```{r}
-# helper: calculate finite population variance
-# of the values in some vector x
-fp.var <- function(x) {
-  return(mean((x - mean(x))^2))
-}
-
-# helper: jackknife variance estimate formula
-# see, eg, the Efron book
-# if x is a vector of jackknife (leave-one-out)
-# variance estimates, this function combines them into
-# an overall variance estimate
-jack.var <- function(x) {
-  P <- length(x)
-  return( ((P-1)/P)*sum((x - mean(x))^2))
-}
-```
 
 ## Load the cluster counts associated w/ our bootstrap resamples
 
@@ -1791,7 +1792,7 @@ prob_tot_diff_properties <- prob_diff_properties_point_estimates %>%
 
 
 
-## Investigate the Var/MSE/Bias estimates in various ways
+## Plot the difference in error estimates in various ways
 
 
 ```{r}
@@ -1820,7 +1821,7 @@ if(geo_name == 'city') {
   annxoff <- 0.2
 }
 
-rmse_geo_diff %>%
+diff_rmse_geo_plot <- rmse_geo_diff %>%
   ungroup() %>%
   mutate(geo = fct_reorder(geo, 
                            est_rmse_diff)) %>%
@@ -1851,6 +1852,13 @@ rmse_geo_diff %>%
            angle=90) +
   theme_minimal() +
   coord_cartesian(clip = "off")
+
+ggsave(filename=file.path(comp_out_dir, "diff_rmse_geo.pdf"),
+       plot=diff_rmse_geo_plot,
+       height=3.5,
+       width=6)
+
+diff_rmse_geo_plot
 ```
 
 
@@ -1881,7 +1889,7 @@ if(geo_name == 'city') {
   annxoff <- 0.2
 }
 
-rmse_age_diff %>%
+diff_rmse_age_plot <- rmse_age_diff %>%
   ungroup() %>%
   ggplot(.) +
   geom_pointrange(aes(x = agegp10,
@@ -1910,6 +1918,14 @@ rmse_age_diff %>%
            angle=90) +
   theme_minimal() +
   coord_cartesian(clip = "off")
+
+
+ggsave(filename=file.path(comp_out_dir, "diff_rmse_age.pdf"),
+       plot=diff_rmse_age_plot,
+       height=3.5,
+       width=6)
+
+diff_rmse_age_plot
 ```
 
 
@@ -1932,7 +1948,7 @@ biggestdiff <- max(abs(c(1000*rmse_tot_diff$est_rmse_diff_ci_low,
 
 annscale <- .5
 
-rmse_tot_diff %>%
+diff_rmse_tot_plot <- rmse_tot_diff %>%
   ggplot(.) +
   geom_pointrange(aes(x = 'Average Overall RMSE Difference',
                       y = 1000*est_rmse_diff,
@@ -1959,6 +1975,14 @@ rmse_tot_diff %>%
            color='red',
            angle=90) +
   theme_minimal()
+
+
+ggsave(filename=file.path(comp_out_dir, "diff_rmse_tot.pdf"),
+       plot=diff_rmse_tot_plot,
+       height=3.5,
+       width=3.5)
+
+diff_rmse_tot_plot
 ```
 
 
@@ -1969,6 +1993,51 @@ TODO - LEFT OFF HERE
 - run for vr / adj vr and for all geos
 - then go to 06_plots and fix to work with these results
 - ALSO revisit heatmaps and get margins to use these results
+
+```{r}
+# err_diffs_jab.csv
+
+asdr_tot_err_diffs_jab <- 
+  asdr_tot_diff_properties %>%
+    rename(est_rmse_diff = est_rmse_n_minus_s,
+           est_mare_diff = est_mare_n_minus_s,
+           se_rmse_diff = se_rmse_n_minus_s_jab,
+           se_mare_diff = se_mare_n_minus_s_jab) %>%
+    mutate(est_rmse_diff_ci_low = est_rmse_diff - 1.96*se_rmse_diff,
+           est_rmse_diff_ci_high = est_rmse_diff + 1.96*se_rmse_diff) %>%
+  pivot_longer(
+    cols=-qty
+  ) %>%
+  mutate(geo_name = geo_name) %>%
+  mutate(loss = str_extract(name, "rmse|mare"),
+         name = str_replace(name, "_rmse_|_mare_", "_"))
+
+prob_tot_err_diffs_jab <- 
+  prob_tot_diff_properties %>%
+    rename(est_rmse_diff = est_rmse_n_minus_s,
+           est_mare_diff = est_mare_n_minus_s,
+           se_rmse_diff = se_rmse_n_minus_s_jab,
+           se_mare_diff = se_mare_n_minus_s_jab) %>%
+    mutate(est_rmse_diff_ci_low = est_rmse_diff - 1.96*se_rmse_diff,
+           est_rmse_diff_ci_high = est_rmse_diff + 1.96*se_rmse_diff) %>%
+  pivot_longer(
+    cols=-qty
+  ) %>%
+  mutate(geo_name = geo_name) %>%
+  mutate(loss = str_extract(name, "rmse|mare"),
+         name = str_replace(name, "_rmse_|_mare_", "_"))
+
+err_diffs_jab <- bind_rows(asdr_tot_err_diffs_jab,
+                           prob_tot_err_diffs_jab) %>%
+  mutate(comparison_name = params$comparison_name)
+
+write_csv(err_diffs_jab,
+          file.path(comp_out_dir, "err_diffs_jab.csv"))
+
+# this file is used in 06_plots.Rmd
+
+err_diffs_jab
+```
 
 
 
