@@ -1,4 +1,81 @@
 
+
+
+jab_age_ests <- jab_asdr_ests %>%
+  select(-starts_with('se')) %>%
+  ungroup() %>%
+  # to summarize across all rows in the tibble
+  group_by(method, agegp10) %>%
+  # overall estimated variance in mse diff is average of city-specific 
+  # variance estimates, which is (1/27)^2 times the sum of 
+  # the city-specific variances
+  # (we need (1/27)^2 because we're pulling a constant out of the
+  #  variance -- see the appendix notes)
+  summarize(across(starts_with('var'), 
+                   ~ ((1/NUM_GEO_UNITS)^2)*sum(.x) ,
+                   .names = "{.col}")) %>%
+  mutate(across(starts_with('var_'), list(se=sqrt), .names="{.fn}_{.col}")) %>%
+  rename_with(~ str_replace(.x, '_var', ''), starts_with('se_var')) %>%
+  left_join(jab_age_diff_ests)
+  
+Tibbles
+=======
+
+jab_asdr_ests -> uncertainty in asdr ests for indiv methods + diff
+jab_prob_ests
+
+asdr_properties -> cell (city/age/sex) point estimates, diffs, + JAB uncertainties
+prob_properties
+=> TODO - add std err?
+
+jab_geo_asdr_ests -> uncertainty in asdr ests for indiv methods + diff at geo level
+jab_geo_prob_ests
+
+asdr_geo_properties
+porb_geo_properties
+
+asdr_agesex_properties
+(nothing analogous for probs here)
+
+
+
+jab_asdr_diff_ests -> uncertainty in asdr diffs at city/age/sex level
+jab_geo_diff_ests -> uncertainty in asdr indiv methods + diffs at city level
+jab_age_diff_ests -> uncertainty in asdr diffs at age level
+jab_age_ests -> uncertainty in indiv methods at age level
+jab_tot_diff_ests -> uncertainty in asdr indiv methods + diffs at total level
+  
+asdr_properties -> estimates + uncertainty for indiv estimates at city/age/sex level 
+asdr_diff_properties -> estimates + uncertainty for diffs at city/age/sex level  
+  
+asdr_geo_diff_properties -> estimates + uncertainty for diffs at geo level
+asdr_geo_properties -> estimates + uncertainty for indivd methods at geo level
+
+asdr_age_diff_properties -> estimates + uncertainty for diffs + indiv methods at age level
+
+asdr_tot_diff_properties -> estimates + uncertainty for diffs + indiv methods at total level
+  -> TODO need to add indiv methods here
+  
+WANT
+
+X asdr_properties -> estimates + uncertainty for indiv ests + diffs at city/age/sex level
+
+asdr_geo_properties ->estimates + uncertainty for indiv ests + diffs at city level
+  => TODO need uncertainty around bias/variance (currently have RMSE)
+  
+asdr_age_properties ->estimates + uncertainty for indiv ests + diffs at age level
+
+asdr_tot_properties ->estimates + uncertainty for indiv ests + diffs at tot level
+
+
+LONG FORM
+
+method
+- sibling
+- network
+- diff_n_minus_s
+
+
 need overall
 
 ASDR MARE diff and SE
