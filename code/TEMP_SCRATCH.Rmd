@@ -21,6 +21,25 @@ jab_age_ests <- jab_asdr_ests %>%
 Tibbles
 =======
 
+
+
+LEFT OFF HERE: I think the results we need are in
+
+- asdr_properties
+- asdr_geo_properties
+- asdr_agesex_properties
+- asdr_tot_properties
+
+and
+
+- prob_properties
+- prob_geo_properties
+- prob_tot_properties
+
+
+
+
+
 jab_asdr_ests -> uncertainty in asdr ests for indiv methods + diff
 jab_prob_ests
 
