@@ -1451,7 +1451,7 @@ asdr_properties_long <- asdr_properties %>%
 
 ... and repeat for probabilities, one for each city/sex/method
 
-```{r jab-estimates}
+```{r jab-estimates-prob}
 jab_prob_ests <- lopo_prob_ests_wide %>%
   #select(-jab_indexes) %>%
   # geo is stored in lopo_ests, and we don't want to duplicate it
@@ -1961,29 +1961,13 @@ diff_rmse_tot_plot
 
 ## Save results for plots
 
-
-LEFT OFF HERE: I think the results we need are in
-
-- asdr_properties
-- asdr_geo_properties
-- asdr_agesex_properties
-- asdr_tot_properties
-
-and
-
-- prob_properties
-- prob_geo_properties
-- prob_tot_properties
-
-NEXT STEPS
-
-- fix plots below here to use these new versions
-- save these to a file
-- go into 06_plots.Rmd and have it use these new files
+TODO - LEFT OFF HERE
 
 
+need loss / qty / geo_name
 
 TODO - LEFT OFF HERE
+- want to save these files w/ columns qty, geo, loss
 - re-run for vr / adj vr and for all geos
 - then go to 06_plots and fix to work with these results
 - ALSO revisit heatmaps and get margins to use these results
@@ -2007,7 +1991,7 @@ err_diffs_jab <- bind_rows(
         prob_tot_properties %>%
           rename_with(~ str_replace(.x, 'prob_', ''), matches('prob_')), 
         ) %>%
-  select(qty, everything())
+  select(qty, loss, geo, everything())
 
 write_csv(err_diffs_jab,
           file.path(comp_out_dir, "err_diffs_jab.csv"))
