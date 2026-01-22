@@ -1964,7 +1964,7 @@ diff_rmse_tot_plot
 TODO - LEFT OFF HERE
 
 
-need loss / qty / geo_name
+OLD cols: boot_idx / err.n.minus.s / err.n / err.s / loss / qty / comparison_name / geo_name
 
 TODO - LEFT OFF HERE
 - want to save these files w/ columns qty, geo, loss
@@ -1973,31 +1973,111 @@ TODO - LEFT OFF HERE
 - ALSO revisit heatmaps and get margins to use these results
 
 ```{r}
-errs_to_save <- bind_rows(
-        asdr_tot_properties %>%
-          rename_with(~ str_replace(.x, 'asdr_', ''), matches('asdr_')), 
-        prob_tot_properties %>%
-          rename_with(~ str_replace(.x, 'prob_', ''), matches('prob_')), 
-        )
+asdr_tot_properties_tosave <-
+  asdr_tot_properties %>%
+  select(-`1`) %>%
+  # make everything one long column
+  pivot_longer(
+    cols = -c(qty), 
+    names_to = "full_name", 
+    values_to = "value"
+  ) %>%
+  # 2. Extract components from the messy column names
+  mutate(
+    # Identify the group (at the end of the string)
+    metric = case_when(
+      str_detect(full_name, "Network$") ~ "Network",
+      str_detect(full_name, "Sibling$") ~ "Sibling",
+      str_detect(full_name, "diff$")    ~ "diff",
+      TRUE ~ NA_character_
+    ),
+    # Identify the metric type (the column names you want)
+    metric_type = case_when(
+      str_detect(full_name, "^point_est") ~ "point_est",
+      str_detect(full_name, "^mean_jab")  ~ "mean_jab",
+      str_detect(full_name, "^var_jab")   ~ "var_jab",
+      str_detect(full_name, "^se_jab")    ~ "se_jab",
+      TRUE ~ NA_character_
+    ),
+    # Extract the loss function (the common property)
+    loss = str_extract(full_name, "(rmse|mare|mse|bias|var|mean)(?=_asdr|_Network|_Sibling|_diff|$)")
+  ) %>%
+  # 3. Clean up: remove rows that didn't match (like the '1' column)
+  filter(!is.na(metric), !is.na(loss)) %>%
+  # 4. Pivot the metric_type column into actual columns
+  select(qty, metric, loss, metric_type, value) %>%
+  pivot_wider(
+    names_from = metric_type, 
+    values_from = value
+  ) %>%
+  filter(loss != 'mean') %>%
+  select(-mean_jab) %>%
+  mutate(geo_name = params$geo_name,
+         comparison_name = params$comparison_name) %>%
+  select(qty, metric, loss, geo_name, comparison_name, everything())
+
+asdr_tot_properties_tosave
 ```
 
+```{r}
+prob_tot_properties_tosave <- 
+  prob_tot_properties %>%
+  select(-`1`) %>%
+  # make everything one long column
+  pivot_longer(
+    cols = -c(qty), 
+    names_to = "full_name", 
+    values_to = "value"
+  ) %>%
+  # 2. Extract components from the messy column names
+  mutate(
+    # Identify the group (at the end of the string)
+    metric = case_when(
+      str_detect(full_name, "Network$") ~ "Network",
+      str_detect(full_name, "Sibling$") ~ "Sibling",
+      str_detect(full_name, "diff$")    ~ "diff",
+      TRUE ~ NA_character_
+    ),
+    # Identify the metric type (the column names you want)
+    metric_type = case_when(
+      str_detect(full_name, "^point_est") ~ "point_est",
+      str_detect(full_name, "^mean_jab")  ~ "mean_jab",
+      str_detect(full_name, "^var_jab")   ~ "var_jab",
+      str_detect(full_name, "^se_jab")    ~ "se_jab",
+      TRUE ~ NA_character_
+    ),
+    # Extract the loss function (the common property)
+    loss = str_extract(full_name, "(rmse|mare|mse|bias|var|mean)(?=_prob|_Network|_Sibling|_diff|$)")
+  ) %>%
+  # 3. Clean up: remove rows that didn't match (like the '1' column)
+  filter(!is.na(metric), !is.na(loss)) %>%
+  # 4. Pivot the metric_type column into actual columns
+  select(qty, metric, loss, metric_type, value) %>%
+  pivot_wider(
+    names_from = metric_type, 
+    values_from = value
+  ) %>%
+  filter(loss != 'mean') %>%
+  select(-mean_jab) %>%
+  mutate(geo_name = params$geo_name,
+         comparison_name = params$comparison_name) %>%
+  select(qty, metric, loss, geo_name, comparison_name, everything())
+
+```
 
 ```{r}
 # err_diffs_jab.csv
 
 err_diffs_jab <- bind_rows(
-        asdr_tot_properties %>%
-          rename_with(~ str_replace(.x, 'asdr_', ''), matches('asdr_')), 
-        prob_tot_properties %>%
-          rename_with(~ str_replace(.x, 'prob_', ''), matches('prob_')), 
+        asdr_tot_properties_tosave,
+        prob_tot_properties_tosave
         ) %>%
-  select(qty, loss, geo, everything())
+  select(qty, geo_name, comparison_name, everything())
 
 write_csv(err_diffs_jab,
           file.path(comp_out_dir, "err_diffs_jab.csv"))
 
 # this file is used in 06_plots.Rmd
-
 err_diffs_jab
 ```
 
@@ -2032,7 +2112,9 @@ br_customgrid <- br_states_grid1 %>%
 
 All ests, by geography
 
-```{r calculate-errs-in-asdrs-by-geo}
+TODO - I think we want to remove this soon
+
+```{r calculate-errs-in-asdrs-by-geo, eval=FALSE}
 comp_asdrs_bygeo <- comp_asdrs %>%
   group_by(method, geo) %>%
   summarize(geo_mse = mean(delta2),
@@ -2164,7 +2246,7 @@ Helper fn
 
 ```{r city-method-mare-map, fig.height=4.5, fig.width=3}
   
-comp_df <- comp_rel_asdrs_bygeo_wide
+#comp_df <- comp_rel_asdrs_bygeo_wide
   
 ##
 ## data - dataset to use, already filtered (so either males or females)
@@ -2616,156 +2698,6 @@ moran_I_df %>% filter(p_value < 0.05)
 
 # Heatmaps showing error
 
-Create a dataset `all_err_diffs_boot`
-which has a row for each geo/sex/agegp/boot_idx that has, for Sibling and Network
-  - delta = (estimate - truth) [diff between estimate and truth]
-  - delta2 = (estimate - truth)^2 [delta squared - used in calculating MSE and RMSE]
-  - delta_rel = |estimate - truth| / truth [absolute relative diff between estimate and truth]
-  - delta_rel_notabs = (estimate - truth) / truth [relative diff between estimate and truth, with no absolute value taken]
-  - estimate (the actual estimate)
-  - gs_asdr (the gold standard value)
-  
-```{r}
-all_err_diffs_boot <- comp_asdrs_boot %>%
-  rename(estimate = post_mean_asdr) %>%
-  pivot_wider(id_cols = c('geo', 'sex', 'agegp10', 'boot_idx', 'gs_asdr'),
-              names_from=method,
-              values_from=c(starts_with('delta'), 'estimate'))
-```
-
-Create a dataset `geo_err_diffs_boot` which summarizes errors within each geographical area;
-it has a row for each geo/boot_idx that has, for Network/Sibling
-  - mean_delta
-  - mean_delta2
-  - mean_delta_rel
-it also has differences:
-  - mean_diff_rel
-  - mean_diff_mse
-  - mean_diff_rmse = sqrt(mean_delta2_Network) - sqrt(mean_delta2_Sibling)
-  
-```{r}
-## given a dataset assumed to be grouped in some way 
-## aggregate errors and calculate rmse after aggregating
-summ_estimate_errs <- function(df) {
-  df %>%
-    summarize(# sibling
-              mean_delta_Sibling = mean(delta_Sibling),
-              mean_delta2_Sibling = mean(delta2_Sibling),
-              mean_delta_rel_Sibling = mean(delta_rel_Sibling),
-              mean_delta_rel_notabs_Sibling = mean(delta_rel_notabs_Sibling), 
-              # network 
-              mean_delta_Network = mean(delta_Network),
-              mean_delta2_Network = mean(delta2_Network),
-              mean_delta_rel_Network = mean(delta_rel_Network),
-              mean_delta_rel_notabs_Network = mean(delta_rel_notabs_Network)) %>%
-    ungroup() %>%
-    mutate(mean_diff_rel = mean_delta_rel_Network - mean_delta_rel_Sibling,
-           mean_diff_rel_notabs = mean_delta_rel_notabs_Network - mean_delta_rel_notabs_Sibling,
-           mean_diff_mse = mean_delta2_Network - mean_delta2_Sibling,
-           mean_diff_rmse = sqrt(mean_delta2_Network) - sqrt(mean_delta2_Sibling),
-           mean_diff_raw = mean_delta_Network - mean_delta_Sibling)
-}
-
-## given a summarized and grouped dataset,
-## calculate summaries (point ests + cis) for network, sibling, and diffs
-calc_ci_errs <- function(df) {
-  df %>%
-  summarize(
-            ## sibling
-            sib_mare = mean(mean_delta_rel_Sibling),
-            sib_mare_ci_low = quantile(mean_delta_rel_Sibling, .025),
-            sib_mare_ci_high = quantile(mean_delta_rel_Sibling, .975),
-            sib_mse = mean(mean_delta2_Sibling),
-            sib_mse_ci_low = quantile(mean_delta2_Sibling, .025),
-            sib_mse_ci_high = quantile(mean_delta2_Sibling, .975),
-            sib_rmse = sqrt(mean(mean_delta2_Sibling)),
-            sib_rmse_ci_low = sqrt(quantile(mean_delta2_Sibling, .025)),
-            sib_rmse_ci_high = sqrt(quantile(mean_delta2_Sibling, .975)),
-            sib_raw = mean(mean_delta_Sibling),
-            sib_raw_ci_low = quantile(mean_delta_Sibling, .025),
-            sib_raw_ci_high = quantile(mean_delta_Sibling, .975),
-            sib_rel_notabs = mean(mean_delta_rel_notabs_Sibling),
-            sib_rel_notabs_ci_low = quantile(mean_delta_rel_notabs_Sibling, .025),
-            sib_rel_notabs_ci_high = quantile(mean_delta_rel_notabs_Sibling, .975),
-            ## network 
-            net_mare = mean(mean_delta_rel_Network),
-            net_mare_ci_low = quantile(mean_delta_rel_Network, .025),
-            net_mare_ci_high = quantile(mean_delta_rel_Network, .975),
-            net_mse = mean(mean_delta2_Network),
-            net_mse_ci_low = quantile(mean_delta2_Network, .025),
-            net_mse_ci_high = quantile(mean_delta2_Network, .975),
-            net_rmse = sqrt(mean(mean_delta2_Network)),
-            net_rmse_ci_low = sqrt(quantile(mean_delta2_Network, .025)),
-            net_rmse_ci_high = sqrt(quantile(mean_delta2_Network, .975)),
-            net_raw = mean(mean_delta_Network),
-            net_raw_ci_low = quantile(mean_delta_Network, .025),
-            net_raw_ci_high = quantile(mean_delta_Network, .975),
-            net_rel_notabs = mean(mean_delta_rel_notabs_Network),
-            net_rel_notabs_ci_low = quantile(mean_delta_rel_notabs_Network, .025),
-            net_rel_notabs_ci_high = quantile(mean_delta_rel_notabs_Network, .975),
-            ## differences    
-            diff_mare = mean(mean_diff_rel),
-            diff_mare_ci_low = quantile(mean_diff_rel, .025),
-            diff_mare_ci_high = quantile(mean_diff_rel, .975),
-            diff_mse = mean(mean_diff_mse),
-            diff_mse_ci_low = quantile(mean_diff_mse, .025),
-            diff_mse_ci_high = quantile(mean_diff_mse, .975),
-            diff_rmse = mean(mean_diff_rmse),
-            diff_rmse_ci_low = quantile(mean_diff_rmse, .025),
-            diff_rmse_ci_high = quantile(mean_diff_rmse, .975),
-            diff_raw = mean(mean_diff_raw),
-            diff_raw_ci_low = quantile(mean_diff_raw, .025),
-            diff_raw_ci_high = quantile(mean_diff_raw, .975),
-            diff_rel_notabs = mean(mean_diff_rel_notabs),
-            diff_rel_notabs_ci_low = quantile(mean_diff_rel_notabs, .025),
-            diff_rel_notabs_ci_high = quantile(mean_diff_rel_notabs, .975)
-            )
-}
-
-## given df with errors and grouping vars,
-## calculate point ests and cis for those grouping vars,
-## based on the general principle of calculating aggregates within
-## each bootstrap rep, then summarizing across bootstrap reps
-##
-## example:
-##   if groups is age and sex, then
-##       1) calculate mare and rmse for each age and sex group within each boot rep
-##       2) then calculate average and 95% CI of these age/sex mare and rmse values across boot reps
-calc_summ_errs <- function(df, groups) {
-  df %>%
-    ## calculate rmse, mare, etc within groups and boot rep
-    group_by(across({{groups}}), boot_idx) %>%
-    summ_estimate_errs() %>%
-    ## now summarize across boot reps, within groups
-    group_by(across({{groups}})) %>%
-    calc_ci_errs()
-}
-```
-
-```{r}
-geo_err_diffs_summ <-
-  all_err_diffs_boot %>%
-  calc_summ_errs(geo)
-
-agesex_err_diffs_summ <-
-  all_err_diffs_boot %>%
-  calc_summ_errs(c(sex, agegp10))
-
-geo_agesex_err_diffs_summ <-
-  all_err_diffs_boot %>%
-  calc_summ_errs(c(geo, sex, agegp10))
-
-## this should calculate errs across cities for each bootstrap rep,
-## then take ci, etc, over bootstrap reps
-tot_err_diffs_summ <- all_err_diffs_boot %>%
-  group_by(boot_idx) %>%
-  summ_estimate_errs() %>%
-  mutate(dummy=1) %>%
-  group_by(dummy) %>%
-  calc_ci_errs() %>%
-  ungroup()
-```
-
 ```{r}
 # see
 # https://stackoverflow.com/questions/60016390/set-axes-limits-in-patchwork-when-combining-ggplot2-objects
@@ -3037,139 +2969,3 @@ toc()
 
 
 
-
-
-### OLD
-
-
-
-```{r}
-## NB: this fn assumes that the environment has
-##   geo_err_diffs_summ ===>  asdr_geo_properties
-##   agesex_err_diffs_summ ===> asdr_agesex_properties
-##   geo_agesex_err_diffs_summ ====> asdr_properties
-OLD_err_breakdown_plot <- function(err_metric, 
-                               err_metric_name, 
-                               diff = FALSE) {
-  
-  if (diff) {
-    fill_scale <- scale_fill_gradient2(low='yellow', high='red', midpoint=0)
-    vline <- geom_vline(xintercept = 0, color='grey')
-    hline <- geom_hline(yintercept = 0, color='grey')
-    symm_x <- lemon::scale_x_symmetric(mid=0)
-  } else {
-    fill_scale <- scale_fill_gradient(low='white', high='red')
-    vline <- NULL
-    hline <- NULL
-    symm_x <- NULL
-  }
-  
-  ## age-sex plot
-  as_plot <- agesex_err_diffs_summ %>%
-    ## rename current error
-    rename_with(~ str_replace(.x, err_metric, 'err'),
-                .cols=starts_with(err_metric)) %>%
-    ggplot(.) +
-    geom_pointrange(aes(x=agegp10, 
-                        ymin=err_ci_low,
-                        ymax=err_ci_high,
-                        y=err)) +
-    facet_wrap(~ sex) +
-    theme_minimal() +
-    xlab("") +
-    expand_limits(y = 0) +
-    hline + 
-    ylab(err_metric_name)
-
-   geo_err_diffs_summ_forplot <- geo_err_diffs_summ %>%
-    ## rename current error
-    rename_with(~ str_replace(.x, err_metric, 'err'),
-                .cols=starts_with(err_metric)) %>%
-     mutate(geo = factor(geo)) %>%
-     mutate(geo = fct_reorder(geo, err))
-   
-   geo_lev_order <- levels(geo_err_diffs_summ_forplot$geo)
-   
-   city_plot <- geo_err_diffs_summ_forplot %>%
-     ggplot(.) +
-     geom_pointrange(aes(x=err, 
-                         xmin=err_ci_low,
-                         xmax=err_ci_high,
-                         y=geo)) +
-     theme_minimal() +
-     xlab(err_metric_name) +
-     expand_limits(x = 0) +
-     symm_x +
-     vline +
-     ylab("")
-   
-   ## summarize errors across bootstrap reps within each city/age/sex gp
-   hm <- geo_agesex_err_diffs_summ %>%
-    ## rename current error
-    rename_with(~ str_replace(.x, err_metric, 'err'),
-                .cols=starts_with(err_metric)) %>%
-     mutate(geo = factor(geo)) %>%
-     mutate(geo = fct_relevel(geo, geo_lev_order)) %>%
-     ggplot(.) +
-     geom_tile(aes(x=agegp10, y=geo, fill=err)) +
-     facet_wrap(~ sex) +
-     theme_minimal() +
-     xlab("") +
-     ylab("") +
-     theme(legend.position = 'bottom') +
-     fill_scale +
-     expand_limits(fill = 0) +
-     #coord_equal() +
-     guides(fill = guide_colorbar(title = err_metric_name,
-                                  title.position="top"))
-     #scale_fill_gradient(low='black', high='red')   
-  
-  # 1 : heatmap
-  # 2 : city agg errs
-  # 3 : age-sex errs
-  design <- "
-    111111111112222
-    111111111112222
-    111111111112222
-    111111111112222
-    111111111112222
-    111111111112222
-    111111111112222
-    111111111112222
-    111111111112222
-    111111111112222
-    111111111112222
-    111111111112222
-    111111111112222
-    111111111112222
-    111111111112222
-    111111111112222
-    111111111112222
-    111111111112222
-    111111111112222
-    111111111112222
-    111111111112222
-    111111111112222
-    111111111112222
-    111111111112222
-    111111111112222
-    111111111112222
-    111111111112222
-    333333333334444
-    333333333334444
-    333333333334444
-    333333333334444
-  "
-  #p1 <- (hm + ggtitle("City, Probability")) + 
-  #      (city_plot + ggtitle("City, Age-specific death rate")) + 
-  #      (as_plot + ggtitle("Region, Probability")) +
-  test <- (hm + ggtitle("A")) + 
-        (city_plot + ggtitle("B")) + 
-        (as_plot + ggtitle("C")) +
-        guide_area() +
-    plot_layout(guides='collect', design=design)   
-  
-  return(test)
-}
-
-```

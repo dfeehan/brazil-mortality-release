@@ -153,18 +153,22 @@ errs_na <- read_csv(file.path(vradj_national_dir, 'err_diffs_jab.csv'))
 ### Err diffs boot
 
 ```{r}
+scale_1000x <- function(x) { 1000*x }
+
 err_diffs_summ <- bind_rows(errs_cv,
                            errs_rv,
                            errs_nv,
                            errs_ca,
                            errs_ra,
                            errs_na) %>%
+  select(-var_jab) %>%
+  filter(loss %in% c('mare', 'rmse')) %>%
+  filter(metric == 'diff') %>%
   # make RMSE values x 1,000 (like death rates typically are)
-  mutate(value = ifelse(qty == 'asdr' & loss == 'rmse',
-                        value*1000,
-                        value)) %>%
-  pivot_wider(names_from = name,
-              values_from = value)
+  mutate(point_est = ifelse(qty == 'asdr' & loss == 'rmse', scale_1000x(point_est), point_est)) %>%
+  mutate(se_jab = ifelse(qty == 'asdr' & loss == 'rmse', scale_1000x(se_jab), se_jab)) %>%
+  mutate(ci_low = point_est - (se_jab * 1.96),
+         ci_high = point_est + (se_jab * 1.96))
 
 err_diffs_summ
 ```
@@ -218,9 +222,9 @@ make_pr_plot <- function(for_pr_df) {
     ggplot(.) +
     geom_hline(aes(yintercept = 0), color='darkgrey') +
     geom_pointrange(aes(x=geo_name,
-                        y=est_diff,
-                        ymin=est_diff_ci_low,
-                        ymax=est_diff_ci_high,
+                        y=point_est,
+                        ymin=ci_low,
+                        ymax=ci_high,
                         shape = geo_name,
                         linetype = geo_name)) +
     theme_bw() +
@@ -248,7 +252,7 @@ make_pr_plot <- function(for_pr_df) {
              color='red', 
              angle=90) +
     scale_y_continuous(labels = scales::percent_format(),
-                       limits = c(-.45, .45)) +
+                       limits = c(-.5, .5)) +
     scale_linetype_manual(values=scale_linetype_values, guide = "none") +
     scale_shape_manual(values=scale_shape_values, guide = "none") +
     NULL
@@ -259,9 +263,9 @@ make_pr_plot <- function(for_pr_df) {
     ggplot(.) +
     geom_hline(aes(yintercept = 0), color='darkgrey') +
     geom_pointrange(aes(x=geo_name,
-                        y=est_diff,
-                        ymin=est_diff_ci_low,
-                        ymax=est_diff_ci_high,
+                        y=point_est,
+                        ymin=ci_low,
+                        ymax=ci_high,
                         shape = geo_name,
                         linetype=geo_name)) +
     theme_bw() +
@@ -300,9 +304,9 @@ make_pr_plot <- function(for_pr_df) {
     ggplot(.) +
     geom_hline(aes(yintercept = 0), color='darkgrey') +
     geom_pointrange(aes(x=geo_name,
-                        y=est_diff,
-                        ymin=est_diff_ci_low,
-                        ymax=est_diff_ci_high,
+                        y=point_est,
+                        ymin=ci_low,
+                        ymax=ci_high,
                         shape = geo_name,
                         linetype=geo_name)) +
     theme_bw() +
@@ -340,9 +344,9 @@ make_pr_plot <- function(for_pr_df) {
     ggplot(.) +
     geom_hline(aes(yintercept = 0), color='darkgrey') +
     geom_pointrange(aes(x=geo_name,
-                        y=est_diff,
-                        ymin=est_diff_ci_low,
-                        ymax=est_diff_ci_high,
+                        y=point_est,
+                        ymin=ci_low,
+                        ymax=ci_high,
                         shape = geo_name,
                         linetype=geo_name)) +
     theme_bw() +
@@ -380,9 +384,9 @@ make_pr_plot <- function(for_pr_df) {
     ggplot(.) +
     geom_hline(aes(yintercept = 0), color='darkgrey') +
     geom_pointrange(aes(x=geo_name,
-                        y=est_diff,
-                        ymin=est_diff_ci_low,
-                        ymax=est_diff_ci_high,
+                        y=point_est,
+                        ymin=ci_low,
+                        ymax=ci_high,
                         shape = geo_name,
                         linetype=geo_name)) +
     theme_bw() +
@@ -420,9 +424,9 @@ make_pr_plot <- function(for_pr_df) {
     ggplot(.) +
     geom_hline(aes(yintercept = 0), color='darkgrey') +
     geom_pointrange(aes(x=geo_name,
-                        y=est_diff,
-                        ymin=est_diff_ci_low,
-                        ymax=est_diff_ci_high,
+                        y=point_est,
+                        ymin=ci_low,
+                        ymax=ci_high,
                         shape = geo_name,
                         linetype=geo_name)) +
     theme_bw() +
@@ -529,17 +533,19 @@ tmp_mare <- for_pr_plot %>% filter(qty=="Age-specifc\ndeath rates",
                                    loss=="MARE", 
                                    geo_name == "City-level\nestimates")
 
-glue::glue("
-           Average network RMSE: {tmp_rmse$network_err}
-           Average sibling RMSE: {tmp_rmse$sibling_err}
-           On average, network estimates were about {tmp_rmse$diff_nminuss_mean} RMSE units better than sibling estimates.  
-           This difference is {tmp_mare$diff_nminuss_mean} percent using MARE.
-           
-           ")
+#glue::glue("
+#           Average network RMSE: {tmp_rmse$network_err}
+#           Average sibling RMSE: {tmp_rmse$sibling_err}
+#           On average, network estimates were about {tmp_rmse$diff_nminuss_mean} RMSE units better than sibling estimates.  
+#           This difference is {tmp_mare$diff_nminuss_mean} percent using MARE.
+#           
+#           ")
 
 final_err_compare
 ```
 
+
+TODO - LEFT OFF HERE...
 
 Simple barplot with RMSE comparison at city level
 
