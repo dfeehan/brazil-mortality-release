@@ -16,6 +16,31 @@ output:
     df_print: paged
 ---
 
+
+TODO - 20260122 call
+
+* first plot:
+  - average estimates across 27 cities by age/sex, w/ uncertainty intervals from bootstrap
+  - third panel: difference in estimates? or the truth/VR? => maybe the truth?
+
+* big error bar on old male network variance 
+  -> TODO multiply by 1,000 once early on
+  -> negative (normal approx)
+  -> look at specific city estimates
+  -> does BVD hold for JAB estimates?
+  -> how could this be real?
+    - high variance in reported deaths as a fn of PSUs?
+    - ... but we topcode
+  -> DOUBLE CHECK that Efron uses Normal approx for uncertainty intervals based on JAB
+* BIAS plots 
+  -> line at 0 for Net + Sib
+  -> difference: should be |Net Bias| - |Sib Bias|
+  
+* moran's I: does it look the same as before? look at map, etc
+
+
+
+
 This file makes the comparison between the two survey-based estimates
 (sibling and network) and the vital registration data.
 
@@ -2091,6 +2116,239 @@ if(geo_name %in% c('national', 'region')) {
   knitr::knit_exit()
 }
 ```
+
+# NEW PLOTS
+
+### BEGIN DEBUG VAR IN VAR
+
+```{r}
+asdr_properties %>%
+  filter(sex == 'Male', 
+         agegp10 == '[55,65)') %>%
+  ggplot(.) +
+  geom_point(aes(x = geo,
+                 y = se_jab_var_asdr_lopo_Network),
+             color='blue') +
+  geom_point(aes(x = geo,
+                 y = se_jab_var_asdr_lopo_Sibling),
+             color='orange') +
+  xlab("") +
+  ylab("JAB estimate in uncertainty\nfor variance estimate\nMales 55-64") +
+  theme_minimal()
+```
+
+### Look at what's up with TO...
+
+Average estimate from leave-one-PSU-out samples versus the point estimate (directly from survey responses) 
+These line up really well
+
+```{r}
+asdr_properties %>%
+  filter(sex == 'Male', 
+         agegp10 == '[55,65)') %>%
+  ggplot(.) +
+  geom_text(aes(x = point_est_mean_Network,
+                y = mean_jab_mean_asdr_lopo_Network,
+                label = geo)) +
+  geom_abline(intercept=0, slope=1) +
+  tune::coord_obs_pred() +
+  xlab("Point Estimate") +
+  ylab("Average of LOPO point estimates") +
+  theme_minimal()
+```
+
+
+```{r}
+to_ests <- lopo_ests %>%
+  select(-jab_indexes) %>%
+  unnest(cols = c(lopo_ests), names_sep='_') %>%
+  #filter(geo == 'TO')
+  filter(geo == 'DF')
+  #filter(geo == 'RJ')
+
+to_ests %>%
+  filter(lopo_ests_method == 'Network') %>%
+  #filter(lopo_ests_method == 'Sibling') %>%
+  filter(lopo_ests_sex == 'Male', lopo_ests_agegp10 == '[55,65)') %>%
+  ggplot(.,
+         aes(x = 1000*lopo_ests_mean_asdr_lopo)) +
+  #geom_density(color='blue', alpha = .1) +
+  geom_histogram(aes(y = after_stat(density)),
+                 binwidth = .2) +
+  facet_grid(lopo_ests_agegp10 ~ lopo_ests_sex) +
+  xlab("LOPO Estimate for ASDR") +
+  theme_minimal()
+```
+```{r}
+to_ests %>%
+  filter(lopo_ests_method == 'Network') %>%
+  #filter(lopo_ests_method == 'Sibling') %>%
+  filter(lopo_ests_sex == 'Male', lopo_ests_agegp10 == '[55,65)') %>%
+  #filter(lopo_ests_sex == 'Female', lopo_ests_agegp10 == '[55,65)') %>%
+  #filter(lopo_ests_agegp10 == '[55,65)') %>%
+  ggplot(.) +
+  geom_histogram(aes(x = lopo_ests_var_asdr_lopo)) +
+  facet_grid(lopo_ests_agegp10 ~ lopo_ests_sex) +
+  xlab("LOPO Estimate for Var(hat{ASDR})") +
+  theme_minimal()
+```
+
+```{r}
+to_ests %>%
+  filter(lopo_ests_method == 'Network') %>%
+  #filter(lopo_ests_method == 'Sibling') %>%
+  filter(lopo_ests_sex == 'Male', lopo_ests_agegp10 == '[55,65)') %>%
+  #filter(lopo_ests_sex == 'Female', lopo_ests_agegp10 == '[55,65)') %>%
+  #filter(lopo_ests_agegp10 == '[55,65)') %>%
+  ggplot(.) +
+  geom_point(aes(x = lopo_ests_mean_asdr_lopo,
+                 y = lopo_ests_var_asdr_lopo)) +
+  facet_grid(lopo_ests_agegp10 ~ lopo_ests_sex) +
+  xlab("LOPO Estimate for ASDR") +
+  ylab("LOPO Estimate for Var(hat{ASDR})") +
+  theme_minimal()
+```
+
+
+
+Look at bootstrap resamples - how much variation in the actual estimate?
+
+TO -> sibling estimate for males [55,65) is always 0 -> no reported deaths
+
+```{r}
+tmp <-  comp_asdrs_boot %>%
+  filter(agegp10 == '[55,65)', sex == 'Male') %>%
+  filter(method == 'Network')
+  #filter(method == 'Sibling')
+
+tmp %>%
+  ggplot(aes(x = 1000*post_mean_asdr)) +
+  geom_histogram(binwidth=1) +
+  xlim(-1,100) +
+  xlab("Network Estimated ASDR (Bootstrap resamples)") +
+  facet_wrap(~geo) +
+  theme_minimal()
+```
+Recall that the sibling method has no reported deaths for males aged 55-65 (see below)
+
+```{r}
+tmp <-  comp_asdrs_boot %>%
+  filter(agegp10 == '[55,65)', sex == 'Male') %>%
+  filter(method == 'Sibling')
+
+tmp %>%
+  ggplot(aes(x = 1000*post_mean_asdr)) +
+  geom_histogram(binwidth=1) +
+  xlim(-1,100) +
+  xlab("Sibling Estimated ASDR (Bootstrap resamples)") +
+  facet_wrap(~geo) +
+  theme_minimal()
+```
+
+
+... so, the issue is estimates that are exactly 0 
+(presumably because there are few reported deaths and so when bootstrap resamples omit PSUs
+ that have reported deaths, the estimate is 0)
+
+```{r}
+tmp %>%
+  group_by(geo) %>%
+  summarize(num_resamples_zero_estimate = sum(post_mean_asdr == 0))
+```
+
+
+
+
+
+### END DEBUG
+
+```{r}
+asdr_agesex_properties_long <- asdr_agesex_properties %>%
+  pivot_longer(
+    cols = contains(c("_Network", "_Sibling", "_diff")),
+    names_to = c(".value", "method"),
+    names_pattern = "(.*)_(Network|Sibling|diff)$"
+  )
+```
+
+
+## MSE - Network, Sibling, Comparison
+
+This is Fig 3 in our notes
+
+```{r}
+
+method_facet_names <- c('Sibling' = 'Sibling Estimates',
+                        'Network' = 'Network Estimates',
+                        'diff' = 'Difference: Network - Sibling')
+
+loss_plot <- function(cur_qoi_var, 
+                      cur_se_var, 
+                      ylab_text,
+                      df = asdr_agesex_properties_long) {
+  
+  plot_df <- df %>%
+      mutate(cur_qoi = {{cur_qoi_var}},
+             cur_se = {{cur_se_var}})
+
+  fig_netsib <-
+    plot_df %>%
+      filter(method %in% c('Network', 'Sibling')) %>%
+      mutate(method = dplyr::recode(method, !!!method_facet_names)) %>%
+      ggplot(.) +
+      geom_pointrange(aes(x = agegp10,
+                          y = cur_qoi,
+                          ymax = cur_qoi + (1.96*cur_se),
+                          ymin = cur_qoi - (1.96*cur_se),
+                          color = sex
+                          ),
+                          position = position_dodge(width=0.4)
+                      ) +
+      facet_grid(~ method) +
+      xlab("") +
+      ylab(ylab_text) +
+      theme_minimal()
+  
+  fig_diff <-
+    plot_df %>%
+      filter(method %in% c('diff')) %>%
+      mutate(method = dplyr::recode(method, !!!method_facet_names)) %>%
+      ggplot(.) +
+      geom_hline(yintercept = 0, color = 'grey') +
+      geom_pointrange(aes(x = agegp10,
+                          y = cur_qoi,
+                          ymax = cur_qoi + (1.96*cur_se),
+                          ymin = cur_qoi - (1.96*cur_se),
+                          color = sex
+                          ),
+                          position = position_dodge(width=0.4)
+                      ) +
+      facet_grid(~ method) +
+      xlab("") +
+      ylab("") +
+      theme_minimal()
+  
+  fig_all <- fig_netsib + fig_diff +
+             plot_layout(widths = c(2,1),
+                         guides = 'collect')
+  return(fig_all)
+
+}
+
+fig_mse <- loss_plot(point_est_rmse, se_jab_rmse_asdr_lopo, 'Estimated RMSE')
+fig_mse
+```
+
+```{r}
+fig_var <- loss_plot(point_est_var, se_jab_var_asdr_lopo, 'Estimated variance')
+fig_var
+```
+
+```{r}
+fig_bias <- loss_plot(point_est_bias, se_jab_bias_asdr_lopo, 'Estimated bias')
+fig_bias
+```
+
 
 # Maps / Geography
 
