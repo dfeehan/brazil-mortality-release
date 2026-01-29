@@ -1,0 +1,309 @@
+---
+title: "TEMP - figure out what's up with TO"
+output: html_notebook
+---
+
+
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+```{r load-packages}
+library(networkreporting)
+library(tidyverse)
+library(here)
+library(future)
+library(furrr)
+library(progressr)
+library(tictoc)
+```
+
+
+```{r setup-directories}
+data_dir <- here('data')
+survey_data_dir <- file.path(data_dir, 'survey')
+out_dir <- here('out')
+```
+
+# Load the data
+
+```{r load-data}
+# load individual data
+ego.dat <- read_csv(file.path(survey_data_dir, "individual.csv"))
+
+# load network death data
+nr.deaths.dat <- read_csv(file.path(survey_data_dir, "network_reports.csv"))
+
+# load bootstrap weights
+#boot.weights <- read_csv(file.path(survey_data_dir, "bootstrap_weights_jab1k.csv.gz"))
+#boot.weights <- read_csv(file.path(survey_data_dir, "bootstrap_weights_1k.csv"))
+#boot.weights <- read_csv(file.path(survey_data_dir, "bootstrap_weights_10k.csv.gz"))
+
+boot.weights <- readRDS(file.path(survey_data_dir, "bootstrap_weights_10k.rds"))
+
+#boot.weights <- read_csv(file.path(survey_data_dir, "bootstrap_weights_jab10k.csv.gz"))
+#boot.weights <- readRDS(file.path(survey_data_dir, "bootstrap_weights_jab10k.rds"))
+
+#boot.weights <- read_csv(file.path(survey_data_dir, "bootstrap_weights_5k.csv.gz"))
+#boot.weights <- readRDS(file.path(survey_data_dir, "bootstrap_weights_5k.rds"))
+
+# load frame population sizes
+state.dat <- read_csv(file.path(data_dir, "cities.csv"))
+
+all.states <- state.dat %>% pull(state_abbrev)
+```
+
+For this analysis, we'll only use reported deaths between the ages of 18 and 65.
+We'll filter out people under 18. However, it's a little easier to run the code if we
+keep reported deaths who are over 65 for the time being.
+
+```{r drop-unused-deaths}
+nr.deaths.dat <- nr.deaths.dat %>%
+  filter(agegp10 != '[0,18)')
+```
+
+
+It will be convenient to have a list w/ dataset for each state. We'll do this for
+the ego data, the network reports, the known population sizes, and the bootstrap resamples
+
+```{r make-city-data-lists}
+# ego data
+state.svy <- setNames(map(all.states,
+                              function(state) {
+                                res <- ego.dat %>% filter(state_abbrev==state)
+                                return(res)
+                              }),
+                      all.states)
+
+# detailed reports about deaths
+state.alter.deaths.dat <- setNames(map(all.states,
+                                       function(state) {
+                                         res <- nr.deaths.dat %>% filter(state_abbrev==state)
+                                         return(res)
+                                       }),
+                                   all.states)
+
+# total size of the known populations in each state
+state.kp.tot <- setNames(map(all.states,
+                             ~ state.dat %>% 
+                               filter(state_abbrev==.x) %>% 
+                               pull(total_kp_size)),
+                             all.states)
+
+# bootstrap weights
+state.bootweights <- setNames(map(all.states,
+                               function(state) {
+                                 
+                                 res <- boot.weights %>% 
+                                   filter(state_abbrev==state) %>% 
+                                   select(-state_abbrev)
+                                 
+                                 return(res)
+                               }),
+                               all.states)
+```
+
+
+```{r read-cc-data}
+survey_data_dir <- file.path(data_dir, 'survey')
+
+cc_file <- "bootstrap_cc_jab10k.rds"
+  
+boot.cc <- readRDS(file.path(survey_data_dir, cc_file))
+```
+
+## Calculate network survival estimates from bootstrap resamples
+
+NB: 1000 bootstrap reps takes about 75 minutes on a 2020 Macbook Pro
+
+NB: 10000 bootstrap reps takes about 49 hours on a 2023 Macbook Pro with 6 cores and 30gb memory allocated via docker
+
+NOTE: this code produces some warnings that look like 
+"Bootstrapped degree estimates have 9 out of 14000 values missing. These have been removed in the summary statistics"
+These warnings come from older ages, which we don't use in this analysis.
+
+THIS IS ADAPTED FROM THE NETWORK ESTIMATES FILE
+IT TOOK ABOUT 6.15 hours (22161 seconds) to run for just TO
+
+```{r network-survival-estimates-bootstrap}
+state <- 'TO'
+
+tic("TEMP - current state")
+cur.dat <- state.svy[[state]]
+cur.deaths.dat <- state.alter.deaths.dat[[state]]
+cur.bw <- state.bootweights[[state]] 
+# TEMP debug
+#cur.bw <- cur.bw[1, c(1, 2000:3000)]
+# colnames(cur.bw)[-1] <- paste0("boot_weight_", 1:(ncol(cur.bw)-1))
+cur.kp.tot <- state.kp.tot[[state]]
+
+cur.ns <- network.survival.estimator_(resp.data = cur.dat,
+                                 attribute.data = cur.deaths.dat,
+                                 attribute.names = c('sex', 'agegp10'),
+                                 known.populations = 'num_connections_to_kp',
+                                 total.kp.size = cur.kp.tot,   
+                                 weights = 'weight',
+                                 attribute.weights = 'ego.weight',
+                                 boot.weights=cur.bw,
+                                 within.alter.weights='w.factor.alter',
+                                 ego.id=c('id'='ego.id'), 
+                                 dropmiss=TRUE,
+                                 return.boot=TRUE,
+                                 verbose=FALSE)$boot.estimates
+cur.ns$state_abbrev <- state
+toc()
+      
+```
+
+```{r}
+write_csv(cur.ns, 'to_ests_tmp_debug.csv')
+```
+
+
+
+NB: boot index 2333 is the one with the extreme asdr estimate
+
+```{r}
+cur.ns %>%
+  filter(sex == 'male', agegp10 == '[55,65)') %>%
+  select(asdr.hat, boot_idx, everything()) %>%
+  arrange(-asdr.hat)
+```
+
+
+Look at actual components of estimator
+
+( y(F,D_\alpha) /  y(F_\alpha, \mathcal{A} ) x ( N_{\mathcal{A}} / N_{F} ) 
+
+two things vary w/ bootstrap reps:
+
+- y(F, D_\alpha) => y.F.Dcell.hat
+- y(F_\alpha, \mathcal{A}) => y.Fcell.kp.hat
+
+so it's
+
+( y.F.Dcell.hat / y.Fcell.kp.hat) * K 
+
+
+Look at the distribution of numerators and denominators
+
+
+```{r}
+cur.ns %>%
+  filter(sex == 'male', agegp10 == '[55,65)') %>%
+  ggplot(.) +
+  geom_histogram(aes(x=y.Fcell.kp.hat)) +
+  xlab("Num. Reported Connections to KP (in denom.)") +
+  theme_minimal()
+```
+
+```{r}
+cur.ns %>%
+  filter(sex == 'male', agegp10 == '[55,65)') %>%
+  ggplot(.) +
+  geom_histogram(aes(x=y.F.Dcell.hat)) +
+  xlab("Num. reported cnxns to deaths (in num.)") +
+  theme_minimal()
+```
+
+```{r}
+cur.ns %>%
+  filter(sex == 'male', agegp10 == '[55,65)') %>%
+  #mutate(highlight = ifelse(boot_idx == 2333, 'red', 'black')) %>%
+  mutate(highlight = ifelse(asdr.hat > .14, 'red', 'black')) %>%
+  ggplot(aes(y=y.F.Dcell.hat,
+             x=y.Fcell.kp.hat)) +
+  geom_point(aes(color = highlight),
+             alpha = 0.3) +
+  geom_density_2d() +
+  ylab("Estimated total deaths in cell") +
+  xlab("Estimated total connections to KP from people in cell") +
+  scale_color_identity() +
+  theme_minimal()
+```
+
+So, the high estimates are driven by low reported KP connections and not by high deaths;
+when y.Fcell.kp.hat is small, we get the extremely high ASDR estimate
+
+Look at the estimates in descending order of hat(asdr); the highest asdr estimates have 
+* N.Fcell.hat of 300, 600, ...
+* y.Fcell.kp.hat of 9400, 8140, ...
+
+```{r}
+cur.ns %>%
+  ungroup() %>% 
+  filter(sex == 'male', agegp10 == '[55,65)') %>%
+  arrange(-asdr.hat) %>%
+  mutate(chk = (y.F.Dcell.hat * total.kp.size) / (y.Fcell.kp.hat * N.F.hat)) %>%
+  select(chk, asdr.hat, everything())
+```
+
+OK, so I think we understand that the high variance in ASDR estimates comes from a few resamples where the total connections to KP from older males is low
+
+TODO - want to be able to connect this to PSUs / Jackknife after bootstrap ...
+
+```{r}
+# get the brazil project directories for this computer 
+source(path.expand(file.path("~", "brazil-directories", "directories.r")))
+set.dirs()       
+
+## set the seed to make results replicable
+set.seed(101010101)
+
+
+## maps the survey ids to anonymized hashes
+id_map <- read_csv(file.path('/home/rstudio/brazil-group/data', "id_hashes.csv"))
+id_to_cb_map <- read_csv(file.path('/home/rstudio/brazil-group/data', "cb_map.csv"))
+
+```
+
+Join PSU info on...
+
+```{r}
+cur.dat.withpsu <- cur.dat %>% 
+  left_join(id_map) %>%
+  mutate(release_id = id) %>%
+  mutate(id = paste(raw_id)) %>%
+  left_join(id_to_cb_map %>% mutate(id = paste(id)))
+```
+
+TODO - LEFT OFF HERE
+
+- I want to get num / denom contribution from each PSU
+- I think the PSUs with no old men are being dropped somehow; there should be ~100 PSUs,
+  but I'm only getting ~ 13, I think
+- maybe what is happening is that some boot resamples have very few of these PSUs with any old men?
+
+```{r}
+tmp <- cur.dat.withpsu %>%
+  filter(state_abbrev == 'TO') %>%
+  group_by(cb_code, agegp10, sex, .drop=FALSE) %>%
+  #summarize(tot_kp = sum(num_connections_to_kp, na.rm=TRUE)) %>%
+  #mutate(tot_kp = ifelse(is.na(tot_kp), 0, tot_kp))
+```
+
+```{r}
+tmp %>%
+  filter(agegp10 == '[55,65)', sex == 'male') %>%
+  arrange(tot_kp)
+```
+
+
+```{r}
+ggplot(tmp) +
+  geom_histogram(aes(x=tot_kp), binwidth = 1) +
+  xlab("Total connections reported to KP among people in cell") +
+  ylab("Count of PSUs") +
+  theme_minimal()
+```
+
+
+
+
+
+
+
+
+

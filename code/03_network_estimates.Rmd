@@ -147,6 +147,18 @@ write_csv(nr_wrw,
 nr_wrw
 ```
 
+#### TEMP
+
+let's look at the distribution of number of deaths and of number KP known
+
+```{r}
+
+```
+
+
+
+#### END TEMP
+
 ## Calculate network survival estimates from bootstrap resamples
 
 ```{r}
@@ -186,6 +198,7 @@ NOTE: this code produces some warnings that look like
 "Bootstrapped degree estimates have 9 out of 14000 values missing. These have been removed in the summary statistics"
 These warnings come from older ages, which we don't use in this analysis.
 
+
 ```{r network-survival-estimates-bootstrap}
 tic('network survival estimates (with bootstrap)')
 if(parallel) {
@@ -203,6 +216,8 @@ with_progress({
       cur.dat <- state.svy[[state]]
       cur.deaths.dat <- state.alter.deaths.dat[[state]]
       cur.bw <- state.bootweights[[state]] 
+      # TEMP debug
+      #cur.bw <- cur.bw[1, c(1, 2000:3000)]
       cur.kp.tot <- state.kp.tot[[state]]
       
       cur.ns <- network.survival.estimator_(resp.data = cur.dat,

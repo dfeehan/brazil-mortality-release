@@ -143,6 +143,23 @@ region_pal <- tribble(~ region, ~ color,
 age_scale_color <- scale_color_viridis(discrete=TRUE, direction=-1)
 ```
 
+Helper function to scale ASDR estimates so that they are per 1,000
+
+```{r}
+scale_asdrs <- function(x) {
+  
+  cols_to_scale <- c('post_mean_asdr',
+                     'post_sd_asdr',
+                     'post_ci_low_asdr',
+                     'post_ci_high_asdr',
+                     'asdr')
+  
+  x %>%
+    mutate(across(any_of(cols_to_scale), ~ .x ))
+}
+```
+
+
 # Open up the estimates
 
 Load vital registration reference estimates
@@ -214,6 +231,9 @@ if(comparison_name == 'vr_comparison') {
     
   }
 }
+
+gs_asdrs <- gs_asdrs %>%
+  scale_asdrs()
 ```
 
 Load sibling estimates
@@ -294,6 +314,11 @@ if(geo_name == 'city') {
     mutate(geo = 'national')
   
 }
+
+sib_asdrs <-
+  sib_asdrs %>% scale_asdrs()
+sib_asdrs_boot <-
+  sib_asdrs_boot %>% scale_asdrs()
 ```
 
 Load network estimates
@@ -363,6 +388,11 @@ if(geo_name == 'city') {
     rename(q.47.18 = q.47.18.mean)
   
 }
+
+net_asdrs <- net_asdrs %>%
+  scale_asdrs()
+net_asdrs_boot <- net_asdrs_boot %>%
+  scale_asdrs()
 ```
 
 Load estimated VR completeness
@@ -384,6 +414,7 @@ city.dat <- read_csv(file.path(data_dir, "cities.csv"))
 
 
 ## Assemble the different results in one place
+
 
 ```{r}
 est_asdrs <- bind_rows(sib_asdrs,
@@ -500,12 +531,14 @@ MSE on natural scale
 ```{r}
 calc_errors <- function(df, ci = TRUE) {
   res <- df %>%
-    mutate(delta = 1000*(post_mean_asdr - gs_asdr),
+    # now we're doing the scaling above...
+    #mutate(delta = 1000*(post_mean_asdr - gs_asdr),
+    mutate(delta = (post_mean_asdr - gs_asdr),
            delta2 = delta*delta,
            ## NB: delta_rel is the absolute relative error
            ##     and delta_rel_notabs is the relative error w/out taking absolute value
-           delta_rel = abs(delta)/(1000*gs_asdr),
-           delta_rel_notabs = delta/(1000*gs_asdr))
+           delta_rel = abs(delta)/(gs_asdr),
+           delta_rel_notabs = delta/(gs_asdr))
   if(ci) {
     res <- res %>%
       mutate(ci_covered = as.numeric(gs_asdr >= post_ci_low_asdr & gs_asdr <= post_ci_high_asdr))
@@ -1803,8 +1836,8 @@ rmse_geo_diff <- asdr_geo_properties %>%
 ```
 
 ```{r}
-biggestdiff <- max(c(1000*rmse_geo_diff$est_rmse_diff_ci_low,
-                     1000*rmse_geo_diff$est_rmse_diff_ci_high))
+biggestdiff <- max(c(rmse_geo_diff$est_rmse_diff_ci_low,
+                     rmse_geo_diff$est_rmse_diff_ci_high))
 
 if(geo_name == 'city') {
   annscale <- .8
@@ -1823,9 +1856,9 @@ diff_rmse_geo_plot <- rmse_geo_diff %>%
                            est_rmse_diff)) %>%
   ggplot(.) +
   geom_pointrange(aes(x = geo,
-                      y = 1000*est_rmse_diff,
-                      ymin = 1000*est_rmse_diff_ci_low,
-                      ymax = 1000*est_rmse_diff_ci_high)) +
+                      y = est_rmse_diff,
+                      ymin = est_rmse_diff_ci_low,
+                      ymax = est_rmse_diff_ci_high)) +
   geom_hline(yintercept=0) +
   xlab("") +
   ylab("Estimated RMSE Difference (x 1,000)\nNetwork RMSE - Sibling RMSE") +
@@ -1871,8 +1904,8 @@ rmse_age_diff <- asdr_agesex_properties %>%
 ```
 
 ```{r}
-biggestdiff <- max(c(1000*rmse_age_diff$est_rmse_diff_ci_low,
-                     1000*rmse_age_diff$est_rmse_diff_ci_high))
+biggestdiff <- max(c(rmse_age_diff$est_rmse_diff_ci_low,
+                     rmse_age_diff$est_rmse_diff_ci_high))
 
 if(geo_name == 'city') {
   annscale <- .8
@@ -1889,9 +1922,9 @@ diff_rmse_age_plot <- rmse_age_diff %>%
   ungroup() %>%
   ggplot(.) +
   geom_pointrange(aes(x = agegp10,
-                      y = 1000*est_rmse_diff,
-                      ymin = 1000*est_rmse_diff_ci_low,
-                      ymax = 1000*est_rmse_diff_ci_high,
+                      y = est_rmse_diff,
+                      ymin = est_rmse_diff_ci_low,
+                      ymax = est_rmse_diff_ci_high,
                       color=sex),
                   position=position_dodge(width=.2)) +
   geom_hline(yintercept=0) +
@@ -1941,17 +1974,17 @@ rmse_tot_diff <- asdr_tot_properties %>%
 ```
 
 ```{r}
-biggestdiff <- max(abs(c(1000*rmse_tot_diff$est_rmse_diff_ci_low, 
-                     1000*rmse_tot_diff$est_rmse_diff_ci_high)))
+biggestdiff <- max(abs(c(rmse_tot_diff$est_rmse_diff_ci_low, 
+                     rmse_tot_diff$est_rmse_diff_ci_high)))
 
 annscale <- .5
 
 diff_rmse_tot_plot <- rmse_tot_diff %>%
   ggplot(.) +
   geom_pointrange(aes(x = 'Average Overall RMSE Difference',
-                      y = 1000*est_rmse_diff,
-                      ymin = 1000*est_rmse_diff_ci_low,
-                      ymax = 1000*est_rmse_diff_ci_high)) +
+                      y = est_rmse_diff,
+                      ymin = est_rmse_diff_ci_low,
+                      ymax = est_rmse_diff_ci_high)) +
   geom_hline(yintercept=0) +
   xlab("") +
   ylab("Estimated RMSE Difference (x 1,000)\nNetwork RMSE - Sibling RMSE") +
@@ -2162,8 +2195,8 @@ asdr_properties %>%
 to_ests <- lopo_ests %>%
   select(-jab_indexes) %>%
   unnest(cols = c(lopo_ests), names_sep='_') %>%
-  #filter(geo == 'TO')
-  filter(geo == 'DF')
+  filter(geo == 'TO')
+  #filter(geo == 'DF')
   #filter(geo == 'RJ')
 
 to_ests %>%
@@ -2171,7 +2204,7 @@ to_ests %>%
   #filter(lopo_ests_method == 'Sibling') %>%
   filter(lopo_ests_sex == 'Male', lopo_ests_agegp10 == '[55,65)') %>%
   ggplot(.,
-         aes(x = 1000*lopo_ests_mean_asdr_lopo)) +
+         aes(x = lopo_ests_mean_asdr_lopo)) +
   #geom_density(color='blue', alpha = .1) +
   geom_histogram(aes(y = after_stat(density)),
                  binwidth = .2) +
@@ -2194,15 +2227,26 @@ to_ests %>%
 ```
 
 ```{r}
-to_ests %>%
+tmpplotdf <- lopo_ests %>%
+  select(-jab_indexes) %>%
+  unnest(cols = c(lopo_ests), names_sep='_') %>%
+  filter(geo == 'TO') %>%
+  #filter(geo == 'DF') %>%
   filter(lopo_ests_method == 'Network') %>%
   #filter(lopo_ests_method == 'Sibling') %>%
-  filter(lopo_ests_sex == 'Male', lopo_ests_agegp10 == '[55,65)') %>%
+  filter(lopo_ests_sex == 'Male', lopo_ests_agegp10 == '[55,65)')
   #filter(lopo_ests_sex == 'Female', lopo_ests_agegp10 == '[55,65)') %>%
   #filter(lopo_ests_agegp10 == '[55,65)') %>%
+
+tmpplotdf %>%
   ggplot(.) +
   geom_point(aes(x = lopo_ests_mean_asdr_lopo,
                  y = lopo_ests_var_asdr_lopo)) +
+  geom_text_repel(aes(x = lopo_ests_mean_asdr_lopo,
+                      y = lopo_ests_var_asdr_lopo,
+                      label = cb_code),
+                  data = . %>% slice_max(lopo_ests_mean_asdr_lopo, n=2) 
+                  ) +
   facet_grid(lopo_ests_agegp10 ~ lopo_ests_sex) +
   xlab("LOPO Estimate for ASDR") +
   ylab("LOPO Estimate for Var(hat{ASDR})") +
@@ -2222,13 +2266,81 @@ tmp <-  comp_asdrs_boot %>%
   #filter(method == 'Sibling')
 
 tmp %>%
-  ggplot(aes(x = 1000*post_mean_asdr)) +
+  ggplot(aes(x = post_mean_asdr)) +
   geom_histogram(binwidth=1) +
   xlim(-1,100) +
   xlab("Network Estimated ASDR (Bootstrap resamples)") +
   facet_wrap(~geo) +
   theme_minimal()
 ```
+Look at tails of just TO estimates
+
+
+```{r}
+tmp <-  comp_asdrs_boot %>%
+  filter(agegp10 == '[55,65)', sex == 'Male') %>%
+  filter(geo == 'TO') %>%
+  #filter(geo == 'DF') %>%
+  filter(method == 'Network')
+  #filter(method == 'Sibling')
+
+tmp %>%
+  ggplot(aes(x = post_mean_asdr)) +
+  geom_histogram(binwidth=1) +
+  xlab("Network Estimated ASDR (Bootstrap resamples)") +
+  facet_wrap(~geo) +
+  theme_minimal()
+```
+
+```{r}
+tmp <-  comp_asdrs_boot %>%
+  filter(agegp10 == '[55,65)', sex == 'Male') %>%
+  group_by(geo) %>%
+  group_walk(function(dfgeo, gp, ...) {
+    print(glue::glue("{gp}"))
+    print(summary(dfgeo$post_mean_asdr))
+  })
+```
+
+which specific bootstrap rep has TO estimate at > 600?
+=> boot rep idx 2333
+
+```{r}
+tmp <-  comp_asdrs_boot %>%
+  filter(agegp10 == '[55,65)', sex == 'Male') %>%
+  filter(geo == 'TO') %>%
+  filter(post_mean_asdr > 600)
+tmp
+```
+
+
+LEFT OFF:
+
+- I think the idea is that the actual variation in ASDR estimates (from bootstrap, above) has some outliers
+- still don't quite understand why this translates to big uncertainty only in this case
+- note that there are a very small number of very big estimates in bootstrap distn:
+
+> tmp2[order(-tmp2)]
+   [1] 657.93396 380.90553 226.28366 164.54684 161.82671 159.81479 143.49099 137.90082 128.77061 119.29531 107.35993 106.69539 106.34063 100.85421  98.20156  97.58916
+  
+TODO NEXT
+- maybe look at bootstrap resamples w/ three highest estimates and see if there's a single PSU responsible; then, JAB estimates based on that PSU might be wonky?  
+- also look at plot above that compares LOPO ASDR ests and LOPO VAR(ASDR) ests; what is the deal with the weird outlier?
+
+TODO - go and look at variation in 'how many deaths' for TO...
+
+```{r}
+tmp <-  comp_asdrs_boot %>%
+  filter(agegp10 == '[55,65)', sex == 'Male') %>%
+  filter(method == 'Network') %>%
+  group_by(geo) %>%
+  summarize(var = var(post_mean_asdr))
+
+tmp
+```
+
+
+
 Recall that the sibling method has no reported deaths for males aged 55-65 (see below)
 
 ```{r}
@@ -2237,7 +2349,7 @@ tmp <-  comp_asdrs_boot %>%
   filter(method == 'Sibling')
 
 tmp %>%
-  ggplot(aes(x = 1000*post_mean_asdr)) +
+  ggplot(aes(x = post_mean_asdr)) +
   geom_histogram(binwidth=1) +
   xlim(-1,100) +
   xlab("Sibling Estimated ASDR (Bootstrap resamples)") +
@@ -2342,6 +2454,11 @@ fig_mse
 ```{r}
 fig_var <- loss_plot(point_est_var, se_jab_var_asdr_lopo, 'Estimated variance')
 fig_var
+```
+
+```{r}
+fig_se <- loss_plot(point_est_se, se_jab_se_asdr_lopo, 'Estimated se')
+fig_se
 ```
 
 ```{r}
@@ -2646,7 +2763,7 @@ br_hexgrid_map <- function(qoivar,
     # we don't need diffs, just Network and Sibling
     filter(method != 'diff') %>%
     # and rmse should be multiplied by 1000 so it's comparable to death rates
-    mutate(point_est_rmse = 1000 * point_est_rmse) %>%
+    #mutate(point_est_rmse = 1000 * point_est_rmse) %>%
     # the rest here is unchanged...
     group_by(sex, method, agegp10) %>%
     group_modify(function(cur_df, key) {
@@ -2820,7 +2937,7 @@ TODO LEFT OFF HERE
 ```{r}
 foo <- asdr_properties_point_estimates %>%
   select(geo, method, chk_value = est_rmse) %>%
-  mutate(chk_value = 1000*chk_value) %>%
+  mutate(chk_value = chk_value) %>%
   group_by(geo) %>%
   summarize(chk_value = mean(chk_value))
 ```
@@ -2845,7 +2962,8 @@ old_moran_df <-
 
 new_df <- 
   asdr_geo_properties_long %>%
-  mutate(value = 1000*point_est_rmse)
+  #mutate(value = 1000*point_est_rmse)
+  mutate(value = point_est_rmse)
 
 tmp <- old_moran_df %>%
   rename_with(~ paste0('prev_', .x), value) %>%
@@ -2871,7 +2989,8 @@ Calculate Moran's I for MSE values
 mse_moran_I <- 
   # NEW
   asdr_geo_properties_long %>%
-  mutate(value = 1000*point_est_mse) %>% 
+  #mutate(value = 1000*point_est_mse) %>% 
+  mutate(value = point_est_mse) %>% 
   # END NEW
   # OLD
   #comp_asdrs_bygeoas_wide %>%
@@ -2908,7 +3027,7 @@ Calculate Moran's I for MSE values by age/sex group
 ```{r}
 mse_as_moran_I <- 
   asdr_properties_long %>%
-  mutate(value = point_est_rmse*1000) %>%
+  mutate(value = point_est_rmse) %>%
   ## OLD
   #comp_asdrs_bygeoas_wide %>%
   #rename(diff = 'n.minus.s') %>%
