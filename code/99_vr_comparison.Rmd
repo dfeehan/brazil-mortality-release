@@ -1236,21 +1236,25 @@ These get calculated for each method/city/age/sex
 asdr_properties_point_estimates <- comp_asdrs_boot %>%
   group_by(geo, sex, agegp10, method) %>%
   summarize( est_bias = mean(post_mean_asdr) - gs_asdr[1],
+             est_absbias = mean(abs(post_mean_asdr - gs_asdr[1])),
              est_mse = mean( (post_mean_asdr - gs_asdr[1])^2 ),
              est_mare = mean( abs(post_mean_asdr - gs_asdr[1])/gs_asdr[1]),
              est_var = fp.var(post_mean_asdr),
              est_mean = mean(post_mean_asdr)) %>%
-  mutate(est_rmse = sqrt(est_mse)) %>%
+  mutate(est_rmse = sqrt(est_mse),
+         est_se = sqrt(est_var)) %>%
   mutate(qty = 'asdr')
 
 prob_properties_point_estimates <- comp_probs_boot %>%
   group_by(geo, sex, method) %>%
   summarize( est_bias = mean(post_mean_q) - gs_prob[1],
+             est_absbias = mean(abs(post_mean_q - gs_prob[1])),
              est_mse = mean( (post_mean_q - gs_prob[1])^2 ),
              est_mare = mean( abs(post_mean_q - gs_prob[1])/gs_prob[1]),
              est_var = fp.var(post_mean_q),
              est_mean = mean(post_mean_q)) %>%
-  mutate(est_rmse = sqrt(est_mse)) %>%
+  mutate(est_rmse = sqrt(est_mse),
+         est_se = sqrt(est_var)) %>%
   mutate(qty = 'prob')
 ```
 
@@ -1359,10 +1363,12 @@ lopo_ests <- jab_df %>%
                                     var_asdr_lopo = fp.var(post_mean_asdr),
                                     mean_asdr_lopo = mean(post_mean_asdr),
                                     bias_asdr_lopo = mean(post_mean_asdr - gs_asdr),
+                                    absbias_asdr_lopo = mean(abs(post_mean_asdr - gs_asdr)),
                                     mse_asdr_lopo = mean((post_mean_asdr - gs_asdr)^2),
                                     mare_asdr_lopo = mean( abs(post_mean_asdr - gs_asdr) / gs_asdr),
                                     .groups = "drop") %>%
-                          mutate(rmse_asdr_lopo = sqrt(mse_asdr_lopo))
+                          mutate(rmse_asdr_lopo = sqrt(mse_asdr_lopo),
+                                 se_asdr_lopo = sqrt(var_asdr_lopo))
                         
                         return(cur_res)
                        
@@ -1390,10 +1396,12 @@ lopo_prob_ests <- jab_df %>%
                                     var_prob_lopo = fp.var(post_mean_q),
                                     mean_prob_lopo = mean(post_mean_q),
                                     bias_prob_lopo = mean(post_mean_q - gs_prob),
+                                    absbias_prob_lopo = mean(abs(post_mean_q - gs_prob)),                                    
                                     mse_prob_lopo = mean((post_mean_q - gs_prob)^2),
                                     mare_prob_lopo = mean( abs(post_mean_q - gs_prob) / gs_prob),
                                     .groups = "drop") %>%
-                          mutate(rmse_prob_lopo = sqrt(mse_prob_lopo))
+                          mutate(rmse_prob_lopo = sqrt(mse_prob_lopo),
+                                 se_prob_lopo = sqrt(var_prob_lopo))
                           
                         return(cur_res)
                        
@@ -1413,9 +1421,7 @@ lopo_ests_wide <- lopo_ests %>%
   select(-geo) %>%
   unnest(lopo_ests) %>%
   pivot_wider(names_from = 'method',
-              values_from = c('rmse_asdr_lopo', 'mare_asdr_lopo',
-                              'mse_asdr_lopo', 'bias_asdr_lopo',
-                              'mean_asdr_lopo', 'var_asdr_lopo'),
+              values_from = matches('asdr_lopo'),
               id_cols=c('cb_code', 'geo', 'agegp10', 'sex')) %>%
   pivot_longer(cols = contains('_lopo_'),
                names_to = c('metric', 'method'),
@@ -1458,6 +1464,9 @@ lopo_prob_ests_wide <- lopo_prob_ests %>%
 Use jackknife after bootstrap to estimate the properties of estimated death rate for each city/age/sex/method
 
 ```{r jab-estimates}
+
+all_metrics_re <- "^absbias_|^se_|^mare_|^mse_|^rmse_|^bias_|^var_"
+
 jab_asdr_ests <- lopo_ests_wide %>%
   #select(-jab_indexes) %>%
   # geo is stored in lopo_ests, and we don't want to duplicate it
@@ -1468,7 +1477,7 @@ jab_asdr_ests <- lopo_ests_wide %>%
             across(matches("^mean"),
                    mean,
                    .names = "mean_jab_{.col}"),
-            across(matches("^mare_|^mse_|^rmse_|^bias_|^var_"),
+            across(matches(all_metrics_re),
                    jack.var,
                    .names = "var_jab_{.col}")) %>%
   ungroup() %>%
@@ -1520,7 +1529,8 @@ jab_prob_ests <- lopo_prob_ests_wide %>%
             across(matches("^mean"),
                    mean,
                    .names = "mean_jab_{.col}"),
-            across(matches("^mare_|^mse_|^rmse_|^bias_|^var_"),
+            #across(matches("^se_|^mare_|^mse_|^rmse_|^bias_|^var_"),
+            across(matches(all_metrics_re),
                    jack.var,
                    .names = "var_jab_{.col}")) %>%
   mutate(across(
@@ -1551,13 +1561,19 @@ prob_properties <- prob_properties_point_estimates %>%
 
 #### ASDRs
 
+TODO - LEFT OFF HERE: adapting this and below to se
+(should also do abs bias)
+
 ```{r}
 jab_geo_asdr_ests <- lopo_ests_wide %>%
   # aggregate LOPO estimates across age/sex groups within this city and PSU
   group_by(geo, cb_code) %>%
   summarize(# number of age/sex groups aggregated over (for debugging) 
             n_agesex_gps = n(),
-            across(matches("^mare|^mean|^mse_|^rmse_|^bias_|^var_"),
+            # NB: all_metrics_re is defined above
+            # TODO - could this be matches("point_") instead? would be simpler
+            #        same thought for line below
+            across(matches(all_metrics_re),
                    mean,
                    # don't change the name of each column...
                    .names = "{.col}")) %>%
@@ -1567,7 +1583,8 @@ jab_geo_asdr_ests <- lopo_ests_wide %>%
             across(matches("^mean"),
                    mean,
                    .names = "mean_jab_{.col}"),
-            across(matches("^mare_|^mse_|^rmse_|^bias_|^var_"),
+            # NB: all_metrics_re is defined above
+            across(matches(all_metrics_re),
                    jack.var,
                    .names = "var_jab_{.col}")) %>%
   
@@ -1616,7 +1633,8 @@ jab_geo_prob_ests <- lopo_prob_ests_wide %>%
   group_by(geo, cb_code) %>%
   summarize(# number of age/sex groups aggregated over (for debugging) 
             n_agesex_gps = n(),
-            across(matches("^mean|^mare_|^mse_|^rmse_|^bias_|^var_"),
+            #across(matches("^mean|^mare_|^mse_|^rmse_|^bias_|^var_"),
+            across(matches(all_metrics_re),
                    mean,
                    # don't change the name of each column...
                    .names = "{.col}")) %>%
@@ -1626,7 +1644,8 @@ jab_geo_prob_ests <- lopo_prob_ests_wide %>%
             across(matches("^mean"),
                    mean,
                    .names = "mean_jab_{.col}"),
-            across(matches("^mare_|^mse_|^rmse_|^bias_|^var_"),
+            #across(matches("^mare_|^mse_|^rmse_|^bias_|^var_"),
+            across(matches(all_metrics_re),
                    jack.var,
                    .names = "var_jab_{.col}")) %>%
   mutate(across(
@@ -1678,10 +1697,13 @@ if (geo_name == 'city') {
 } else if (geo_name == 'national') {
   NUM_GEO_UNITS <- 1
 }
+```
+
+
+```{r}
   #summarize(across(starts_with('var'), 
   #                 ~ ((1/NUM_GEO_UNITS)^2)*sum(.x) ,
   #                 .names = "{.col}")) %>%
-    
 jab_agesex_asdr_ests <- jab_asdr_ests %>%
   group_by(agegp10, sex) %>%
   # sum variances across geo to get aggregate variance estimate
@@ -1723,6 +1745,79 @@ asdr_agesex_properties <- asdr_properties_point_estimates %>%
   left_join(jab_agesex_asdr_ests) 
   # TODO - ADD SE?
 ```
+
+#### TEMP - W/OUT TO
+
+
+```{r}
+NUM_GEO_UNITS_NOTO <- 26
+
+  #summarize(across(starts_with('var'), 
+  #                 ~ ((1/NUM_GEO_UNITS)^2)*sum(.x) ,
+  #                 .names = "{.col}")) %>%
+jab_agesex_asdr_ests_noTO <- jab_asdr_ests %>%
+  filter(geo != 'TO') %>%
+  group_by(agegp10, sex) %>%
+  # sum variances across geo to get aggregate variance estimate
+  # (and note we need to multiply by 1/C^2)
+  summarize(across(matches("^mean_"),
+                           mean,
+                           .names = "{.col}"),
+            across(matches("^var_"),
+                   ~ ((1/NUM_GEO_UNITS_NOTO)^2)*sum(.x) ,
+                   .names = "{.col}")) %>%
+  mutate(across(
+    matches("^var_jab"),
+    sqrt,
+    .names = "{str_replace(.col, 'var_jab', 'se_jab')}")) %>%
+  mutate(qty = 'asdr')
+```
+
+
+```{r}
+asdr_agesex_properties_noTO <- asdr_properties_point_estimates %>%
+  filter(geo != 'TO') %>%
+  rename_with(~ paste0('point_', .x),
+              starts_with('est_')) %>%
+  # aggregate up to age/sex level (by averaging across cities)
+  group_by(agegp10, sex, method) %>%
+  summarize(across(matches('point_'),
+                   mean,
+                   .names='{.col}')) %>%
+  pivot_wider(names_from='method',
+              values_from=starts_with('point_')) %>%
+  pivot_longer(cols = contains('point_est'),
+               names_to = c('metric', 'method'),
+               names_pattern = "(.*)_(Network|Sibling)") %>%
+  pivot_wider(names_from = method,
+              values_from = value) %>%
+  mutate(diff = Network - Sibling) %>%
+  pivot_wider(names_from = metric,
+              values_from = c(Network, Sibling, diff),
+              names_glue = "{metric}_{.value}") %>%
+  left_join(jab_agesex_asdr_ests_noTO) 
+  # TODO - ADD SE?
+```
+
+
+```{r}
+asdr_agesex_properties_long_noTO <- asdr_agesex_properties_noTO %>%
+  pivot_longer(
+    cols = contains(c("_Network", "_Sibling", "_diff")),
+    names_to = c(".value", "method"),
+    names_pattern = "(.*)_(Network|Sibling|diff)$"
+  )
+```
+
+```{r}
+fig_var_noTO <- loss_plot(point_est_var, se_jab_var_asdr_lopo, 
+                     'Estimated variance (omitting TO)',
+                     df=asdr_agesex_properties_long_noTO)
+fig_var_noTO
+```
+
+
+#### END TEMP - W/OUT TO
 
 #### NB: Probs not applicable 
 
@@ -2058,7 +2153,7 @@ asdr_tot_properties_tosave <-
       TRUE ~ NA_character_
     ),
     # Extract the loss function (the common property)
-    loss = str_extract(full_name, "(rmse|mare|mse|bias|var|mean)(?=_asdr|_Network|_Sibling|_diff|$)")
+    loss = str_extract(full_name, "(se|rmse|mare|mse|absbias|bias|var|mean)(?=_asdr|_Network|_Sibling|_diff|$)")
   ) %>%
   # 3. Clean up: remove rows that didn't match (like the '1' column)
   filter(!is.na(metric), !is.na(loss)) %>%
@@ -2069,7 +2164,7 @@ asdr_tot_properties_tosave <-
     values_from = value
   ) %>%
   filter(loss != 'mean') %>%
-  select(-mean_jab) %>%
+  #select(-mean_jab) %>%
   mutate(geo_name = params$geo_name,
          comparison_name = params$comparison_name) %>%
   select(qty, metric, loss, geo_name, comparison_name, everything())
@@ -2105,7 +2200,7 @@ prob_tot_properties_tosave <-
       TRUE ~ NA_character_
     ),
     # Extract the loss function (the common property)
-    loss = str_extract(full_name, "(rmse|mare|mse|bias|var|mean)(?=_prob|_Network|_Sibling|_diff|$)")
+    loss = str_extract(full_name, "(se|rmse|mare|mse|absbias|bias|var|mean)(?=_prob|_Network|_Sibling|_diff|$)")
   ) %>%
   # 3. Clean up: remove rows that didn't match (like the '1' column)
   filter(!is.na(metric), !is.na(loss)) %>%
@@ -2116,7 +2211,7 @@ prob_tot_properties_tosave <-
     values_from = value
   ) %>%
   filter(loss != 'mean') %>%
-  select(-mean_jab) %>%
+  #select(-mean_jab) %>%
   mutate(geo_name = params$geo_name,
          comparison_name = params$comparison_name) %>%
   select(qty, metric, loss, geo_name, comparison_name, everything())
@@ -2226,12 +2321,15 @@ to_ests %>%
   theme_minimal()
 ```
 
+plot for all 27 cities, scales fixed + free
+
 ```{r}
 tmpplotdf <- lopo_ests %>%
   select(-jab_indexes) %>%
   unnest(cols = c(lopo_ests), names_sep='_') %>%
   filter(geo == 'TO') %>%
   #filter(geo == 'DF') %>%
+  #filter(geo == 'SP') %>%
   filter(lopo_ests_method == 'Network') %>%
   #filter(lopo_ests_method == 'Sibling') %>%
   filter(lopo_ests_sex == 'Male', lopo_ests_agegp10 == '[55,65)')
@@ -2251,6 +2349,10 @@ tmpplotdf %>%
   xlab("LOPO Estimate for ASDR") +
   ylab("LOPO Estimate for Var(hat{ASDR})") +
   theme_minimal()
+
+# these are the TO outliers for old men
+# '0e1df638'
+# 'a464aeb3'
 ```
 
 
@@ -2268,9 +2370,9 @@ tmp <-  comp_asdrs_boot %>%
 tmp %>%
   ggplot(aes(x = post_mean_asdr)) +
   geom_histogram(binwidth=1) +
-  xlim(-1,100) +
+#  xlim(-1,100) +
   xlab("Network Estimated ASDR (Bootstrap resamples)") +
-  facet_wrap(~geo) +
+  facet_wrap(~geo, scales='free') +
   theme_minimal()
 ```
 Look at tails of just TO estimates
@@ -2295,12 +2397,25 @@ tmp %>%
 ```{r}
 tmp <-  comp_asdrs_boot %>%
   filter(agegp10 == '[55,65)', sex == 'Male') %>%
+  filter(method=='Network') %>%
   group_by(geo) %>%
   group_walk(function(dfgeo, gp, ...) {
     print(glue::glue("{gp}"))
     print(summary(dfgeo$post_mean_asdr))
   })
 ```
+
+```{r}
+tmp <-  comp_asdrs_boot %>%
+  filter(agegp10 == '[55,65)', sex == 'Male') %>%
+  filter(method=='Sibling') %>%
+  group_by(geo) %>%
+  group_walk(function(dfgeo, gp, ...) {
+    print(glue::glue("{gp}"))
+    print(summary(dfgeo$post_mean_asdr))
+  })
+```
+
 
 which specific bootstrap rep has TO estimate at > 600?
 => boot rep idx 2333
@@ -2393,15 +2508,35 @@ This is Fig 3 in our notes
 method_facet_names <- c('Sibling' = 'Sibling Estimates',
                         'Network' = 'Network Estimates',
                         'diff' = 'Difference: Network - Sibling')
+method_facet_names_bias <- c('Sibling' = 'Sibling Estimates',
+                             'Network' = 'Network Estimates',
+                             'diff' = 'Diff. in Abs. Bias: Network - Sibling')
 
 loss_plot <- function(cur_qoi_var, 
                       cur_se_var, 
                       ylab_text,
-                      df = asdr_agesex_properties_long) {
+                      df = asdr_agesex_properties_long,
+                      # if is_bias, then we'll look at the difference in the 
+                      # absolute value of the biases, not the difference in the biases;
+                      # we'll also put a horizontal line at y=0
+                      is_bias = FALSE) {
+  
+  qoi_name <- as_label(enquo(cur_qoi_var))
+  se_name  <- as_label(enquo(cur_se_var))
   
   plot_df <- df %>%
       mutate(cur_qoi = {{cur_qoi_var}},
              cur_se = {{cur_se_var}})
+  
+  if(is_bias) {
+    
+    diffqoi_name <- str_replace(qoi_name, 'bias', 'absbias')
+    diffse_name <- str_replace(se_name, 'bias', 'absbias')
+    
+    plot_df <- plot_df %>%
+      mutate(diff_qoi = .data[[diffqoi_name]],
+             diff_se = .data[[diffse_name]])
+  }
 
   fig_netsib <-
     plot_df %>%
@@ -2421,24 +2556,57 @@ loss_plot <- function(cur_qoi_var,
       ylab(ylab_text) +
       theme_minimal()
   
-  fig_diff <-
-    plot_df %>%
-      filter(method %in% c('diff')) %>%
-      mutate(method = dplyr::recode(method, !!!method_facet_names)) %>%
-      ggplot(.) +
-      geom_hline(yintercept = 0, color = 'grey') +
-      geom_pointrange(aes(x = agegp10,
-                          y = cur_qoi,
-                          ymax = cur_qoi + (1.96*cur_se),
-                          ymin = cur_qoi - (1.96*cur_se),
-                          color = sex
-                          ),
-                          position = position_dodge(width=0.4)
-                      ) +
-      facet_grid(~ method) +
-      xlab("") +
-      ylab("") +
-      theme_minimal()
+  if(! is_bias) {
+    # not bias
+    fig_diff <-
+     plot_df %>%
+       filter(method %in% c('diff')) %>%
+       mutate(method = dplyr::recode(method, !!!method_facet_names)) %>%
+       ggplot(.) +
+       geom_hline(yintercept = 0, color = 'grey') +
+       geom_pointrange(aes(x = agegp10,
+                           y = cur_qoi,
+                           ymax = cur_qoi + (1.96*cur_se),
+                           ymin = cur_qoi - (1.96*cur_se),
+                           color = sex
+                           ),
+                           position = position_dodge(width=0.4)
+                       ) +
+       facet_grid(~ method) +
+       xlab("") +
+       ylab("") +
+       theme_minimal()
+    
+  } else {
+    # this is bias
+    # ... so, we want a horizontal line at 0 in the method-specific panels
+    # and we want to compare the difference in the absolute values of the bias
+    
+    fig_netsib <-
+      fig_netsib + 
+        geom_hline(aes(yintercept = 0),
+                   color='grey')
+      
+    fig_diff <-
+     plot_df %>%
+       filter(method %in% c('diff')) %>%
+       mutate(method = dplyr::recode(method, !!!method_facet_names_bias)) %>%
+       ggplot(.) +
+       geom_hline(yintercept = 0, color = 'grey') +
+       geom_pointrange(aes(x = agegp10,
+                           #y = cur_qoi,
+                           y = diff_qoi,
+                           ymax = diff_qoi + (1.96*diff_se),
+                           ymin = diff_qoi - (1.96*diff_se),
+                           color = sex
+                           ),
+                           position = position_dodge(width=0.4)
+                       ) +
+       facet_grid(~ method) +
+       xlab("") +
+       ylab("") +
+       theme_minimal()
+  }
   
   fig_all <- fig_netsib + fig_diff +
              plot_layout(widths = c(2,1),
@@ -2446,7 +2614,9 @@ loss_plot <- function(cur_qoi_var,
   return(fig_all)
 
 }
+```
 
+```{r}
 fig_mse <- loss_plot(point_est_rmse, se_jab_rmse_asdr_lopo, 'Estimated RMSE')
 fig_mse
 ```
@@ -2462,7 +2632,7 @@ fig_se
 ```
 
 ```{r}
-fig_bias <- loss_plot(point_est_bias, se_jab_bias_asdr_lopo, 'Estimated bias')
+fig_bias <- loss_plot(point_est_bias, se_jab_bias_asdr_lopo, 'Estimated bias', is_bias = TRUE)
 fig_bias
 ```
 

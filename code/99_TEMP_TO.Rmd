@@ -105,6 +105,44 @@ state.bootweights <- setNames(map(all.states,
                                all.states)
 ```
 
+get sample sizes
+
+```{r}
+resp_dist_plot <- ego.dat %>% 
+  filter(! agegp10 %in% c('[65,75)', '[75,Inf]')) %>%
+  ggplot(aes(x=agegp10, fill=sex)) +
+  geom_bar(position='dodge') +
+  xlab("") + ylab("Number of Respondents") +
+  facet_wrap(~state_abbrev) +
+  theme_minimal()
+
+ggsave(plot=resp_dist_plot, 
+       filename=glue::glue("DEBUG_TO/to_debug_resp_counts.png"), width = 15, height = 12)
+
+resp_dist_plot
+```
+```{r}
+resp_cell_dist_plot <- ego.dat %>% 
+  filter(agegp10 %in% c('[55,65)'),
+         sex == 'male') %>%
+  mutate(state_abbrev = fct_infreq(state_abbrev)) %>%
+  ggplot(aes(x=state_abbrev)) +
+  geom_bar(position='dodge') +
+  xlab("") + ylab("Number of Male Respondents [55,65)") +
+  theme_minimal()
+
+ggsave(plot=resp_cell_dist_plot, 
+       filename=glue::glue("DEBUG_TO/to_debug_cell_resp_counts.png"), width = 10, height = 7)
+
+resp_cell_dist_plot
+```
+
+```{r}
+# save a .csv of the TO data
+write_csv(state.svy[['TO']],
+          file = glue::glue("DEBUG_TO/to_debug_survey_responses.csv"))
+```
+
 
 ```{r read-cc-data}
 survey_data_dir <- file.path(data_dir, 'survey')
@@ -158,7 +196,7 @@ toc()
 ```
 
 ```{r}
-write_csv(cur.ns, 'to_ests_tmp_debug.csv')
+write_csv(cur.ns, 'DEBUG_TO/to_ests_tmp_debug.csv')
 ```
 
 
@@ -267,6 +305,8 @@ cur.dat.withpsu <- cur.dat %>%
   mutate(release_id = id) %>%
   mutate(id = paste(raw_id)) %>%
   left_join(id_to_cb_map %>% mutate(id = paste(id)))
+
+write_csv(cur.dat.withpsu, '../to_ests_tmp_withcb.csv')
 ```
 
 TODO - LEFT OFF HERE
@@ -277,27 +317,208 @@ TODO - LEFT OFF HERE
 - maybe what is happening is that some boot resamples have very few of these PSUs with any old men?
 
 ```{r}
-tmp <- cur.dat.withpsu %>%
+psu_summ <- 
+  cur.dat.withpsu %>%
+    filter(state_abbrev == 'TO') %>%
+    filter(! is.na(num_connections_to_kp)) %>%
+    mutate(is_in_cell = as.numeric(sex == 'male' & agegp10 == '[55,65)')) %>%
+    group_by(cb_code,.drop=FALSE) %>%
+    summarize(tot_n = sum(is_in_cell),
+              tot_wgt = sum(weight),
+              tot_connections_to_kp = sum(is_in_cell*num_connections_to_kp),
+              wgt_connections_to_kp = sum(is_in_cell*weight * num_connections_to_kp))
+
+psu_summ
+```
+
+ALSO - let's visualize which PSUs are / are not included in each bootstrap resample
+
+```{r}
+boot.cc.to.long <- boot.cc %>% 
   filter(state_abbrev == 'TO') %>%
-  group_by(cb_code, agegp10, sex, .drop=FALSE) %>%
-  #summarize(tot_kp = sum(num_connections_to_kp, na.rm=TRUE)) %>%
-  #mutate(tot_kp = ifelse(is.na(tot_kp), 0, tot_kp))
+  select(-state_abbrev, -geo) %>%
+  ## TRANSPOSE so that boot reps are rows and PSUs are columns
+  pivot_longer(cols = -1) %>%               # Stack all columns except the first one
+  pivot_wider(names_from = 1,               # Use the first column's values as new headers
+              values_from = value,
+              names_prefix = 'cb_') %>%
+  mutate(boot_idx = parse_number(name)) %>%
+  select(-name) %>%
+  ## join on the ASDR estimate for each bootstrap resample 
+  left_join(cur.ns %>%
+            ungroup() %>% 
+            filter(sex == 'male', agegp10 == '[55,65)') %>%
+            select(boot_idx, asdr.hat) ) %>%
+  select(boot_idx, asdr.hat, everything())
+
+```
+
+
+```{r}
+#min_idx <- 2300
+#max_idx <- 2400
+
+slice_size <- 200
+
+#asdr_factor <- 1
+#fnabbrev <- 'lowest'
+#cluster <- FALSE
+
+asdr_factor <- -1
+fnabbrev <- 'highest'
+cluster <- TRUE
+
+name <- glue::glue("{fnabbrev} ASDR estimates")
+
+# 1. Extract the matrix of just the cb_ columns
+mat <- boot.cc.to %>%
+  # TRYING THIS
+  arrange(asdr_factor*asdr.hat) %>%
+  #slice(min_idx:max_idx) %>%
+  slice(1:slice_size) %>%
+  select(starts_with("cb_")) %>%
+  as.matrix()
+
+# 2. Run a simple clustering algorithm on columns
+if(cluster) {
+cluster_cols <- hclust(dist(t(mat))) 
+ordered_col_names <- cluster_cols$labels[cluster_cols$order]
+}
+
+# 3. Use that order for the plot
+for_plot <- boot.cc.to %>%
+  #slice(min_idx:max_idx) %>%
+  arrange(asdr_factor*asdr.hat) %>%
+  slice(1:slice_size) %>%
+  arrange(asdr.hat) %>%
+  mutate(boot_idx = factor(boot_idx, levels = boot_idx)) %>%
+  select(boot_idx, all_of(ordered_col_names)) %>% # Select in clustered order
+  pivot_longer(cols = -boot_idx, names_to = "cell_id", values_to = "value") %>%
+  mutate(cell_id = factor(cell_id, levels = ordered_col_names))
+
+hm <- for_plot %>%
+  ggplot(., aes(x = cell_id, y = boot_idx, fill = value)) +
+  geom_tile() +
+  coord_fixed() +
+  scale_fill_viridis_c() +                   # Nice color blind friendly palette
+  theme_minimal() +
+  theme(
+    #axis.text.x = element_blank(),           # Hide X labels (too many of them)
+    axis.ticks.x = element_blank(),
+    axis.text.x = element_text(angle=90, size=3),           # Hide X labels (too many of them)
+    axis.text.y = element_text(size=3),
+    panel.grid = element_blank()
+  ) +
+  labs(
+    title = glue::glue("Heatmap of Bootstrap Reps {slice_size} {name}"),
+    #x = "Columns (cb_...)",
+    y = "Bootstrap Index"
+  )  
+
+ggsave(plot=hm, 
+       filename=glue::glue("DEBUG_TO/to_debug_psu_heatmap_{fnabbrev}_asdr.png"), width = 15, height = 15)
+
+hm
+```
+
+
+
+
+```{r}
+cb_chk <- '0e1df638'
+
+psu_summ %>%
+  filter(cb_code == cb_chk)
+```
+Out of 101 total PSUs, 88 of them don't have any interviews w/ older men
+
+```{r}
+psu_summ %>%
+  filter(tot_n == 0)
+```
+
+
+Let's also look at reported deaths in the cell by PSU...
+
+```{r}
+nr.deaths.cell.to.withpsu <-
+  nr.deaths.dat %>%
+  filter(state_abbrev == 'TO') %>%
+  filter(sex == 'male',
+         agegp10 == '[55,65)') %>%
+  left_join(cur.dat.withpsu %>% select(ego.id = release_id, cb_code))
 ```
 
 ```{r}
-tmp %>%
-  filter(agegp10 == '[55,65)', sex == 'male') %>%
-  arrange(tot_kp)
+psu_summ_all <- psu_summ %>%
+  left_join(
+    nr.deaths.cell.to %>%
+      group_by(cb_code) %>%
+      summarize(tot_rep_deaths = n(),
+                wgt_rep_deaths = sum(ego.weight*w.factor.alter))
+  ) %>%
+  mutate(tot_rep_deaths = ifelse(is.na(tot_rep_deaths), 0, tot_rep_deaths),
+         wgt_rep_deaths = ifelse(is.na(wgt_rep_deaths), 0, wgt_rep_deaths))
 ```
-
 
 ```{r}
-ggplot(tmp) +
-  geom_histogram(aes(x=tot_kp), binwidth = 1) +
-  xlab("Total connections reported to KP among people in cell") +
-  ylab("Count of PSUs") +
-  theme_minimal()
+library(tidyverse)
+
+# 1. Prepare the summary data
+# We use the 'ordered_col_names' vector from the Clustering step 
+# or the 'col_order' vector from the Column Sums step.
+psu_counts <- psu_summ_all %>%
+  mutate(cb_code = paste0('cb_', cb_code)) %>%
+  # Filter to only include codes present in your heatmap/ordered list
+  filter(cb_code %in% ordered_col_names) %>% 
+  # Lock the order to match the heatmap
+  mutate(cb_code = factor(cb_code, levels = ordered_col_names)) %>%
+  # Pivot the two variables so they can be distinguished by color
+  pivot_longer(
+    cols = c(tot_connections_to_kp, 
+             tot_rep_deaths, 
+             tot_wgt),
+    names_to = "metric",
+    values_to = "count"
+  )
+
+# 2. Create the plot
+psu_counts_plot <- ggplot(psu_counts, 
+                          aes(x = cb_code, 
+                              y = count, 
+                              color = metric, 
+                              shape = metric,
+                              group = metric)) +
+  geom_point(size = 2) +              # Points help see individual PSU values
+  theme_minimal() +
+  theme(
+    #axis.text.x = element_blank(),     # Hide labels to match heatmap style
+    axis.ticks.x = element_blank(),
+    axis.text.x = element_text(angle=90, size=5),           # Hide X labels (too many of them)
+    panel.grid.minor = element_blank(),
+    legend.position = "bottom"
+  ) +
+  scale_color_brewer(palette = "Set1", labels = c("Connections to KP", "Rep. Deaths", "Tot. Weight")) +
+  scale_shape(labels = c("Connections to KP", "Rep. Deaths", "Tot. Weight")) +
+  labs(
+    x = "",
+    y = "Count",
+    color = "Variable", shape = 'Variable'
+  ) +
+  facet_grid(metric ~ ., scales='free_y')
+
+ggsave(plot=psu_counts_plot, 
+       filename=glue::glue("DEBUG_TO/to_debug_psu_psu_counts.png"), width = 15, height = 10)
+  
+psu_counts_plot
 ```
+
+```{r}
+
+hm / psu_counts_plot + plot_layout(heights = c(15, 1))
+
+```
+
 
 
 
