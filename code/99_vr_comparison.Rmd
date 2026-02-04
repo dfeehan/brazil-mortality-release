@@ -137,7 +137,7 @@ scale_asdrs <- function(x) {
                      'asdr')
   
   x %>%
-    mutate(across(any_of(cols_to_scale), ~ .x ))
+    mutate(across(any_of(cols_to_scale), ~ .x * 1000 ))
 }
 ```
 
@@ -1543,9 +1543,6 @@ prob_properties <- prob_properties_point_estimates %>%
 
 #### ASDRs
 
-TODO - LEFT OFF HERE: adapting this and below to se
-(should also do abs bias)
-
 ```{r}
 jab_geo_asdr_ests <- lopo_ests_wide %>%
   # aggregate LOPO estimates across age/sex groups within this city and PSU
@@ -1728,79 +1725,6 @@ asdr_agesex_properties <- asdr_properties_point_estimates %>%
   # TODO - ADD SE?
 ```
 
-#### TEMP - W/OUT TO
-
-
-```{r}
-NUM_GEO_UNITS_NOTO <- 26
-
-  #summarize(across(starts_with('var'), 
-  #                 ~ ((1/NUM_GEO_UNITS)^2)*sum(.x) ,
-  #                 .names = "{.col}")) %>%
-jab_agesex_asdr_ests_noTO <- jab_asdr_ests %>%
-  filter(geo != 'TO') %>%
-  group_by(agegp10, sex) %>%
-  # sum variances across geo to get aggregate variance estimate
-  # (and note we need to multiply by 1/C^2)
-  summarize(across(matches("^mean_"),
-                           mean,
-                           .names = "{.col}"),
-            across(matches("^var_"),
-                   ~ ((1/NUM_GEO_UNITS_NOTO)^2)*sum(.x) ,
-                   .names = "{.col}")) %>%
-  mutate(across(
-    matches("^var_jab"),
-    sqrt,
-    .names = "{str_replace(.col, 'var_jab', 'se_jab')}")) %>%
-  mutate(qty = 'asdr')
-```
-
-
-```{r}
-asdr_agesex_properties_noTO <- asdr_properties_point_estimates %>%
-  filter(geo != 'TO') %>%
-  rename_with(~ paste0('point_', .x),
-              starts_with('est_')) %>%
-  # aggregate up to age/sex level (by averaging across cities)
-  group_by(agegp10, sex, method) %>%
-  summarize(across(matches('point_'),
-                   mean,
-                   .names='{.col}')) %>%
-  pivot_wider(names_from='method',
-              values_from=starts_with('point_')) %>%
-  pivot_longer(cols = contains('point_est'),
-               names_to = c('metric', 'method'),
-               names_pattern = "(.*)_(Network|Sibling)") %>%
-  pivot_wider(names_from = method,
-              values_from = value) %>%
-  mutate(diff = Network - Sibling) %>%
-  pivot_wider(names_from = metric,
-              values_from = c(Network, Sibling, diff),
-              names_glue = "{metric}_{.value}") %>%
-  left_join(jab_agesex_asdr_ests_noTO) 
-  # TODO - ADD SE?
-```
-
-
-```{r}
-asdr_agesex_properties_long_noTO <- asdr_agesex_properties_noTO %>%
-  pivot_longer(
-    cols = contains(c("_Network", "_Sibling", "_diff")),
-    names_to = c(".value", "method"),
-    names_pattern = "(.*)_(Network|Sibling|diff)$"
-  )
-```
-
-```{r}
-fig_var_noTO <- loss_plot(point_est_var, se_jab_var_asdr_lopo, 
-                     'Estimated variance (omitting TO)',
-                     df=asdr_agesex_properties_long_noTO)
-fig_var_noTO
-```
-
-
-#### END TEMP - W/OUT TO
-
 #### NB: Probs not applicable 
 
 N/A
@@ -1848,7 +1772,6 @@ asdr_tot_properties <- asdr_properties_point_estimates %>%
               values_from = c(Network, Sibling, diff),
               names_glue = "{metric}_{.value}") %>%
   bind_cols(jab_tot_asdr_ests)
-  # TODO - ADD SE?
 ```
 
 
@@ -2229,247 +2152,6 @@ if(geo_name %in% c('national', 'region')) {
 
 # NEW PLOTS
 
-### BEGIN DEBUG VAR IN VAR
-
-```{r}
-asdr_properties %>%
-  filter(sex == 'Male', 
-         agegp10 == '[55,65)') %>%
-  ggplot(.) +
-  geom_point(aes(x = geo,
-                 y = se_jab_var_asdr_lopo_Network),
-             color='blue') +
-  geom_point(aes(x = geo,
-                 y = se_jab_var_asdr_lopo_Sibling),
-             color='orange') +
-  xlab("") +
-  ylab("JAB estimate in uncertainty\nfor variance estimate\nMales 55-64") +
-  theme_minimal()
-```
-
-### Look at what's up with TO...
-
-Average estimate from leave-one-PSU-out samples versus the point estimate (directly from survey responses) 
-These line up really well
-
-```{r}
-asdr_properties %>%
-  filter(sex == 'Male', 
-         agegp10 == '[55,65)') %>%
-  ggplot(.) +
-  geom_text(aes(x = point_est_mean_Network,
-                y = mean_jab_mean_asdr_lopo_Network,
-                label = geo)) +
-  geom_abline(intercept=0, slope=1) +
-  tune::coord_obs_pred() +
-  xlab("Point Estimate") +
-  ylab("Average of LOPO point estimates") +
-  theme_minimal()
-```
-
-
-```{r}
-to_ests <- lopo_ests %>%
-  select(-jab_indexes) %>%
-  unnest(cols = c(lopo_ests), names_sep='_') %>%
-  filter(geo == 'TO')
-  #filter(geo == 'DF')
-  #filter(geo == 'RJ')
-
-to_ests %>%
-  filter(lopo_ests_method == 'Network') %>%
-  #filter(lopo_ests_method == 'Sibling') %>%
-  filter(lopo_ests_sex == 'Male', lopo_ests_agegp10 == '[55,65)') %>%
-  ggplot(.,
-         aes(x = lopo_ests_mean_asdr_lopo)) +
-  #geom_density(color='blue', alpha = .1) +
-  geom_histogram(aes(y = after_stat(density)),
-                 binwidth = .2) +
-  facet_grid(lopo_ests_agegp10 ~ lopo_ests_sex) +
-  xlab("LOPO Estimate for ASDR") +
-  theme_minimal()
-```
-```{r}
-to_ests %>%
-  filter(lopo_ests_method == 'Network') %>%
-  #filter(lopo_ests_method == 'Sibling') %>%
-  filter(lopo_ests_sex == 'Male', lopo_ests_agegp10 == '[55,65)') %>%
-  #filter(lopo_ests_sex == 'Female', lopo_ests_agegp10 == '[55,65)') %>%
-  #filter(lopo_ests_agegp10 == '[55,65)') %>%
-  ggplot(.) +
-  geom_histogram(aes(x = lopo_ests_var_asdr_lopo)) +
-  facet_grid(lopo_ests_agegp10 ~ lopo_ests_sex) +
-  xlab("LOPO Estimate for Var(hat{ASDR})") +
-  theme_minimal()
-```
-
-plot for all 27 cities, scales fixed + free
-
-```{r}
-tmpplotdf <- lopo_ests %>%
-  select(-jab_indexes) %>%
-  unnest(cols = c(lopo_ests), names_sep='_') %>%
-  filter(geo == 'TO') %>%
-  #filter(geo == 'DF') %>%
-  #filter(geo == 'SP') %>%
-  filter(lopo_ests_method == 'Network') %>%
-  #filter(lopo_ests_method == 'Sibling') %>%
-  filter(lopo_ests_sex == 'Male', lopo_ests_agegp10 == '[55,65)')
-  #filter(lopo_ests_sex == 'Female', lopo_ests_agegp10 == '[55,65)') %>%
-  #filter(lopo_ests_agegp10 == '[55,65)') %>%
-
-tmpplotdf %>%
-  ggplot(.) +
-  geom_point(aes(x = lopo_ests_mean_asdr_lopo,
-                 y = lopo_ests_var_asdr_lopo)) +
-  geom_text_repel(aes(x = lopo_ests_mean_asdr_lopo,
-                      y = lopo_ests_var_asdr_lopo,
-                      label = cb_code),
-                  data = . %>% slice_max(lopo_ests_mean_asdr_lopo, n=2) 
-                  ) +
-  facet_grid(lopo_ests_agegp10 ~ lopo_ests_sex) +
-  xlab("LOPO Estimate for ASDR") +
-  ylab("LOPO Estimate for Var(hat{ASDR})") +
-  theme_minimal()
-
-# these are the TO outliers for old men
-# '0e1df638'
-# 'a464aeb3'
-```
-
-
-
-Look at bootstrap resamples - how much variation in the actual estimate?
-
-TO -> sibling estimate for males [55,65) is always 0 -> no reported deaths
-
-```{r}
-tmp <-  comp_asdrs_boot %>%
-  filter(agegp10 == '[55,65)', sex == 'Male') %>%
-  filter(method == 'Network')
-  #filter(method == 'Sibling')
-
-tmp %>%
-  ggplot(aes(x = post_mean_asdr)) +
-  geom_histogram(binwidth=1) +
-#  xlim(-1,100) +
-  xlab("Network Estimated ASDR (Bootstrap resamples)") +
-  facet_wrap(~geo, scales='free') +
-  theme_minimal()
-```
-Look at tails of just TO estimates
-
-
-```{r}
-tmp <-  comp_asdrs_boot %>%
-  filter(agegp10 == '[55,65)', sex == 'Male') %>%
-  filter(geo == 'TO') %>%
-  #filter(geo == 'DF') %>%
-  filter(method == 'Network')
-  #filter(method == 'Sibling')
-
-tmp %>%
-  ggplot(aes(x = post_mean_asdr)) +
-  geom_histogram(binwidth=1) +
-  xlab("Network Estimated ASDR (Bootstrap resamples)") +
-  facet_wrap(~geo) +
-  theme_minimal()
-```
-
-```{r}
-tmp <-  comp_asdrs_boot %>%
-  filter(agegp10 == '[55,65)', sex == 'Male') %>%
-  filter(method=='Network') %>%
-  group_by(geo) %>%
-  group_walk(function(dfgeo, gp, ...) {
-    print(glue::glue("{gp}"))
-    print(summary(dfgeo$post_mean_asdr))
-  })
-```
-
-```{r}
-tmp <-  comp_asdrs_boot %>%
-  filter(agegp10 == '[55,65)', sex == 'Male') %>%
-  filter(method=='Sibling') %>%
-  group_by(geo) %>%
-  group_walk(function(dfgeo, gp, ...) {
-    print(glue::glue("{gp}"))
-    print(summary(dfgeo$post_mean_asdr))
-  })
-```
-
-
-which specific bootstrap rep has TO estimate at > 600?
-=> boot rep idx 2333
-
-```{r}
-tmp <-  comp_asdrs_boot %>%
-  filter(agegp10 == '[55,65)', sex == 'Male') %>%
-  filter(geo == 'TO') %>%
-  filter(post_mean_asdr > 600)
-tmp
-```
-
-
-LEFT OFF:
-
-- I think the idea is that the actual variation in ASDR estimates (from bootstrap, above) has some outliers
-- still don't quite understand why this translates to big uncertainty only in this case
-- note that there are a very small number of very big estimates in bootstrap distn:
-
-> tmp2[order(-tmp2)]
-   [1] 657.93396 380.90553 226.28366 164.54684 161.82671 159.81479 143.49099 137.90082 128.77061 119.29531 107.35993 106.69539 106.34063 100.85421  98.20156  97.58916
-  
-TODO NEXT
-- maybe look at bootstrap resamples w/ three highest estimates and see if there's a single PSU responsible; then, JAB estimates based on that PSU might be wonky?  
-- also look at plot above that compares LOPO ASDR ests and LOPO VAR(ASDR) ests; what is the deal with the weird outlier?
-
-TODO - go and look at variation in 'how many deaths' for TO...
-
-```{r}
-tmp <-  comp_asdrs_boot %>%
-  filter(agegp10 == '[55,65)', sex == 'Male') %>%
-  filter(method == 'Network') %>%
-  group_by(geo) %>%
-  summarize(var = var(post_mean_asdr))
-
-tmp
-```
-
-
-
-Recall that the sibling method has no reported deaths for males aged 55-65 (see below)
-
-```{r}
-tmp <-  comp_asdrs_boot %>%
-  filter(agegp10 == '[55,65)', sex == 'Male') %>%
-  filter(method == 'Sibling')
-
-tmp %>%
-  ggplot(aes(x = post_mean_asdr)) +
-  geom_histogram(binwidth=1) +
-  xlim(-1,100) +
-  xlab("Sibling Estimated ASDR (Bootstrap resamples)") +
-  facet_wrap(~geo) +
-  theme_minimal()
-```
-
-
-... so, the issue is estimates that are exactly 0 
-(presumably because there are few reported deaths and so when bootstrap resamples omit PSUs
- that have reported deaths, the estimate is 0)
-
-```{r}
-tmp %>%
-  group_by(geo) %>%
-  summarize(num_resamples_zero_estimate = sum(post_mean_asdr == 0))
-```
-
-
-
-
-
-### END DEBUG
 
 ```{r}
 asdr_agesex_properties_long <- asdr_agesex_properties %>%
@@ -2481,145 +2163,304 @@ asdr_agesex_properties_long <- asdr_agesex_properties %>%
 ```
 
 
+## Average death rate estimate + VR value
+
+```{r}
+
+method_facet_names <- c('Sibling' = 'Sibling Method',
+                        'Network' = 'Network Method',
+                        'diff' = 'Network - Sibling')
+method_facet_names_bias <- c('Sibling' = 'Sibling Estimates',
+                             'Network' = 'Network Estimates',
+                             'diff' = 'Diff. in Abs. Bias: Network - Sibling')
+
+# comp_asdrs_wide_boot
+# comp_asdrs_boot
+
+xaxistext <- 
+  theme(axis.text.x = element_text(size = 6),
+        legend.title = element_blank()) 
+
+fig_netsib_asdr <-
+  comp_asdrs_boot %>%
+    filter(method %in% c('Network', 'Sibling')) %>%
+    mutate(method = dplyr::recode(method, !!!method_facet_names)) %>%
+    group_by(method, agegp10, sex, boot_idx) %>%
+    mutate(mean_est_asdr = mean(post_mean_asdr)) %>%
+    group_by(method, agegp10, sex) %>%
+    summarize( cur_qoi = mean(mean_est_asdr), 
+               cur_ci_low = quantile(mean_est_asdr, .025),
+               cur_ci_high = quantile(mean_est_asdr, .975)) %>%
+    ggplot(.) +
+    geom_pointrange(aes(x = agegp10,
+                        y = cur_qoi,
+                        ymax = cur_ci_low,
+                        ymin = cur_ci_high,
+                        color = sex
+                        ),
+                        position = position_dodge(width=0.4)
+                    ) +
+    facet_grid(~ method) +
+    xlab("") +
+    ylab("Average Estimated Death Rate (per 1,000)") +
+    theme_minimal() +
+    xaxistext
+
+# not bias
+fig_diff_asdr <-
+ comp_asdrs_boot %>%
+   filter(method %in% c('Network', 'Sibling')) %>%
+   select(geo, sex, agegp10, boot_idx, method, post_mean_asdr) %>% # Only the essentials
+   pivot_wider(
+     names_from = method,
+     values_from = post_mean_asdr
+   ) %>%
+   mutate(diff = Network - Sibling) %>%
+   group_by(agegp10, sex, boot_idx) %>%
+   mutate(mean_diff = mean(diff)) %>%
+   group_by(agegp10, sex) %>%
+   summarize(cur_qoi = mean(mean_diff), 
+             cur_ci_low = quantile(mean_diff, .025),
+             cur_ci_high = quantile(mean_diff, .975)) %>%
+   # dummy label for facet title
+   mutate(label = "Network - Sibling") %>%   
+   ggplot(.) +
+   geom_hline(yintercept = 0, color = 'grey') +
+   geom_pointrange(aes(x = agegp10,
+                       y = cur_qoi,
+                       ymax = cur_ci_low,
+                       ymin = cur_ci_high,
+                       color = sex
+                       ),
+                       position = position_dodge(width=0.4)
+                   ) +
+   facet_grid(~ label) +
+   xlab("") +
+   ylab("Average Estimated Difference\nin Death Rate (per 1,000)") +
+   #ylab("") +
+   theme_minimal() +
+   xaxistext
+
+# make the y values on the RH plot be symmetric around 0
+max_abs_diff <- max(abs(c(fig_diff_asdr$data$cur_ci_low, 
+                          fig_diff_asdr$data$cur_ci_high)), 
+                    na.rm = TRUE)
+
+annrelsize <- 3 
+annheight <- 3 
+
+# 2. Update the difference plot with centered y-axis
+fig_diff_asdr_centered <- fig_diff_asdr + 
+  scale_y_continuous(limits = c(-max_abs_diff, max_abs_diff)) +
+    annotate(geom='text', 
+             label="Network is higher ->", 
+             y=annheight, 
+             x=0.25, 
+             size=rel(annrelsize),
+             color='red', 
+             angle=90) +
+    annotate(geom='text', 
+             label="<- Sibling is higher ", 
+             y=-annheight, 
+             x=0.25, 
+             size=rel(annrelsize),
+             color='red', 
+             angle=90) +
+    coord_cartesian(clip = "off", xlim = c(0.5, 5.5)) 
+  
+fig_avg_asdr <- #(fig_netsib_asdr + box_theme) +
+           fig_netsib_asdr + 
+           fig_diff_asdr_centered +
+           plot_layout(widths = c(2,1),
+                       guides = 'collect') +
+           plot_annotation(tag_levels = 'A', tag_suffix = ')') &
+           theme(legend.position = 'bottom',
+                 legend.direction = 'horizontal',
+                 legend.justification = 'center',
+                 plot.tag = element_text(face = 'bold', size = 12))
+
+
+# NB: this is used in paper
+saveRDS(fig_avg_asdr, file.path(comp_out_dir, "fig_avg_asdr.rds"))
+ggsave(filename=file.path(comp_out_dir, "fig_avg_asdr.pdf"),
+       plot=fig_avg_asdr,
+       height=3.5,
+       width=8)
+
+fig_avg_asdr
+```
+
+
 ## MSE - Network, Sibling, Comparison
 
 This is Fig 3 in our notes
 
 ```{r}
 
-method_facet_names <- c('Sibling' = 'Sibling Estimates',
-                        'Network' = 'Network Estimates',
-                        'diff' = 'Difference: Network - Sibling')
-method_facet_names_bias <- c('Sibling' = 'Sibling Estimates',
-                             'Network' = 'Network Estimates',
-                             'diff' = 'Diff. in Abs. Bias: Network - Sibling')
+method_facet_names <- c('Sibling' = 'Sibling Method',
+                        'Network' = 'Network Method',
+                        'diff' = 'Network - Sibling')
+method_facet_names_bias <- c('Sibling' = 'Sibling Method',
+                             'Network' = 'Network Method',
+                             'diff' = 'Network - Sibling')
 
 loss_plot <- function(cur_qoi_var, 
                       cur_se_var, 
                       ylab_text,
+                      diff_ylab_text,
                       df = asdr_agesex_properties_long,
-                      # if is_bias, then we'll look at the difference in the 
-                      # absolute value of the biases, not the difference in the biases;
-                      # we'll also put a horizontal line at y=0
+                      # these only get used if is_bias = TRUE
+                      diff_var = NULL,
+                      diff_se = NULL,
                       is_bias = FALSE) {
   
-  qoi_name <- as_label(enquo(cur_qoi_var))
-  se_name  <- as_label(enquo(cur_se_var))
-  
   plot_df <- df %>%
-      mutate(cur_qoi = {{cur_qoi_var}},
-             cur_se = {{cur_se_var}})
+    mutate(cur_qoi = {{cur_qoi_var}},
+           cur_se = {{cur_se_var}},
+           cur_ci_high = cur_qoi + (1.96 * cur_se),
+           cur_ci_low = cur_qoi - (1.96 * cur_se))
   
-  if(is_bias) {
-    
-    diffqoi_name <- str_replace(qoi_name, 'bias', 'absbias')
-    diffse_name <- str_replace(se_name, 'bias', 'absbias')
-    
-    plot_df <- plot_df %>%
-      mutate(diff_qoi = .data[[diffqoi_name]],
-             diff_se = .data[[diffse_name]])
-  }
+  # if is_bias, need the difference also
+  if (is_bias) {
 
-  fig_netsib <-
-    plot_df %>%
-      filter(method %in% c('Network', 'Sibling')) %>%
-      mutate(method = dplyr::recode(method, !!!method_facet_names)) %>%
-      ggplot(.) +
-      geom_pointrange(aes(x = agegp10,
-                          y = cur_qoi,
-                          ymax = cur_qoi + (1.96*cur_se),
-                          ymin = cur_qoi - (1.96*cur_se),
-                          color = sex
-                          ),
-                          position = position_dodge(width=0.4)
-                      ) +
-      facet_grid(~ method) +
-      xlab("") +
-      ylab(ylab_text) +
-      theme_minimal()
-  
-  if(! is_bias) {
-    # not bias
-    fig_diff <-
-     plot_df %>%
-       filter(method %in% c('diff')) %>%
-       mutate(method = dplyr::recode(method, !!!method_facet_names)) %>%
-       ggplot(.) +
-       geom_hline(yintercept = 0, color = 'grey') +
-       geom_pointrange(aes(x = agegp10,
-                           y = cur_qoi,
-                           ymax = cur_qoi + (1.96*cur_se),
-                           ymin = cur_qoi - (1.96*cur_se),
-                           color = sex
-                           ),
-                           position = position_dodge(width=0.4)
-                       ) +
-       facet_grid(~ method) +
-       xlab("") +
-       ylab("") +
-       theme_minimal()
-    
-  } else {
-    # this is bias
-    # ... so, we want a horizontal line at 0 in the method-specific panels
-    # and we want to compare the difference in the absolute values of the bias
-    
-    fig_netsib <-
-      fig_netsib + 
-        geom_hline(aes(yintercept = 0),
-                   color='grey')
-      
-    fig_diff <-
-     plot_df %>%
-       filter(method %in% c('diff')) %>%
-       mutate(method = dplyr::recode(method, !!!method_facet_names_bias)) %>%
-       ggplot(.) +
-       geom_hline(yintercept = 0, color = 'grey') +
-       geom_pointrange(aes(x = agegp10,
-                           #y = cur_qoi,
-                           y = diff_qoi,
-                           ymax = diff_qoi + (1.96*diff_se),
-                           ymin = diff_qoi - (1.96*diff_se),
-                           color = sex
-                           ),
-                           position = position_dodge(width=0.4)
-                       ) +
-       facet_grid(~ method) +
-       xlab("") +
-       ylab("") +
-       theme_minimal()
   }
+  
+  xaxistext <- theme(
+    axis.text.x = element_text(size = 6),
+    legend.title = element_blank()
+  ) 
+  
+  fig_netsib <- plot_df %>%
+    filter(method %in% c('Network', 'Sibling')) %>%
+    mutate(method = dplyr::recode(method, !!!method_facet_names)) %>%
+    ggplot(aes(x = agegp10, y = cur_qoi, ymin = cur_ci_low, ymax = cur_ci_high, color = sex)) +
+    geom_pointrange(position = position_dodge(width = 0.4)) +
+    facet_grid(~ method) +
+    xlab("") + ylab(ylab_text) +
+    theme_minimal() +
+    xaxistext
+  
+  if (is_bias) { 
+    fig_netsib <- fig_netsib + geom_hline(yintercept = 0, color = 'grey')
+  }
+  
+  # right Panel: Difference (Network - Sibling)
+  # if not bias, use the 'diff' metric
+  if (! is_bias) {
+    diff_data <- plot_df %>% filter(method %in% c('diff'))
+  } else {
+    # otherwise, if is_bias, then use different metric 
+    diff_data <- df %>%
+      filter(method == 'diff') %>%
+      mutate(cur_qoi = {{diff_var}},
+             cur_se = {{diff_se}},
+             cur_ci_high = cur_qoi + (1.96 * cur_se),
+             cur_ci_low = cur_qoi - (1.96 * cur_se))
+  }
+  
+  # calculate symmetric limits for y axis (so 0 is in the middle)
+  max_abs_diff <- max(abs(c(diff_data$cur_ci_low, diff_data$cur_ci_high)), na.rm = TRUE)
+  
+  annrelsize <- 3 
+  annheight <- max_abs_diff * 0.5 # Dynamic height based on data range
+  
+  fig_diff <- diff_data %>%
+    mutate(method = dplyr::recode(method, !!!method_facet_names)) %>%
+    ggplot(aes(x = agegp10, y = cur_qoi, ymin = cur_ci_low, ymax = cur_ci_high, color = sex)) +
+    geom_hline(yintercept = 0, color = 'grey') +
+    geom_pointrange(position = position_dodge(width = 0.4)) +
+    facet_grid(~ method) +
+    scale_y_continuous(limits = c(-max_abs_diff, max_abs_diff)) +
+    # Red annotations
+    annotate(geom = 'text', 
+             label = "Network is worse ->", 
+             y = annheight, x = 0.25, 
+             size = annrelsize, color = 'red', angle = 90) +
+    annotate(geom = 'text', 
+             label = "<- Sibling is worse", 
+             y = -annheight, x = 0.25, 
+             size = annrelsize, color = 'red', angle = 90) +
+    coord_cartesian(clip = "off", xlim = c(0.5, 5.5)) +
+    xlab("") + ylab(diff_ylab_text) +
+    theme_minimal() +
+    xaxistext
   
   fig_all <- fig_netsib + fig_diff +
-             plot_layout(widths = c(2,1),
-                         guides = 'collect')
+    plot_layout(widths = c(2, 1), guides = 'collect') +
+    plot_annotation(tag_levels = 'A', tag_suffix = ')') &
+    theme(legend.position = 'bottom',
+          legend.direction = 'horizontal',
+          legend.justification = 'center',
+          plot.tag = element_text(face = 'bold', size = 12))
+  
   return(fig_all)
-
 }
 ```
 
 ```{r}
-fig_mse <- loss_plot(point_est_rmse, se_jab_rmse_asdr_lopo, 'Estimated RMSE')
-fig_mse
+fig_rmse <- loss_plot(point_est_rmse, se_jab_rmse_asdr_lopo, 
+                      'Average Estimated RMSE',
+                      'Average Difference\nin Estimated RMSE')
+
+# NB: this is used in paper
+saveRDS(fig_rmse, file.path(comp_out_dir, "fig_rmse.rds"))
+ggsave(filename=file.path(comp_out_dir, "fig_rmse.pdf"),
+       plot=fig_rmse,
+       height=3.5,
+       width=8)
+
+fig_rmse
 ```
 
-```{r}
-fig_var <- loss_plot(point_est_var, se_jab_var_asdr_lopo, 'Estimated variance')
-fig_var
-```
 
 ```{r}
-fig_se <- loss_plot(point_est_se, se_jab_se_asdr_lopo, 'Estimated se')
+fig_se <- loss_plot(point_est_se, se_jab_se_asdr_lopo, 
+                    'Average Estimated Std. Error',
+                    'Average Difference\nin Estimated Std. Error' )
+
+# NB: this is used in paper
+saveRDS(fig_se, file.path(comp_out_dir, "fig_se.rds"))
+ggsave(filename=file.path(comp_out_dir, "fig_se.pdf"),
+       plot=fig_se,
+       height=3.5,
+       width=8)
+
 fig_se
 ```
 
 ```{r}
-fig_absbias <- loss_plot(point_est_absbias, se_jab_absbias_asdr_lopo, 'Estimated absolute bias')
-fig_absbias
+# 'combined' b/c the left panel is bias and the right is diff in absolute bias
+fig_combinedbias <- loss_plot(point_est_bias, 
+                              se_jab_bias_asdr_lopo, 
+                              'Average Estimated Bias',
+                              'Average Estimated Difference\nin | Bias |', 
+                              is_bias =TRUE,
+                              diff_var = point_est_absbias,
+                              diff_se = se_jab_absbias_asdr_lopo)
+
+# NB: this is used in paper
+saveRDS(fig_combinedbias, file.path(comp_out_dir, "fig_combinedbias.rds"))
+ggsave(filename=file.path(comp_out_dir, "fig_combinedbias.pdf"),
+       plot=fig_combinedbias,
+       height=3.5,
+       width=8)
+
+fig_combinedbias
 ```
+
+This will go in the appendix, we think...
 
 ```{r}
 fig_bias <- loss_plot(point_est_bias, se_jab_bias_asdr_lopo, 'Estimated bias', is_bias = TRUE)
+
+
+# NB: this is used in paper
+saveRDS(fig_bias, file.path(comp_out_dir, "fig_bias.rds"))
+ggsave(filename=file.path(comp_out_dir, "fig_bias.pdf"),
+       plot=fig_bias,
+       height=3.5,
+       width=8)
+
 fig_bias
 ```
 
@@ -2643,54 +2484,6 @@ br_customgrid <- br_states_grid1 %>%
 ## Summarize raw / realized errors by geography
 
 All ests, by geography
-
-TODO - I think we want to remove this soon
-
-```{r calculate-errs-in-asdrs-by-geo, eval=FALSE}
-comp_asdrs_bygeo <- comp_asdrs %>%
-  group_by(method, geo) %>%
-  summarize(geo_mse = mean(delta2),
-            #geo_are = sum(abs(delta_rel))) 
-            # this should be the mean, right?
-            geo_are = mean(abs(delta_rel))) 
-
-# difference in MSE (network - sibling)
-comp_asdrs_bygeo_wide <- comp_asdrs_bygeo %>%
-  select(-geo_are) %>%
-  pivot_wider(names_from=method, values_from=geo_mse)  %>%
-  mutate(n.minus.s = Network - Sibling)
-
-# difference in ARE (network - sibling)
-comp_rel_asdrs_bygeo_wide <- comp_asdrs_bygeo %>%
-  select(-geo_mse) %>%
-  pivot_wider(names_from=method, values_from=geo_are) %>%
-  mutate(n.minus.s = Network - Sibling)
-
-
-comp_asdrs_bygeoas <- comp_asdrs %>%
-  group_by(method, geo, sex, agegp10) %>%
-  summarize(geo_mse = mean(delta2),
-            # this should be the mean, right?
-            geo_are = mean(abs(delta_rel)),
-            # not absolute relative error (so, can be negative)
-            geo_re = mean(delta_rel_notabs)) %>%
-  ungroup() %>%
-  mutate(geo_rmse = sqrt(geo_mse))
-
-# difference in MSE (network - sibling)
-comp_asdrs_bygeoas_wide <- comp_asdrs_bygeoas %>%
-  select(-geo_are, -geo_re, -geo_rmse) %>%
-  pivot_wider(names_from=method, values_from=geo_mse)  %>%
-  mutate(n.minus.s = Network - Sibling)
-
-comp_asdrs_byas <- comp_asdrs %>%
-  group_by(method, sex, agegp10) %>%
-  summarize(as_mse = mean(delta2),
-            as_are = mean(abs(delta_rel)),
-            # not absolute relative error (so, can be negative)
-            as_re = mean(delta_rel_notabs))  
-```
-
 
 ## Plot the difference between the two methods against the estimated VR completeness
 
@@ -3137,6 +2930,8 @@ tmp %>%
 
 ```
 
+### END DEBUG
+
 
 ### Moran's I for MSE values
 
@@ -3217,7 +3012,9 @@ spatial_res_mse_as <- map_dfr(mse_as_moran_I,
 
 ```{r}
 moran_I_df <- bind_rows(spatial_res_mse,
-                        spatial_res_mse_as)
+                        spatial_res_mse_as) 
+  #%>%
+  #mutate(p_adj = p.adjust(p_value, method = 'bonferroni'))
 
 
 write_csv(moran_I_df %>% unnest_wider(estimate) %>% arrange(p_value),
@@ -3256,12 +3053,21 @@ err_breakdown_plot <- function(err_metric,
                                err_metric_name, 
                                # asdr or prob
                                qty = 'asdr',
-                               diff = FALSE) {
+                               diff = FALSE,
+                               region.dat = city.dat
+                               ) {
   # TEMP DEV 
   #err_metric <- 'net_mare'
   #err_metric <- 'mare_Network'
   #err_metric_name <- 'Network\nMARE'
   #qty <- 'asdr'
+  
+  # color palette for the regions 
+  region_palette <- c("NO" = "#1b9e77", 
+                      "NE" = "#d95f02", 
+                      "CW" = "#7570b3", 
+                      "SE" = "#e7298a", 
+                      "SO" = "#66a61e")
  
   err_metric_split <- str_split(err_metric, "_", simplify=TRUE) 
   loss_name <- err_metric_split[1,1]
@@ -3306,7 +3112,7 @@ err_breakdown_plot <- function(err_metric,
     expand_limits(y = 0) +
     hline + 
     ylab(err_metric_name)
-
+  
    #geo_err_diffs_summ_forplot <- geo_err_diffs_summ %>%
    geo_err_diffs_summ_forplot <- asdr_geo_properties %>%
     ## rename current error
@@ -3317,10 +3123,22 @@ err_breakdown_plot <- function(err_metric,
     mutate(err_ci_low = err - 1.96*se,
            err_ci_high = err + 1.96*se) %>%     
     ungroup() %>%
+    # NEW: Join with city.dat to get regions
+    left_join(region.dat %>% 
+                select(state_abbrev, region), 
+              by = c("geo" = "state_abbrev")) %>%
     mutate(geo = factor(geo)) %>%
     mutate(geo = fct_reorder(geo, err))
    
    geo_lev_order <- levels(geo_err_diffs_summ_forplot$geo)
+   
+   # NEW: region
+   region_order <- geo_err_diffs_summ_forplot %>%
+    select(geo, region) %>%
+    distinct() %>%
+    slice(match(geo_lev_order, geo)) %>%
+    pull(region)
+   label_colors <- region_palette[region_order]
    
    city_plot <- geo_err_diffs_summ_forplot %>%
      ggplot(.) +
@@ -3329,6 +3147,8 @@ err_breakdown_plot <- function(err_metric,
                          xmax=err_ci_high,
                          y=geo)) +
      theme_minimal() +
+     ## NEW REGIONs
+     theme(axis.text.y = element_text(color = label_colors, face = "bold")) +
      xlab(err_metric_name) +
      expand_limits(x = 0) +
      symm_x +
@@ -3350,6 +3170,9 @@ err_breakdown_plot <- function(err_metric,
      geom_tile(aes(x=agegp10, y=geo, fill=err)) +
      facet_wrap(~ sex) +
      theme_minimal() +
+     # NEW: REGION
+      theme(axis.text.y = element_text(color = label_colors, face = "bold"), # Applied here
+          legend.position = 'bottom') +     
      xlab("") +
      ylab("") +
      theme(legend.position = 'bottom') +
