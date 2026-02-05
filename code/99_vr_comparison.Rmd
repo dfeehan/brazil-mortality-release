@@ -9,8 +9,8 @@ params:
   #geo_name: "region"
   #geo_name: "national"
   ## do_12mo: if true, run the sibling 12-month estimates
-  #do_12mo: true
-  do_12mo: false
+  do_12mo: true
+  #do_12mo: false
 output:
   html_document:
     df_print: paged
@@ -587,8 +587,8 @@ if(params$do_12mo) {
   # quick table comparing squared error for net / sib / sib 12mo
   errs_with_12mo <- comp_asdrs_with12mo %>%
     group_by(method) %>%
-    summarize(mean_delta2 = mean(delta2),
-              mean_delta_rel = mean(delta_rel))
+    summarize(mean_delta2 = mean(delta2, na.rm=TRUE),
+              mean_delta_rel = mean(delta_rel, na.rm=TRUE))
   
   write_csv(errs_with_12mo,
             file.path(comp_out_dir, "avg_errs_with_sib12mo.csv"))
@@ -2202,7 +2202,7 @@ fig_netsib_asdr <-
                     ) +
     facet_grid(~ method) +
     xlab("") +
-    ylab("Average Estimated Death Rate (per 1,000)") +
+    ylab("Average Estimated Death Rate per 1,000") +
     theme_minimal() +
     xaxistext
 
@@ -2223,7 +2223,7 @@ fig_diff_asdr <-
              cur_ci_low = quantile(mean_diff, .025),
              cur_ci_high = quantile(mean_diff, .975)) %>%
    # dummy label for facet title
-   mutate(label = "Network - Sibling") %>%   
+   mutate(label = "Comparison") %>%   
    ggplot(.) +
    geom_hline(yintercept = 0, color = 'grey') +
    geom_pointrange(aes(x = agegp10,
@@ -2236,7 +2236,7 @@ fig_diff_asdr <-
                    ) +
    facet_grid(~ label) +
    xlab("") +
-   ylab("Average Estimated Difference\nin Death Rate (per 1,000)") +
+   ylab("Network Estimate - Sibling Estimate") +
    #ylab("") +
    theme_minimal() +
    xaxistext
@@ -2257,14 +2257,14 @@ fig_diff_asdr_centered <- fig_diff_asdr +
              y=annheight, 
              x=0.25, 
              size=rel(annrelsize),
-             color='red', 
+             color='black', 
              angle=90) +
     annotate(geom='text', 
              label="<- Sibling is higher ", 
              y=-annheight, 
              x=0.25, 
              size=rel(annrelsize),
-             color='red', 
+             color='black', 
              angle=90) +
     coord_cartesian(clip = "off", xlim = c(0.5, 5.5)) 
   
@@ -2299,10 +2299,10 @@ This is Fig 3 in our notes
 
 method_facet_names <- c('Sibling' = 'Sibling Method',
                         'Network' = 'Network Method',
-                        'diff' = 'Network - Sibling')
+                        'diff' = 'Comparison')
 method_facet_names_bias <- c('Sibling' = 'Sibling Method',
                              'Network' = 'Network Method',
-                             'diff' = 'Network - Sibling')
+                             'diff' = 'Comparison')
 
 loss_plot <- function(cur_qoi_var, 
                       cur_se_var, 
@@ -2373,13 +2373,13 @@ loss_plot <- function(cur_qoi_var,
     scale_y_continuous(limits = c(-max_abs_diff, max_abs_diff)) +
     # Red annotations
     annotate(geom = 'text', 
-             label = "Network is worse ->", 
+             label = "Sibling is better ->", 
              y = annheight, x = 0.25, 
-             size = annrelsize, color = 'red', angle = 90) +
+             size = annrelsize, color = 'black', angle = 90) +
     annotate(geom = 'text', 
-             label = "<- Sibling is worse", 
+             label = "<- Network is better", 
              y = -annheight, x = 0.25, 
-             size = annrelsize, color = 'red', angle = 90) +
+             size = annrelsize, color = 'black', angle = 90) +
     coord_cartesian(clip = "off", xlim = c(0.5, 5.5)) +
     xlab("") + ylab(diff_ylab_text) +
     theme_minimal() +
@@ -2400,7 +2400,7 @@ loss_plot <- function(cur_qoi_var,
 ```{r}
 fig_rmse <- loss_plot(point_est_rmse, se_jab_rmse_asdr_lopo, 
                       'Average Estimated RMSE',
-                      'Average Difference\nin Estimated RMSE')
+                      'Network Estimate - Sibling Estimate')
 
 # NB: this is used in paper
 saveRDS(fig_rmse, file.path(comp_out_dir, "fig_rmse.rds"))
@@ -2416,7 +2416,7 @@ fig_rmse
 ```{r}
 fig_se <- loss_plot(point_est_se, se_jab_se_asdr_lopo, 
                     'Average Estimated Std. Error',
-                    'Average Difference\nin Estimated Std. Error' )
+                    'Network Estimate - Sibling Estimate' )
 
 # NB: this is used in paper
 saveRDS(fig_se, file.path(comp_out_dir, "fig_se.rds"))
@@ -2433,7 +2433,7 @@ fig_se
 fig_combinedbias <- loss_plot(point_est_bias, 
                               se_jab_bias_asdr_lopo, 
                               'Average Estimated Bias',
-                              'Average Estimated Difference\nin | Bias |', 
+                              '|Network estimate| - |Sibling estimate|', 
                               is_bias =TRUE,
                               diff_var = point_est_absbias,
                               diff_se = se_jab_absbias_asdr_lopo)
@@ -2563,6 +2563,170 @@ asdr_properties_long <- asdr_properties %>%
     names_to = c(".value", "method"),
     names_pattern = "(.*)_(Network|Sibling|diff)$"
   )
+```
+
+### Plots highlighting region 
+
+
+```{r}
+biggestdiff <- max(c(rmse_geo_diff$est_rmse_diff_ci_low,
+                     rmse_geo_diff$est_rmse_diff_ci_high))
+
+if(geo_name == 'city') {
+  annscale <- .8
+  annxoff <- 0.2 
+} else if (geo_name == 'region') {
+  annscale <- 1.4 
+  annxoff <- 0.2
+} else if (geo_name == 'national') {
+  annscale <- 1.8
+  annxoff <- 0.2
+}
+
+ann_data <- data.frame(
+  region = 'CW', 
+  label_net = "<- Network is better",
+  label_sib = "Sibling is better ->",
+  x = annxoff,
+  y_net = -biggestdiff * annscale,
+  y_sib = biggestdiff * annscale
+)
+
+diff_rmse_geo_region_plot <- rmse_geo_diff %>%
+  ungroup() %>%
+  left_join(city.dat %>% 
+              select(state_abbrev, region), 
+            by = c("geo" = "state_abbrev")) %>%
+  mutate(geo = fct_reorder(geo, 
+                           est_rmse_diff)) %>%
+  #mutate(geo = reorder_within(geo, est_rmse_diff, region)) %>%
+  ggplot(.) +
+  geom_pointrange(aes(x = geo,
+                      y = est_rmse_diff,
+                      ymin = est_rmse_diff_ci_low,
+                      ymax = est_rmse_diff_ci_high)) +
+  geom_hline(yintercept=0) +
+  xlab("") +
+  ylab("Estimated RMSE Difference\nNetwork RMSE - Sibling RMSE") +
+  expand_limits(y = c(-6, 6)) +
+  # geom_text instead of annotate so that we only get the annotation
+  # in the first facet
+  geom_text(data = ann_data, 
+            aes(x = x, y = y_net, label = label_net),
+            size = rel(3), color = 'red', angle = 90) +
+  geom_text(data = ann_data, 
+            aes(x = x, y = y_sib, label = label_sib),
+            size = rel(3), color = 'red', angle = 90) +
+  #annotate(geom='text',
+  #       label="<- Network is better ",
+  #       #x='SE',
+  #       x=annxoff,
+  #       y=-biggestdiff*annscale,
+  #       size=rel(3),
+  #       color='red',
+  #       angle=90) +
+  #annotate(geom='text',
+  #         label="Sibling is better ->",
+  #         #x='SE',
+  #         x=annxoff,
+  #         y=biggestdiff*annscale,
+  #         size=rel(3),
+  #         color='red',
+  #         angle=90) +
+  theme_minimal() +
+  facet_grid(~region, scales='free_x', space='free_x') +
+  coord_cartesian(clip = "off")
+
+ggsave(filename=file.path(comp_out_dir, "geo_region_rmse_diff.pdf"),
+       plot=diff_rmse_geo_region_plot,
+       height=3.5,
+       width=6)
+
+diff_rmse_geo_region_plot
+```
+
+
+```{r}
+if(geo_name == 'city') {
+  annscale <- .8
+  annxoff <- 0.2 
+} else if (geo_name == 'region') {
+  annscale <- 1.4 
+  annxoff <- 0.2
+} else if (geo_name == 'national') {
+  annscale <- 1.8
+  annxoff <- 0.2
+}
+
+net_rmse_geo_region_plot <- rmse_geo_diff %>%
+  mutate(point_est_rmse_Network_ci_low = point_est_rmse_Network - 1.96 * se_jab_rmse_asdr_lopo_Network,
+         point_est_rmse_Network_ci_high = point_est_rmse_Network + 1.96 * se_jab_rmse_asdr_lopo_Network) %>%
+  ungroup() %>%
+  left_join(city.dat %>% 
+              select(state_abbrev, region), 
+            by = c("geo" = "state_abbrev")) %>%
+  mutate(geo = fct_reorder(geo, 
+                           point_est_rmse_Network)) %>%
+  #mutate(geo = reorder_within(geo, est_rmse_diff, region)) %>%
+  ggplot(.) +
+  geom_pointrange(aes(x = geo,
+                      y = point_est_rmse_Network,
+                      ymin = point_est_rmse_Network_ci_low,
+                      ymax = point_est_rmse_Network_ci_high)) +
+  xlab("") +
+  ylab("Estimated RMSE for Network Method") +
+  theme_minimal() +
+  facet_grid(~region, scales='free_x', space='free_x') +
+  coord_cartesian(clip = "off")
+
+ggsave(filename=file.path(comp_out_dir, "geo_region_rmse_net.pdf"),
+       plot=net_rmse_geo_region_plot,
+       height=3.5,
+       width=6)
+
+net_rmse_geo_region_plot
+```
+
+
+```{r}
+if(geo_name == 'city') {
+  annscale <- .8
+  annxoff <- 0.2 
+} else if (geo_name == 'region') {
+  annscale <- 1.4 
+  annxoff <- 0.2
+} else if (geo_name == 'national') {
+  annscale <- 1.8
+  annxoff <- 0.2
+}
+
+sib_rmse_geo_region_plot <- rmse_geo_diff %>%
+  mutate(point_est_rmse_Sibling_ci_low = point_est_rmse_Sibling - 1.96 * se_jab_rmse_asdr_lopo_Sibling,
+         point_est_rmse_Sibling_ci_high = point_est_rmse_Sibling + 1.96 * se_jab_rmse_asdr_lopo_Sibling) %>%
+  ungroup() %>%
+  left_join(city.dat %>% 
+              select(state_abbrev, region), 
+            by = c("geo" = "state_abbrev")) %>%
+  mutate(geo = fct_reorder(geo, 
+                           point_est_rmse_Network)) %>%
+  #mutate(geo = reorder_within(geo, est_rmse_diff, region)) %>%
+  ggplot(.) +
+  geom_pointrange(aes(x = geo,
+                      y = point_est_rmse_Sibling,
+                      ymin = point_est_rmse_Sibling_ci_low,
+                      ymax = point_est_rmse_Sibling_ci_high)) +
+  xlab("") +
+  ylab("Estimated RMSE for Sibling Method") +
+  theme_minimal() +
+  facet_grid(~region, scales='free_x', space='free_x') +
+  coord_cartesian(clip = "off")
+
+ggsave(filename=file.path(comp_out_dir, "geo_region_rmse_sib.pdf"),
+       plot=sib_rmse_geo_region_plot,
+       height=3.5,
+       width=6)
+
+sib_rmse_geo_region_plot
 ```
 
 ## Hexgrid maps
@@ -3148,7 +3312,7 @@ err_breakdown_plot <- function(err_metric,
                          y=geo)) +
      theme_minimal() +
      ## NEW REGIONs
-     theme(axis.text.y = element_text(color = label_colors, face = "bold")) +
+     #theme(axis.text.y = element_text(color = label_colors, face = "bold")) +
      xlab(err_metric_name) +
      expand_limits(x = 0) +
      symm_x +
@@ -3171,8 +3335,9 @@ err_breakdown_plot <- function(err_metric,
      facet_wrap(~ sex) +
      theme_minimal() +
      # NEW: REGION
-      theme(axis.text.y = element_text(color = label_colors, face = "bold"), # Applied here
-          legend.position = 'bottom') +     
+      theme(legend.position = 'bottom') +     
+      #theme(axis.text.y = element_text(color = label_colors, face = "bold"), # Applied here
+      #    legend.position = 'bottom') +     
      xlab("") +
      ylab("") +
      theme(legend.position = 'bottom') +
