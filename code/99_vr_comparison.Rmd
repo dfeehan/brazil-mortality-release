@@ -2583,10 +2583,15 @@ if(geo_name == 'city') {
   annxoff <- 0.2
 }
 
+anncolor <- 'black'
+
 ann_data <- data.frame(
   region = 'CW', 
-  label_net = "<- Network is better",
-  label_sib = "Sibling is better ->",
+  # \u2192 is <- arrow
+  label_net = "\u2190 Network is better",
+  label_sib = "Sibling is better \u2192",
+  #label_net = "Network is better",
+  #label_sib = "Sibling is better ->",
   x = annxoff,
   y_net = -biggestdiff * annscale,
   y_sib = biggestdiff * annscale
@@ -2613,10 +2618,10 @@ diff_rmse_geo_region_plot <- rmse_geo_diff %>%
   # in the first facet
   geom_text(data = ann_data, 
             aes(x = x, y = y_net, label = label_net),
-            size = rel(3), color = 'red', angle = 90) +
+            size = rel(3), color = anncolor, angle = 90) +
   geom_text(data = ann_data, 
             aes(x = x, y = y_sib, label = label_sib),
-            size = rel(3), color = 'red', angle = 90) +
+            size = rel(3), color = anncolor, angle = 90) +
   #annotate(geom='text',
   #       label="<- Network is better ",
   #       #x='SE',
@@ -2708,7 +2713,7 @@ sib_rmse_geo_region_plot <- rmse_geo_diff %>%
               select(state_abbrev, region), 
             by = c("geo" = "state_abbrev")) %>%
   mutate(geo = fct_reorder(geo, 
-                           point_est_rmse_Network)) %>%
+                           point_est_rmse_Sibling)) %>%
   #mutate(geo = reorder_within(geo, est_rmse_diff, region)) %>%
   ggplot(.) +
   geom_pointrange(aes(x = geo,
