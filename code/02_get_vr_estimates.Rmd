@@ -8,6 +8,7 @@ This file calculates death rates for each city based on the vital registration d
 All output gets saved to `data/vr_prepped`.
 
 ```{r}
+knitr::opts_chunk$set(message=FALSE)
 library(tidyverse)
 library(here)
 

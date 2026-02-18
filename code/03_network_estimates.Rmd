@@ -4,7 +4,7 @@ output: html_notebook
 ---
 
 ```{r setup, include=FALSE}
-knitr::opts_chunk$set(echo = TRUE)
+knitr::opts_chunk$set(echo = TRUE, message = FALSE)
 ```
 
 
@@ -16,6 +16,14 @@ library(future)
 library(furrr)
 library(progressr)
 library(tictoc)
+library(logger)
+```
+
+```{r logger-setup}
+log_threshold(TRACE)
+log_file <- paste0("network_estimates_", format(Sys.time(), "%Y%m%d_%H%M%S"), ".log")
+log_appender(appender_tee(file = log_file))
+log_info("Network estimates script started")
 ```
 
 
@@ -200,6 +208,7 @@ These warnings come from older ages, which we don't use in this analysis.
 
 
 ```{r network-survival-estimates-bootstrap}
+log_info("Starting network survival estimates bootstrap")
 tic('network survival estimates (with bootstrap)')
 if(parallel) {
   plan(multisession, workers=num.cores)
@@ -207,9 +216,13 @@ if(parallel) {
 
 with_progress({
   p <- progressor(steps = length(all.states))
-  
+
   netsurv.asdr <- future_map_dfr(all.states,
     function(state) {
+      library(logger)
+      log_threshold(TRACE)
+      log_appender(appender_file(log_file))
+      log_debug("Starting state: {state}")
       p(message = sprintf("Processing %s", state))  # Signal progress
       
       tic("TEMP - current state")
@@ -340,9 +353,10 @@ write_csv(netsurv.47q18.boot,
           file.path(out_dir, 'net_design_probs_boot.csv'))
 ```
 
-## Aggregate death rate estimates up to region level 
+## Aggregate death rate estimates up to region level
 
 ```{r aggregate-asdrs-to-region}
+log_info("Aggregating estimates to region level")
 net.region.asdr <- netsurv.asdr %>%
   mutate(ybar.F.Dcell.hat = y.F.Dcell.hat / N.F.hat,
          ybar.Fcell.kp.hat = y.Fcell.kp.hat / N.Fcell.hat) %>%
@@ -427,9 +441,10 @@ write_csv(net.47q18.region.boot,
 ```
 
 
-## Aggregate death rate estimates up to national level 
+## Aggregate death rate estimates up to national level
 
 ```{r aggregate-asdrs-to-national}
+log_info("Aggregating estimates to national level")
 net.national.asdr <- netsurv.asdr %>%
   mutate(ybar.F.Dcell.hat = y.F.Dcell.hat / N.F.hat,
          ybar.Fcell.kp.hat = y.Fcell.kp.hat / N.Fcell.hat) %>%

@@ -4,6 +4,7 @@ output: html_notebook
 ---
 
 ```{r}
+knitr::opts_chunk$set(message=FALSE)
 library(here)
 library(rmarkdown)
 library(tidyverse)

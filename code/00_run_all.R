@@ -41,9 +41,10 @@ rmd_files <- purrr::discard(rmd_files, .p=~stringr::str_detect(.x,'99_vr_compari
 for (cur_file in rmd_files) {
   cat("================================\n")
   tictoc::tic(glue::glue("Running {cur_file}"))
-  cat("Running ", cur_file, "\n")
+  cat(format(Sys.time()), "-- Starting", cur_file, "\n")
   rmarkdown::render(file.path(code.dir, cur_file))
   tictoc::toc()
+  cat(format(Sys.time()), "-- Finished", cur_file, "\n")
   cat("================================\n")
 }
 

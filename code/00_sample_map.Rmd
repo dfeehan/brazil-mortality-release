@@ -8,6 +8,7 @@ output:
 This file makes a map that shows the cities in our sample and Brazil's regions
 
 ```{r}
+knitr::opts_chunk$set(message=FALSE)
 library(tidyverse)
 library(glue)
 

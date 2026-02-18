@@ -32,6 +32,10 @@ and to choose whether the comparison is to the adjusted or unadjusted vital regi
 For replication, this file is not supposed to be run directly; it is run by another
 notebook.
 
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(message=FALSE)
+```
+
 ```{r}
 options(knitr.duplicate.label = "allow")
 ```

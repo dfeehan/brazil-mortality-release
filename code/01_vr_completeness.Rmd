@@ -9,6 +9,7 @@ This file summarizes the estimated vital registration completeness by city.
 It saves its results to `out/`
 
 ```{r}
+knitr::opts_chunk$set(message=FALSE)
 library(tidyverse)
 library(here)
 library(janitor)
