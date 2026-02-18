@@ -39,7 +39,8 @@ set.seed(10101010)
 parallel <- TRUE
 #parallel <- FALSE
 
-num.cores <- 9
+num.cores <- 7
+#num.cores <- 9
 #num.cores <- 2
 
 if(parallel) {
