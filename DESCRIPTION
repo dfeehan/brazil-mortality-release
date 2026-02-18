@@ -56,9 +56,9 @@ Depends:
     wpp2022
 Remotes: 
     dfeehan/surveybootstrap@1dda0de,
-    dfeehan/siblingsurvival@41748b0ad588e31baf09512db995bff25bec3390,
-    dfeehan/networkreporting@27acedc,
-    futureverse/furrr@44292c6503eb3134cf3e12fc239dced4a72930fc,
+    dfeehan/siblingsurvival@ca2d57159d38d13c172afcc00ddf76b1a15211d2,
+    dfeehan/networkreporting@025e167dd028fd27e5bc537680c4d88592cbc10c,
+    futureverse/furrr@22c9355e5b8eab9caa4e68cbfc27df8e4ea92075,
     dgrtwo/drlib,
     haozhu233/kableExtra@da55010,
     r-quantities/units@b6c9ab7,
