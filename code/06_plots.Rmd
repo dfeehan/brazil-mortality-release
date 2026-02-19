@@ -546,6 +546,12 @@ final_err_compare
 ```
 
 
+
+```{r}
+knitr::knit_exit()
+```
+
+
 TODO - LEFT OFF HERE...
 
 Simple barplot with RMSE comparison at city level
