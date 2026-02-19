@@ -48,6 +48,7 @@ for (cur_file in rmd_files) {
   tictoc::tic(glue::glue("Running {cur_file}"))
   log_info("Starting {cur_file}")
   rmarkdown::render(file.path(code.dir, cur_file))
+  gc()
   tictoc::toc()
   log_info("Finished {cur_file}")
   log_info("================================")
