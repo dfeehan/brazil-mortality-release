@@ -1,8 +1,13 @@
 # NB: this wasn't needed
 #setwd("brazil-mortality-release")
 
-con <- file("run_all.log")
-sink(con, append=TRUE, split=TRUE)
+library(logger)
+logs_dir <- here::here('logs')
+dir.create(logs_dir, showWarnings=FALSE)
+log_threshold(TRACE)
+log_file <- file.path(logs_dir, paste0("run_all_", format(Sys.time(), "%Y%m%d_%H%M%S"), ".log"))
+log_appender(appender_tee(file = log_file))
+log_info("run_all started")
 
 # temporary URL for our survey data
 #survey_url <- "https://www.dropbox.com/s/sfrmpx7pgmg9445/data.zip?dl=1"
@@ -10,7 +15,7 @@ survey_url <- "https://www.dropbox.com/scl/fi/zdlxm8u9dgcpmv47uaul3/data.zip?rlk
 
 #root.dir <- "brazil-mortality-release"
 root.dir <- "."
-code.dir <- file.path(root.dir, 'code') 
+code.dir <- file.path(root.dir, 'code')
 
 ###########
 ## create directories
@@ -20,7 +25,7 @@ data.dir <- file.path(root.dir, 'data')
 dir.create(out.dir, showWarnings=FALSE)
 
 ###################
-## download the survey data 
+## download the survey data
 #httr::timeout(100)
 httr::GET(url = survey_url,
           httr::write_disk(file.path(root.dir, 'data.zip'),
@@ -39,13 +44,13 @@ rmd_files <- purrr::discard(rmd_files, .p=~stringr::str_detect(.x,'99_vr_compari
 
 
 for (cur_file in rmd_files) {
-  cat("================================\n")
+  log_info("================================")
   tictoc::tic(glue::glue("Running {cur_file}"))
-  cat(format(Sys.time()), "-- Starting", cur_file, "\n")
+  log_info("Starting {cur_file}")
   rmarkdown::render(file.path(code.dir, cur_file))
   tictoc::toc()
-  cat(format(Sys.time()), "-- Finished", cur_file, "\n")
-  cat("================================\n")
+  log_info("Finished {cur_file}")
+  log_info("================================")
 }
 
-sink()
+log_info("run_all complete")
