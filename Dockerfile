@@ -1,5 +1,7 @@
 FROM rocker/geospatial:4.0.2
 
+ENV TZ=America/Los_Angeles
+
 # copy working files over
 COPY . /home/rstudio/brazil-mortality-release
 
