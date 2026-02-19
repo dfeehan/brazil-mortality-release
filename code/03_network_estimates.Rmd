@@ -254,6 +254,7 @@ with_progress({
       
       return(cur.ns)
     },
+    .options = furrr_options(seed = TRUE),
     .progress=FALSE)
 })
 

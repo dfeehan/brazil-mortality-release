@@ -520,7 +520,8 @@ sib.asdr <- furrr::future_imap_dfr(city.sib.dat,
     cur.ests <- cur.ests$boot.asdr.agg
     cur.ests$state_abbrev <- state
     return(cur.ests)
-  })
+  },
+  .options = furrr_options(seed = TRUE))
 
 if(parallel) {
   plan(sequential)  
@@ -628,10 +629,11 @@ sib.region.asdr <- furrr::future_imap_dfr(region.sib.dat,
                                           
                                         cur.ests <- cur.ests$boot.asdr.agg
                                         cur.ests$region <- region
-                                        
+
                                         log_debug("Finished region: {region}")
                                         return(cur.ests)
-                                      })
+                                      },
+                                      .options = furrr_options(seed = TRUE))
 
 if(parallel) {
   plan(sequential)  
@@ -921,7 +923,8 @@ sib.asdr.12mo <- furrr::future_imap_dfr(city.sib.dat,
                                         cur.ests <- cur.ests$boot.asdr.agg
                                         cur.ests$state_abbrev <- state
                                         return(cur.ests)
-                                      })
+                                      },
+                                      .options = furrr_options(seed = TRUE))
 
 if(parallel) {
   plan(sequential)  
