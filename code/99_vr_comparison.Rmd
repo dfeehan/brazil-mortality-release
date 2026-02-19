@@ -2454,7 +2454,7 @@ fig_combinedbias
 
 This will go in the appendix, we think...
 
-```{r}
+```{r, eval=FALSE}
 fig_bias <- loss_plot(point_est_bias, se_jab_bias_asdr_lopo, 'Estimated bias', is_bias = TRUE)
 
 
@@ -3057,7 +3057,7 @@ TODO LEFT OFF HERE
 - should standardize RMSE on 1000 x MSE 
 - check that heatmaps seem right, etc
 
-```{r}
+```{r, eval=FALSE}
 foo <- asdr_properties_point_estimates %>%
   select(geo, method, chk_value = est_rmse) %>%
   mutate(chk_value = chk_value) %>%
@@ -3066,7 +3066,7 @@ foo <- asdr_properties_point_estimates %>%
 ```
 
 
-```{r}
+```{r, eval=FALSE}
 # I think these two should be pretty similar - but they seem not to be. Why?
 old_moran_df <- 
   # NEW
