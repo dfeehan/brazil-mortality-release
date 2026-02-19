@@ -285,19 +285,29 @@ sib.asdr.12mo <- furrr::future_imap_dfr(city.sib.dat,
                                         #                              all.states)
                                                                        
                                         cur.bw <- city.boot.weights[[state]]
-                                        
-                                        cur.ests <- 
-                                          sibling_estimator(sib.dat = cur.sib.dat,
-                                          ego.id = 'ego.id',           # column with the respondent id
-                                          sib.id = 'sib.id',           # column with sibling id 
-                                                                       # (unique for each reported sibling)
-                                          sib.frame.indicator = 'in.F',# sibling frame population membership
-                                          sib.sex = 'sex',             # column with sibling's sex
-                                          cell.config=cc_12mo,              # cell configuration we created above
-                                          weights='ego.weight',        # column with the respondents' sampling weights
-                                          boot.weights=cur.bw,         # bootstrap weights
-                                          return.boot=TRUE)           # not returning full bootstrap results for now
-                                          
+
+                                        cur.ests <- withCallingHandlers(
+                                          tryCatch({
+                                            sibling_estimator(sib.dat = cur.sib.dat,
+                                            ego.id = 'ego.id',           # column with the respondent id
+                                            sib.id = 'sib.id',           # column with sibling id
+                                                                         # (unique for each reported sibling)
+                                            sib.frame.indicator = 'in.F',# sibling frame population membership
+                                            sib.sex = 'sex',             # column with sibling's sex
+                                            cell.config=cc_12mo,         # cell configuration we created above
+                                            weights='ego.weight',        # column with the respondents' sampling weights
+                                            boot.weights=cur.bw,         # bootstrap weights
+                                            return.boot=TRUE)            # not returning full bootstrap results for now
+                                          }, error = function(e) {
+                                            log_error("Failed to process {state}: {e$message}")
+                                            stop(e)
+                                          }),
+                                          warning = function(w) {
+                                            log_warn("Warning in {state}: {w$message}")
+                                            invokeRestart("muffleWarning")
+                                          }
+                                        )
+
                                         cur.ests <- cur.ests$boot.asdr.agg
                                         cur.ests$state_abbrev <- state
                                         return(cur.ests)
