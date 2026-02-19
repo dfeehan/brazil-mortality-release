@@ -302,7 +302,7 @@ sib.asdr.12mo <- furrr::future_imap_dfr(city.sib.dat,
                                         cur.ests$state_abbrev <- state
                                         return(cur.ests)
                                       },
-                                      .options = furrr_options(seed = TRUE))
+                                      .options = future_options(seed = TRUE))
 
 if(parallel) {
   plan(sequential)  
