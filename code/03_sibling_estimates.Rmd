@@ -11,9 +11,7 @@ knitr::opts_chunk$set(echo = TRUE, message = FALSE)
 
 
 ```{r}
-#library(networkreporting)
 library(tidyverse)
-#library(lubridate)
 library(future)
 library(furrr)
 library(siblingsurvival)
@@ -40,8 +38,6 @@ parallel <- TRUE
 #parallel <- FALSE
 
 num.cores <- 7
-#num.cores <- 9
-#num.cores <- 2
 
 if(parallel) {
   ## this is needed to avoid running out of memory errors w/ future package
@@ -64,13 +60,6 @@ log_file <- file.path(logs_dir, paste0("sibling_estimates_", format(Sys.time(), 
 log_appender(appender_tee(file = log_file))
 
 log_info("Sibling estimates script started")
-
-if (file.exists("../run_docker.sh")) {
-  docker_run_contents <- readLines("../run_docker.sh")
-  log_debug("run_docker.sh contents:\n{paste(docker_run_contents, collapse = '\n')}")
-} else {
-  log_warn("../run_docker.sh not found in working directory: {getwd()}")
-}
 ```
 
 
@@ -86,20 +75,7 @@ sib.dat <- read_csv(file.path(survey_data_dir, "sibling_reports.csv"))
 ego.dat <- read_csv(file.path(survey_data_dir, "individual.csv"))
 
 # load bootstrap weights
-#boot.weights <- read_csv(file.path(survey_data_dir, "bootstrap_weights_1k.csv"))
-
-#boot.weights <- read_csv(file.path(survey_data_dir, "bootstrap_weights_jab1k.csv.gz"))
-
 boot.weights <- readRDS(file.path(survey_data_dir, bw_file))
-
-#boot.weights <- read_csv(file.path(survey_data_dir, "bootstrap_weights_10k.csv.gz"))
-#boot.weights <- readRDS(file.path(survey_data_dir, "bootstrap_weights_10k.rds"))
-#boot.weights.fn <- "bootstrap_weights_5k.rds"
-
-#boot.weights.fn <- "bootstrap_weights_10k.rds"
-
-#boot.weights <- readRDS(file.path(survey_data_dir, boot.weights.fn))
-
 log_info(glue::glue("Bootstrap weights opened: {bw_file}"))
 
 # load city info
@@ -302,50 +278,6 @@ unweighted.sib.nd <- bind_rows(unweighted.sib.oneyr, unweighted.sib.7yr)
 write_csv(unweighted.sib.nd,
           file=file.path(out_dir, "num_deaths_unweighted_sibling.csv"))
 ```
-
-Also get who reports whom
-
-```{r}
-sib.7yr.forwrw <- purrr::imap_dfr(city.sib.dat,
-                                      function(cur.sib.dat, city_name) {
-                                        cur.sib.dat$constwgt <- 1
-                                        # get ego X sib X cell reports
-                                        cur.ests <- 
-                                          siblingsurvival:::get_esc_reports(sib.dat = cur.sib.dat,
-                                                ego.id = 'ego.id',
-                                                sib.id = 'sib.id',
-                                                cell.config=cc)   
-                                        return(cur.ests)
-                                      })
-```
-
-
-
-```{r}
-# rename agegroups
-sib_7yr_wrw <- sib.7yr.forwrw %>%
-  # only want deaths
-  filter(sib.occ > 0) %>%
-  rename(death_agegp10 = agelabel) %>%
-  # join in ego agegroups
-  left_join(ego.dat %>% 
-              select(ego.id = id, ego_agegp10 = agegp10, ego_sex = sex, ego.weight=weight)) %>%
-  select(-sib.exp, -sib.occ, -ego.weight, -ego.id, -sib.id, -agegroup, -time.period)
-
-write_csv(sib_7yr_wrw,
-          path=file.path(out_dir, 'who_reports_who_sibling.csv'))
-
-# unweighted number of interviews by respondent age
-resp_by_age <- ego.dat %>%
-  rename(ego_agegp10 = agegp10) %>%
-  group_by(ego_agegp10) %>%
-  summarize(num_ego = n())
-
-write_csv(resp_by_age,
-          path=file.path(out_dir, 'num_interviews_by_age.csv'))
-```
-
-TODO - LEFT OFF HERE:
 
 for R+R, calculate the average number of siblings, by city
 
