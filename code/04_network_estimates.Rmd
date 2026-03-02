@@ -45,17 +45,7 @@ ego.dat <- read_csv(file.path(survey_data_dir, "individual.csv"))
 nr.deaths.dat <- read_csv(file.path(survey_data_dir, "network_reports.csv"))
 
 # load bootstrap weights
-#boot.weights <- read_csv(file.path(survey_data_dir, "bootstrap_weights_jab1k.csv.gz"))
-#boot.weights <- read_csv(file.path(survey_data_dir, "bootstrap_weights_1k.csv"))
-#boot.weights <- read_csv(file.path(survey_data_dir, "bootstrap_weights_10k.csv.gz"))
-
 boot.weights <- readRDS(file.path(survey_data_dir, "bootstrap_weights_10k.rds"))
-
-#boot.weights <- read_csv(file.path(survey_data_dir, "bootstrap_weights_jab10k.csv.gz"))
-#boot.weights <- readRDS(file.path(survey_data_dir, "bootstrap_weights_jab10k.rds"))
-
-#boot.weights <- read_csv(file.path(survey_data_dir, "bootstrap_weights_5k.csv.gz"))
-#boot.weights <- readRDS(file.path(survey_data_dir, "bootstrap_weights_5k.rds"))
 
 # load frame population sizes
 state.dat <- read_csv(file.path(data_dir, "cities.csv"))
@@ -138,36 +128,6 @@ write_csv(n.net,
 write_csv(dpi.net,
           path=file.path(out_dir, 'num_deaths_unweighted_network.csv'))
 ```
-
-
-## Get reported deaths by respondent age (who reports whom)
-
-Note that this is unweighted -- it's just the number of deaths
-
-```{r}
-nr_wrw <- nr.deaths.dat %>%
-  rename(death_sex = sex,
-         death_agegp10 = agegp10) %>%
-  left_join(ego.dat %>% select(ego.id = id, ego_sex = sex, ego_agegp10 = agegp10),
-            by='ego.id')
-
-write_csv(nr_wrw,
-          path=file.path(out_dir, 'who_reports_who_network.csv'))
-
-nr_wrw
-```
-
-#### TEMP
-
-let's look at the distribution of number of deaths and of number KP known
-
-```{r}
-
-```
-
-
-
-#### END TEMP
 
 ## Calculate network survival estimates from bootstrap resamples
 
