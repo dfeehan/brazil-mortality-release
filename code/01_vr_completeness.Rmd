@@ -74,13 +74,12 @@ San Luis, Maranhao (94\% coverage, MA in NE);
 Salvador, Bahia (95\% coverage BA in NE);
 and Macapa, Amapa (96\% coverage, AP in NO)
 
-Save the results to a table that we can include in the pre-registration document
+Save the results to a table 
 
 ```{r}
 cr_res_tbl <- cr_res_avg %>%
     left_join(capital.coords %>% select(municipio_code, state_abbrev, region)) %>%
     select(region, state_abbrev, state_name, city_name,  mean_sim_cov_pct) %>%
-    #mutate(mean_sim_cov_pct = round(mean_sim_cov_pct, 1)) %>%
     arrange(desc(mean_sim_cov_pct))
 
 write_csv(cr_res_tbl,
