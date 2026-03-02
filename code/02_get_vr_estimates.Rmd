@@ -12,7 +12,6 @@ knitr::opts_chunk$set(message=FALSE)
 library(tidyverse)
 library(here)
 
-#devtools::install_github("tbrugz/ribge")
 library(ribge)
 ```
 
@@ -187,8 +186,6 @@ all(munipop12_check$f + munipop12_check$m == munipop12_check$b)
 ```{r save-city-popns}
 munipop12_tosave <- munipop12 %>% filter(sex %in% c('f', 'm'),
                                          ! agegp %in% c('[65,Inf)', '[0,18)', 'Total'))
-
-#write_csv(munipop12_tosave, path=file.path(data_out_dir, 'dr_denom.csv'))
 
 munipop12_tosave
 ```
