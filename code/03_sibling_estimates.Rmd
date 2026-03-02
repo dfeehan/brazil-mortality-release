@@ -342,60 +342,11 @@ write_csv(sib_summs_res,
 sib_summs_res
 ```
 
-
-```{r, eval=FALSE}
-# rename agegroups
-sib_7yr_num_sibs <- sib.7yr.forwrw %>%
-  filter(sib.occ > 0) %>%
-  group_by(ego.id, sib.id) %>%
-  summarize(any_over_18 = as.numeric(any(agegroup != 'agegroup_1')))
-
-tmp <- ego.dat %>%
-  select(id, state_abbrev) %>%
-  left_join(sib_7yr_num_sibs, by=c('id'='ego.id')) %>%
-  mutate(sib = case_when(is.na(any_over_18) ~ 0,
-                         TRUE ~ 1)) %>%
-  
-  
-sib_7yr_num_sibs_bycity <-
-  sib_7yr_num_sibs %>%
-  left_join
-  
-  # only want deaths
-  #filter(sib.occ > 0) %>%
-  rename(death_agegp10 = agelabel) %>%
-  # join in ego agegroups
-  left_join(ego.dat %>% 
-              select(ego.id = id, ego_agegp10 = agegp10, ego_sex = sex, ego.weight=weight)) %>%
-  select(-sib.exp, -sib.occ, -ego.weight, -ego.id, -sib.id, -agegroup, -time.period)
-
-```
-
-
-```{r avg-sibs-bycity, eval=FALSE}
-sib_by_ego <- sib.dat %>%
-  group_by(ego.id) %>%
-  summarize(num_sib = n(),
-            num_sib_over18 = TODO)
-#write_csv(sib.47q18.boot.12mo, file.path(out_dir, 'sib_12mo_design_probs_boot.csv'))
-```
-
-
-
 ### Sibling estimates by state
 
 NB: this produces a small number of messages like
 'Individual estimates have 2 out of 10000 values missing. These have been removed in the summary statistics. Beware!'
 This is coming from the individual estimator (which we're not interested in here). It doesn't affect our analysis below.
-
-NB: 100 bootstrap reps takes about 
-NB: 1000 bootstrap reps takes about 6 minutes
-
-NB: 5000 bootstrap reps takes about 24 minutes w/ return.boot = FALSE; (using 6 cores) now re-running w/ return.boot = TRUE
-    ... same!
-    
-NB: 20251029 - GETTING WARNINGS
-UNRELIABLE VALUE: Future (‘<none>’) unexpectedly generated random numbers without specifying argument '[future.]seed'. There is a risk that those random numbers are not statistically sound and the overall results might be invalid. To fix this, specify argument '[future.]seed', e.g. 'seed=TRUE'. This ensures that proper, parallel-safe random numbers are produced via the L'Ecuyer-CMRG method. To disable this check, use [future].seed=NULL, or set option 'future.rng.onMisuse' to "ignore"
 
 ```{r sibling-estimates-with-bootstrap}
 
@@ -411,10 +362,11 @@ if(parallel) {
 # Pass the log file path to workers
 sib.asdr <- furrr::future_imap_dfr(city.sib.dat,
   function(cur.sib.dat, state) {
-    # IMPORTANT: Configure logger inside each worker
+    # configure logger inside each worker
+    # (to avoid conflicts...)
     library(logger)
     log_threshold(TRACE)
-    log_appender(appender_file(log_file))  # Note: using appender_file, not appender_tee
+    log_appender(appender_file(log_file)) 
     
     log_debug("Starting state: {state}")
     log_debug("Number of observations: {nrow(cur.sib.dat)}")
@@ -441,6 +393,8 @@ sib.asdr <- furrr::future_imap_dfr(city.sib.dat,
         stop(e)
       }),
       warning = function(w) {
+        # log the warning, but don't let it stop running
+        # the rest of the code
         log_warn("Warning in {state}: {w$message}")
         invokeRestart("muffleWarning")
       }
@@ -519,10 +473,6 @@ summary(sib.47q18.check$rel_diff)
 
 ### Sibling estimates by region
 
-NB: 1000 bootstrap reps takes about 4 minutes
-
-TODO - THIS IS WHERE IT SEEMS TO CRASH...
-
 ```{r sibling-estimates-byregion-bootstrap}
 
 log_info("Starting regional sibling estimates processing")
@@ -540,7 +490,7 @@ sib.region.asdr <- furrr::future_imap_dfr(region.sib.dat,
                                         
                                         library(logger)
                                         log_threshold(TRACE)
-                                        log_appender(appender_file(log_file))  # Note: using appender_file, not appender_tee
+                                        log_appender(appender_file(log_file)) 
                                         
                                         log_debug("Starting region: {region}")
                                         log_debug("Number of observations: {nrow(cur.sib.dat)}")
@@ -803,7 +753,6 @@ write_csv(sib.national.47q18.boot,
 
 ## 12-month estimates
 
-
 ```{r sibling-estimates-with-bootstrap-12mo}
 tic("Running sibling estimates for states...")
 
@@ -817,27 +766,13 @@ sib.asdr.12mo <- furrr::future_imap_dfr(city.sib.dat,
                                         
                                        library(logger)
                                        log_threshold(TRACE)
-                                       log_appender(appender_file(log_file))  # Note: using appender_file, not appender_tee
+                                       log_appender(appender_file(log_file))  
                                        
                                        log_debug("Starting state 12mo estimates: {state}")
                                        log_debug("Number of observations: {nrow(cur.sib.dat)}")
     
                                         cat(glue::glue("Starting {state}...\n\n"))
                                        
-                                       ## reload these weights to avoid memory errors in future... 
-                                        #boot.weights <- readRDS(file.path(survey_data_dir, boot.weights.fn)) 
-                                        #city.boot.weights <- setNames(map(all.states,
-                                        #                                  function(state) {
-                                        #                                    cbw <- boot.weights %>% 
-                                        #                                      filter(state_abbrev==state) %>% 
-                                        #                                      select(-state_abbrev) %>%
-                                        #                                      ## we need the id in the bootstrap data to line up with the id in the
-                                        #                                      ## sibling reports
-                                        #                                      rename(ego.id = id)
-                                        #                                    return(cbw)
-                                        #                                  }),
-                                        #                              all.states)
-                                                                       
                                         cur.bw <- city.boot.weights[[state]]
                                         
                                         cur.ests <- 
