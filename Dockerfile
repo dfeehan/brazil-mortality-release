@@ -6,7 +6,9 @@ ENV TZ=America/Los_Angeles
 COPY . /home/rstudio/brazil-mortality-release
 
 # install dependencies described in DESCRIPTION file
-RUN Rscript -e "devtools::install_deps('/home/rstudio/brazil-mortality-release')"
+# GITHUB_PAT is passed at build time (--build-arg) to avoid rate limits; not stored in image
+ARG GITHUB_PAT
+RUN GITHUB_PAT=${GITHUB_PAT} Rscript -e "devtools::install_deps('/home/rstudio/brazil-mortality-release')"
 
 RUN touch /home/rstudio/brazil-mortality-release/.here
 
