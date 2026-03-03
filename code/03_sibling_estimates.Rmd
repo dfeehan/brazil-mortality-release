@@ -224,7 +224,7 @@ cc_12mo <- siblingsurvival::cell_config(age.groups=age.gps10,
 First, get unweighted point estimates 
 (we use these to calculate the number of adult deaths reported per interview)
 
-```{r unweighted-estts}
+```{r unweighted-ests}
 
 unweighted.sib.7yr.all <- purrr::imap_dfr(city.sib.dat,
                                       function(cur.sib.dat, city_name) {

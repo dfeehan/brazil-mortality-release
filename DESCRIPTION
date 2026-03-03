@@ -56,7 +56,7 @@ Depends:
     wpp2022
 Remotes: 
     dfeehan/surveybootstrap@1dda0de,
-    dfeehan/siblingsurvival@8bec33a789843339462b96c56a12137726855a7b,
+    dfeehan/siblingsurvival@60959992414d01e388adf959da405ac18e58c2c0,
     dfeehan/networkreporting@4793aa9445143a9687af7ac4a4da21826d64bb1f,
     futureverse/furrr@22c9355e5b8eab9caa4e68cbfc27df8e4ea92075,
     dgrtwo/drlib,

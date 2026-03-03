@@ -16,13 +16,6 @@ output:
     df_print: paged
 ---
 
-# TODO
-
-* moran's I: does it look the same as before? look at map, etc
-
-
-
-
 This file makes the comparison between the two survey-based estimates
 (sibling and network) and the vital registration data.
 

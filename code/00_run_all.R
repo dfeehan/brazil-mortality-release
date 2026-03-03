@@ -1,6 +1,3 @@
-# NB: this wasn't needed
-#setwd("brazil-mortality-release")
-
 library(logger)
 logs_dir <- here::here('logs')
 dir.create(logs_dir, showWarnings=FALSE)
@@ -10,10 +7,8 @@ log_appender(appender_tee(file = log_file))
 log_info("run_all started")
 
 # temporary URL for our survey data
-#survey_url <- "https://www.dropbox.com/s/sfrmpx7pgmg9445/data.zip?dl=1"
 survey_url <- "https://www.dropbox.com/scl/fi/zdlxm8u9dgcpmv47uaul3/data.zip?rlkey=c0l3gxh9erpxojyxtarfn79bf&dl=0"
 
-#root.dir <- "brazil-mortality-release"
 root.dir <- "."
 code.dir <- file.path(root.dir, 'code')
 
