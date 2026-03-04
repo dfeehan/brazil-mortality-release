@@ -124,9 +124,9 @@ dpi.net <- nr.deaths.dat %>%
 
 ```{r save-deaths-per-interview}
 write_csv(n.net,
-          path=file.path(out_dir, 'num_interviews.csv'))
+          file=file.path(out_dir, 'num_interviews.csv'))
 write_csv(dpi.net,
-          path=file.path(out_dir, 'num_deaths_unweighted_network.csv'))
+          file=file.path(out_dir, 'num_deaths_unweighted_network.csv'))
 ```
 
 ## Calculate network survival estimates from bootstrap resamples
@@ -489,6 +489,9 @@ write_csv(net.47q18.national.boot,
 ```
 
 
+```{r}
+log_info("Network estimates finished")
+```
 
 
 
