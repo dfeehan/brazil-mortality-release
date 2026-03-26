@@ -1221,7 +1221,9 @@ asdr_properties_point_estimates <- comp_asdrs_boot %>%
              est_var = fp.var(post_mean_asdr),
              est_mean = mean(post_mean_asdr)) %>%
   mutate(est_rmse = sqrt(est_mse),
-         est_se = sqrt(est_var)) %>%
+         est_se = sqrt(est_var),
+         #est_absbias = abs(est_bias), 
+         ) %>%
   mutate(qty = 'asdr')
 
 prob_properties_point_estimates <- comp_probs_boot %>%
@@ -1234,8 +1236,49 @@ prob_properties_point_estimates <- comp_probs_boot %>%
              est_mean = mean(post_mean_q)) %>%
   mutate(est_rmse = sqrt(est_mse),
          est_se = sqrt(est_var)) %>%
+         #est_absbias = abs(est_bias)) %>%
   mutate(qty = 'prob')
 ```
+
+TEMP CHECK
+
+```{r}
+tmp_check <- comp_asdrs_boot %>%
+  group_by(geo, sex, agegp10, method) %>%
+  summarize( est_bias = mean(post_mean_asdr) - gs_asdr[1],
+             est_absbias2 = mean(abs(post_mean_asdr - gs_asdr[1])),
+             est_mse = mean( (post_mean_asdr - gs_asdr[1])^2 ),
+             est_mare = mean( abs(post_mean_asdr - gs_asdr[1])/gs_asdr[1]),
+             est_var = fp.var(post_mean_asdr),
+             est_mean = mean(post_mean_asdr)) %>%
+  mutate(est_rmse = sqrt(est_mse),
+         est_se = sqrt(est_var),
+         est_absbias = abs(est_bias), 
+         ) %>%
+  mutate(qty = 'asdr') %>%
+  # this should be 0, up to floating point error
+  mutate(bvd_check = (est_bias^2 + est_var) - est_mse) %>%
+  # when the bias is close to 0, absdiff > 0, ie, taking the abs value of
+  # each estimated bias is different than abs value of overall bias
+  mutate(abdiff = est_absbias2 - est_absbias)
+```
+
+```{r}
+# this shows that when est_bias is close to 0 (positive or negative), then
+# abdiff is bigger
+plot(tmp_check$est_bias, tmp_check$abdiff)
+```
+
+```{r}
+# est_absbias is | average bias |, while est_absbias2 is overall avg of |bias|
+with(tmp_check, plot(est_absbias, est_rmse))
+```
+
+```{r}
+#
+with(tmp_check, plot(est_absbias2, est_rmse))
+```
+
 
 # Use JAB to calculate uncertainty in Bias/Variance/MSE
 
@@ -1968,6 +2011,8 @@ rmse_tot_diff <- asdr_tot_properties %>%
          se_mare_diff = se_jab_mare_asdr_lopo_diff) %>%
   mutate(est_rmse_diff_ci_low = est_rmse_diff - 1.96*se_rmse_diff,
          est_rmse_diff_ci_high = est_rmse_diff + 1.96*se_rmse_diff)
+
+write_csv(rmse_tot_diff, file.path(comp_out_dir, "rmse_tot_diff.csv"))
 ```
 
 ```{r}
@@ -2178,8 +2223,7 @@ xaxistext <-
   theme(axis.text.x = element_text(size = 6),
         legend.title = element_blank()) 
 
-fig_netsib_asdr <-
-  comp_asdrs_boot %>%
+fig_netsib_asdr_df <- comp_asdrs_boot %>%
     filter(method %in% c('Network', 'Sibling')) %>%
     mutate(method = dplyr::recode(method, !!!method_facet_names)) %>%
     group_by(method, agegp10, sex, boot_idx) %>%
@@ -2187,7 +2231,27 @@ fig_netsib_asdr <-
     group_by(method, agegp10, sex) %>%
     summarize( cur_qoi = mean(mean_est_asdr), 
                cur_ci_low = quantile(mean_est_asdr, .025),
-               cur_ci_high = quantile(mean_est_asdr, .975)) %>%
+               cur_ci_high = quantile(mean_est_asdr, .975))
+
+fig_netsib_asdr_diff <-  comp_asdrs_boot %>%
+   filter(method %in% c('Network', 'Sibling')) %>%
+   select(geo, sex, agegp10, boot_idx, method, post_mean_asdr) %>% # Only the essentials
+   pivot_wider(
+     names_from = method,
+     values_from = post_mean_asdr
+   ) %>%
+   mutate(diff = Network - Sibling) %>%
+   group_by(agegp10, sex, boot_idx) %>%
+   mutate(mean_diff = mean(diff)) %>%
+   group_by(agegp10, sex) %>%
+   summarize(cur_qoi = mean(mean_diff), 
+             cur_ci_low = quantile(mean_diff, .025),
+             cur_ci_high = quantile(mean_diff, .975)) %>%
+   # dummy label for facet title
+   mutate(label = "Comparison") 
+
+fig_netsib_asdr <-
+   fig_netsib_asdr_df %>%
     ggplot(.) +
     geom_pointrange(aes(x = agegp10,
                         y = cur_qoi,
@@ -2205,22 +2269,7 @@ fig_netsib_asdr <-
 
 # not bias
 fig_diff_asdr <-
- comp_asdrs_boot %>%
-   filter(method %in% c('Network', 'Sibling')) %>%
-   select(geo, sex, agegp10, boot_idx, method, post_mean_asdr) %>% # Only the essentials
-   pivot_wider(
-     names_from = method,
-     values_from = post_mean_asdr
-   ) %>%
-   mutate(diff = Network - Sibling) %>%
-   group_by(agegp10, sex, boot_idx) %>%
-   mutate(mean_diff = mean(diff)) %>%
-   group_by(agegp10, sex) %>%
-   summarize(cur_qoi = mean(mean_diff), 
-             cur_ci_low = quantile(mean_diff, .025),
-             cur_ci_high = quantile(mean_diff, .975)) %>%
-   # dummy label for facet title
-   mutate(label = "Comparison") %>%   
+  fig_netsib_asdr_diff %>%   
    ggplot(.) +
    geom_hline(yintercept = 0, color = 'grey') +
    geom_pointrange(aes(x = agegp10,
@@ -2279,6 +2328,7 @@ fig_avg_asdr <- #(fig_netsib_asdr + box_theme) +
 
 # NB: this is used in paper
 saveRDS(fig_avg_asdr, file.path(comp_out_dir, "fig_avg_asdr.rds"))
+saveRDS(fig_netsib_asdr_diff, file.path(comp_out_dir, "fig_avg_asdr_diff_df.rds"))
 ggsave(filename=file.path(comp_out_dir, "fig_avg_asdr.pdf"),
        plot=fig_avg_asdr,
        height=3.5,
@@ -2390,7 +2440,7 @@ loss_plot <- function(cur_qoi_var,
           legend.justification = 'center',
           plot.tag = element_text(face = 'bold', size = 12))
   
-  return(fig_all)
+  return(lst(fig=fig_all, plot_df=plot_df, diff_df=diff_data))
 }
 ```
 
@@ -2402,12 +2452,96 @@ fig_rmse <- loss_plot(point_est_rmse, se_jab_rmse_asdr_lopo,
 # NB: this is used in paper
 saveRDS(fig_rmse, file.path(comp_out_dir, "fig_rmse.rds"))
 ggsave(filename=file.path(comp_out_dir, "fig_rmse.pdf"),
-       plot=fig_rmse,
+       plot=fig_rmse$fig,
        height=3.5,
        width=8)
 
-fig_rmse
+fig_rmse$fig
 ```
+
+TODO DIGGING INTO RMSE AND ABS BIAS
+
+The plots showing differences in RMSE and differences in |bias| look very similar
+is this just a coincidence? or a bug?
+
+... it looks like RMSE and |bias| are very similar at the level of each estimate...
+
+```{r}
+plot(asdr_agesex_properties_long$point_est_rmse, asdr_agesex_properties_long$point_est_absbias)
+```
+
+To make this a bit more concrete, here's where we really calculate RMSE and |bias|:
+
+NB: THIS IS WHAT I AM GOING TO CHANGE -- abs bias calculation here...
+
+> asdr_properties_point_estimates <- comp_asdrs_boot %>%
+>   group_by(geo, sex, agegp10, method) %>%
+>   summarize( est_bias = mean(post_mean_asdr) - gs_asdr[1],
+>              est_absbias = mean(abs(post_mean_asdr - gs_asdr[1])),
+>              est_mse = mean( (post_mean_asdr - gs_asdr[1])^2 ),
+>              est_mare = mean( abs(post_mean_asdr - gs_asdr[1])/gs_asdr[1]),
+>              est_var = fp.var(post_mean_asdr),
+>              est_mean = mean(post_mean_asdr)) %>%
+>   mutate(est_rmse = sqrt(est_mse),
+>          est_se = sqrt(est_var)) %>%
+>   mutate(qty = 'asdr')
+
+and an example / snippet of what comp_asdrs_boot looks like:
+(NB: 5,400,000 = 2 methods X 27 cities X 10 age/sex groups X 10,000 boostrap reps)
+
+> glimpse(comp_asdrs_boot)
+Rows: 5,400,000
+Columns: 13
+$ geo              <chr> "RO", "RO", "RO", "RO", "RO", "RO", "RO", "RO", "RO", "RO", "RO", "RO", "RO", "RO", …
+$ sex              <chr> "Male", "Male", "Male", "Male", "Male", "Male", "Male", "Male", "Male", "Male", "Mal…
+$ agegp10          <chr> "[18,25)", "[18,25)", "[18,25)", "[18,25)", "[18,25)", "[18,25)", "[18,25)", "[18,25…
+$ boot_idx         <dbl> 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 2…
+$ post_mean_asdr   <dbl> 0.000000, 7.105797, 4.327984, 0.000000, 6.196436, 3.927067, 2.264283, 0.000000, 5.02…
+$ method           <chr> "Sibling", "Sibling", "Sibling", "Sibling", "Sibling", "Sibling", "Sibling", "Siblin…
+$ gs_asdr          <dbl> 2.802548, 2.802548, 2.802548, 2.802548, 2.802548, 2.802548, 2.802548, 2.802548, 2.80…
+$ num_deaths       <dbl> 95.07923, 95.07923, 95.07923, 95.07923, 95.07923, 95.07923, 95.07923, 95.07923, 95.0…
+$ popn             <dbl> 33926, 33926, 33926, 33926, 33926, 33926, 33926, 33926, 33926, 33926, 33926, 33926, …
+$ delta            <dbl> -2.8025475, 4.3032491, 1.5254367, -2.8025475, 3.3938883, 1.1245195, -0.5382642, -2.8…
+$ delta2           <dbl> 7.8542727, 18.5179531, 2.3269573, 7.8542727, 11.5184778, 1.2645440, 0.2897283, 7.854…
+$ delta_rel        <dbl> 1.0000000, 1.5354777, 0.5443036, 1.0000000, 1.2110012, 0.4012490, 0.1920625, 1.00000…
+$ delta_rel_notabs <dbl> -1.0000000, 1.5354777, 0.5443036, -1.0000000, 1.2110012, 0.4012490, -0.1920625, -1.0…
+
+these get aggregated up to age/sex groups 
+(a 10-row dataframe, one for each age/sex group; cols have the different qois)
+
+> asdr_agesex_properties <- asdr_properties_point_estimates %>%
+>   rename_with(~ paste0('point_', .x),
+>               starts_with('est_')) %>%
+>   # aggregate up to age/sex level (by averaging across cities)
+>   group_by(agegp10, sex, method) %>%
+>   summarize(across(matches('point_'),
+>                    mean,
+>                    .names='{.col}')) %>%
+>   pivot_wider(names_from='method',
+>               values_from=starts_with('point_')) %>%
+>   pivot_longer(cols = contains('point_est'),
+>                names_to = c('metric', 'method'),
+>                names_pattern = "(.*)_(Network|Sibling)") %>%
+>   pivot_wider(names_from = method,
+>               values_from = value) %>%
+>   mutate(diff = Network - Sibling) %>%
+>   pivot_wider(names_from = metric,
+>               values_from = c(Network, Sibling, diff),
+>               names_glue = "{metric}_{.value}") %>%
+>   left_join(jab_agesex_asdr_ests) 
+
+then, to long-form dataset (30 rows: one each for sibling, network, difference):
+
+> asdr_agesex_properties_long <- asdr_agesex_properties %>%
+>   pivot_longer(
+>     cols = contains(c("_Network", "_Sibling", "_diff")),
+>     names_to = c(".value", "method"),
+>     names_pattern = "(.*)_(Network|Sibling|diff)$"
+>   )
+
+
+
+END DIGGING INTO RMSE AND ABS BIAS
 
 
 ```{r}
@@ -2418,11 +2552,11 @@ fig_se <- loss_plot(point_est_se, se_jab_se_asdr_lopo,
 # NB: this is used in paper
 saveRDS(fig_se, file.path(comp_out_dir, "fig_se.rds"))
 ggsave(filename=file.path(comp_out_dir, "fig_se.pdf"),
-       plot=fig_se,
+       plot=fig_se$fig,
        height=3.5,
        width=8)
 
-fig_se
+fig_se$fig
 ```
 
 ```{r}
@@ -2438,11 +2572,11 @@ fig_combinedbias <- loss_plot(point_est_bias,
 # NB: this is used in paper
 saveRDS(fig_combinedbias, file.path(comp_out_dir, "fig_combinedbias.rds"))
 ggsave(filename=file.path(comp_out_dir, "fig_combinedbias.pdf"),
-       plot=fig_combinedbias,
+       plot=fig_combinedbias$fig,
        height=3.5,
        width=8)
 
-fig_combinedbias
+fig_combinedbias$fig
 ```
 
 This will go in the appendix, we think...
