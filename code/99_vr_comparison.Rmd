@@ -2472,6 +2472,59 @@ then, to long-form dataset (30 rows: one each for sibling, network, difference):
 >   )
 
 
+```{r}
+city_bias <- comp_asdrs_boot %>% group_by(method, agegp10, sex, geo) %>% summarize(avg_bias = mean(post_mean_asdr - gs_asdr), avg_abs_bias = mean(abs(post_mean_asdr - gs_asdr)))
+```
+
+```{r}
+city_bias %>%
+  ggplot(aes(x=agegp10, y=avg_bias)) +
+  geom_jitter(width=0.2, height=0, col='darkgrey')+
+  # add dots at the mean
+  stat_summary(fun = "mean", geom = "point", color = "blue", size = 3, pch=2) +
+  facet_grid(method ~ sex) +
+  geom_hline(yintercept = 0) +
+  ylab("City-specific point estimate of bias") +
+  xlab("") +
+  theme_minimal()
+
+```
+```{r}
+city_bias %>%
+  ggplot(aes(x = agegp10, y = avg_bias, color = method)) +
+  # Update stat_summary to also use dodging
+  stat_summary(fun = "mean", 
+               geom = "point", 
+               size = 3, 
+               pch = 24,
+               stroke=1.5,
+               position = position_dodge(width = 0.75), 
+               show.legend = FALSE) +
+  # Use position_jitterdodge instead of geom_jitter
+  geom_point(position = position_jitterdodge(jitter.width = 0.2, 
+                                             jitter.height = 0, 
+                                             dodge.width = 0.75),
+             alpha = 0.5) +
+  facet_grid(. ~ sex) + # Remove 'method' from the grid rows
+  geom_hline(yintercept = 0) +
+  scale_color_manual(values = c("Network" = "#E69F00", "Sibling" = "#56B4E9")) + # Optional: clean colors
+  ylab("Age-sex-city point estimate of bias") +
+  xlab("") +
+  theme_minimal()
+```
+
+```{r}
+city_bias %>%
+  pivot_wider(names_from='method', values_from=c('avg_bias', 'avg_abs_bias')) %>%
+  ggplot(., aes(x=avg_bias_Network, y=avg_bias_Sibling)) +
+  geom_abline(intercept=0, slope=1, color='grey') +
+  geom_point() +
+  facet_wrap( ~ sex) +
+  theme_minimal() +
+  xlab("Network bias") + ylab("Sibling bias") +
+  tune::coord_obs_pred()
+
+```
 
 END DIGGING INTO RMSE AND ABS BIAS
 
