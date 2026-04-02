@@ -1101,14 +1101,6 @@ direct_plot_probs_logged
 
 ```
 
-
-
-TODO - for all of these
-
--- do we want to switch to JAB estimates of MSEs?
--- what about regional and national analyses?
-
-
 # Summaries of estimated sampling variation
 
 ## Minimum detectable effects
@@ -1238,45 +1230,6 @@ prob_properties_point_estimates <- comp_probs_boot %>%
          est_se = sqrt(est_var),
          est_absbias = abs(est_bias)) %>%
   mutate(qty = 'prob')
-```
-
-TEMP CHECK
-
-```{r}
-tmp_check <- comp_asdrs_boot %>%
-  group_by(geo, sex, agegp10, method) %>%
-  summarize( est_bias = mean(post_mean_asdr) - gs_asdr[1],
-             est_absbias2 = mean(abs(post_mean_asdr - gs_asdr[1])),
-             est_mse = mean( (post_mean_asdr - gs_asdr[1])^2 ),
-             est_mare = mean( abs(post_mean_asdr - gs_asdr[1])/gs_asdr[1]),
-             est_var = fp.var(post_mean_asdr),
-             est_mean = mean(post_mean_asdr)) %>%
-  mutate(est_rmse = sqrt(est_mse),
-         est_se = sqrt(est_var),
-         est_absbias = abs(est_bias), 
-         ) %>%
-  mutate(qty = 'asdr') %>%
-  # this should be 0, up to floating point error
-  mutate(bvd_check = (est_bias^2 + est_var) - est_mse) %>%
-  # when the bias is close to 0, absdiff > 0, ie, taking the abs value of
-  # each estimated bias is different than abs value of overall bias
-  mutate(abdiff = est_absbias2 - est_absbias)
-```
-
-```{r}
-# this shows that when est_bias is close to 0 (positive or negative), then
-# abdiff is bigger
-plot(tmp_check$est_bias, tmp_check$abdiff)
-```
-
-```{r}
-# est_absbias is | average bias |, while est_absbias2 is overall avg of |bias|
-with(tmp_check, plot(est_absbias, est_rmse))
-```
-
-```{r}
-#
-with(tmp_check, plot(est_absbias2, est_rmse))
 ```
 
 
