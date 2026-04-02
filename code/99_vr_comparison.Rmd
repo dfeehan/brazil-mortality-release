@@ -1215,28 +1215,28 @@ These get calculated for each method/city/age/sex
 asdr_properties_point_estimates <- comp_asdrs_boot %>%
   group_by(geo, sex, agegp10, method) %>%
   summarize( est_bias = mean(post_mean_asdr) - gs_asdr[1],
-             est_absbias = mean(abs(post_mean_asdr - gs_asdr[1])),
              est_mse = mean( (post_mean_asdr - gs_asdr[1])^2 ),
              est_mare = mean( abs(post_mean_asdr - gs_asdr[1])/gs_asdr[1]),
              est_var = fp.var(post_mean_asdr),
              est_mean = mean(post_mean_asdr)) %>%
   mutate(est_rmse = sqrt(est_mse),
          est_se = sqrt(est_var),
-         #est_absbias = abs(est_bias), 
+         # the absolute bias is based on taking the absolute value of each
+         # bias estimate, and then aggregating those
+         est_absbias = abs(est_bias), 
          ) %>%
   mutate(qty = 'asdr')
 
 prob_properties_point_estimates <- comp_probs_boot %>%
   group_by(geo, sex, method) %>%
   summarize( est_bias = mean(post_mean_q) - gs_prob[1],
-             est_absbias = mean(abs(post_mean_q - gs_prob[1])),
              est_mse = mean( (post_mean_q - gs_prob[1])^2 ),
              est_mare = mean( abs(post_mean_q - gs_prob[1])/gs_prob[1]),
              est_var = fp.var(post_mean_q),
              est_mean = mean(post_mean_q)) %>%
   mutate(est_rmse = sqrt(est_mse),
-         est_se = sqrt(est_var)) %>%
-         #est_absbias = abs(est_bias)) %>%
+         est_se = sqrt(est_var),
+         est_absbias = abs(est_bias)) %>%
   mutate(qty = 'prob')
 ```
 
@@ -1385,11 +1385,11 @@ lopo_ests <- jab_df %>%
                                     var_asdr_lopo = fp.var(post_mean_asdr),
                                     mean_asdr_lopo = mean(post_mean_asdr),
                                     bias_asdr_lopo = mean(post_mean_asdr - gs_asdr),
-                                    absbias_asdr_lopo = mean(abs(post_mean_asdr - gs_asdr)),
                                     mse_asdr_lopo = mean((post_mean_asdr - gs_asdr)^2),
                                     mare_asdr_lopo = mean( abs(post_mean_asdr - gs_asdr) / gs_asdr),
                                     .groups = "drop") %>%
-                          mutate(rmse_asdr_lopo = sqrt(mse_asdr_lopo),
+                          mutate(absbias_asdr_lopo = abs(bias_asdr_lopo),
+                                 rmse_asdr_lopo = sqrt(mse_asdr_lopo),
                                  se_asdr_lopo = sqrt(var_asdr_lopo))
                         
                         return(cur_res)
@@ -1418,11 +1418,11 @@ lopo_prob_ests <- jab_df %>%
                                     var_prob_lopo = fp.var(post_mean_q),
                                     mean_prob_lopo = mean(post_mean_q),
                                     bias_prob_lopo = mean(post_mean_q - gs_prob),
-                                    absbias_prob_lopo = mean(abs(post_mean_q - gs_prob)),                                    
                                     mse_prob_lopo = mean((post_mean_q - gs_prob)^2),
                                     mare_prob_lopo = mean( abs(post_mean_q - gs_prob) / gs_prob),
                                     .groups = "drop") %>%
-                          mutate(rmse_prob_lopo = sqrt(mse_prob_lopo),
+                          mutate(absbias_prob_lopo = abs(bias_prob_lopo),
+                                 rmse_prob_lopo = sqrt(mse_prob_lopo),
                                  se_prob_lopo = sqrt(var_prob_lopo))
                           
                         return(cur_res)
@@ -1742,6 +1742,10 @@ jab_agesex_asdr_ests <- jab_asdr_ests %>%
 
 
 ```{r}
+## here, we roll the 270 city/sex/age estimates up into
+## averages by age/sex group
+## (note that this means that abs_bias will not be |bias|, since
+##  we have now aggregated...)
 asdr_agesex_properties <- asdr_properties_point_estimates %>%
   rename_with(~ paste0('point_', .x),
               starts_with('est_')) %>%
@@ -1762,7 +1766,6 @@ asdr_agesex_properties <- asdr_properties_point_estimates %>%
               values_from = c(Network, Sibling, diff),
               names_glue = "{metric}_{.value}") %>%
   left_join(jab_agesex_asdr_ests) 
-  # TODO - ADD SE?
 ```
 
 #### NB: Probs not applicable 
@@ -2057,7 +2060,6 @@ ggsave(filename=file.path(comp_out_dir, "diff_rmse_tot.pdf"),
 
 diff_rmse_tot_plot
 ```
-
 
 ## Save results for plots
 
@@ -2355,22 +2357,13 @@ loss_plot <- function(cur_qoi_var,
                       cur_se_var, 
                       ylab_text,
                       diff_ylab_text,
-                      df = asdr_agesex_properties_long,
-                      # these only get used if is_bias = TRUE
-                      diff_var = NULL,
-                      diff_se = NULL,
-                      is_bias = FALSE) {
+                      df = asdr_agesex_properties_long) {
   
   plot_df <- df %>%
     mutate(cur_qoi = {{cur_qoi_var}},
            cur_se = {{cur_se_var}},
            cur_ci_high = cur_qoi + (1.96 * cur_se),
            cur_ci_low = cur_qoi - (1.96 * cur_se))
-  
-  # if is_bias, need the difference also
-  if (is_bias) {
-
-  }
   
   xaxistext <- theme(
     axis.text.x = element_text(size = 6),
@@ -2387,23 +2380,8 @@ loss_plot <- function(cur_qoi_var,
     theme_minimal() +
     xaxistext
   
-  if (is_bias) { 
-    fig_netsib <- fig_netsib + geom_hline(yintercept = 0, color = 'grey')
-  }
-  
   # right Panel: Difference (Network - Sibling)
-  # if not bias, use the 'diff' metric
-  if (! is_bias) {
-    diff_data <- plot_df %>% filter(method %in% c('diff'))
-  } else {
-    # otherwise, if is_bias, then use different metric 
-    diff_data <- df %>%
-      filter(method == 'diff') %>%
-      mutate(cur_qoi = {{diff_var}},
-             cur_se = {{diff_se}},
-             cur_ci_high = cur_qoi + (1.96 * cur_se),
-             cur_ci_low = cur_qoi - (1.96 * cur_se))
-  }
+  diff_data <- plot_df %>% filter(method %in% c('diff'))
   
   # calculate symmetric limits for y axis (so 0 is in the middle)
   max_abs_diff <- max(abs(c(diff_data$cur_ci_low, diff_data$cur_ci_high)), na.rm = TRUE)
@@ -2442,6 +2420,7 @@ loss_plot <- function(cur_qoi_var,
   
   return(lst(fig=fig_all, plot_df=plot_df, diff_df=diff_data))
 }
+
 ```
 
 ```{r}
@@ -2560,12 +2539,89 @@ fig_se$fig
 ```
 
 ```{r}
+
+## Another function to plot bias, with barplot
+## in the 'comparison' panel
+bias_plot <- function(cur_qoi_var, 
+                      cur_se_var, 
+                      ylab_text,
+                      df = asdr_agesex_properties_long,
+                      # these only get used if is_bias = TRUE
+                      diff_var = NULL,
+                      diff_se = NULL) {
+  
+  plot_df <- df %>%
+    mutate(cur_qoi = {{cur_qoi_var}},
+           cur_se = {{cur_se_var}},
+           cur_ci_high = cur_qoi + (1.96 * cur_se),
+           cur_ci_low = cur_qoi - (1.96 * cur_se))
+  
+  xaxistext <- theme(
+    axis.text.x = element_text(size = 6),
+    legend.title = element_blank()
+  ) 
+  
+  fig_netsib <- plot_df %>%
+    filter(method %in% c('Network', 'Sibling')) %>%
+    mutate(method = dplyr::recode(method, !!!method_facet_names)) %>%
+    ggplot(aes(x = agegp10, y = cur_qoi, ymin = cur_ci_low, ymax = cur_ci_high, color = sex)) +
+    geom_pointrange(position = position_dodge(width = 0.4)) +
+    facet_grid(~ method) +
+    xlab("") + ylab(ylab_text) +
+    theme_minimal() +
+    xaxistext
+  
+  fig_netsib <- fig_netsib + geom_hline(yintercept = 0, color = 'grey')
+  
+  # right panel: absolute value of bias 
+  diff_data <- df %>%
+    #filter(method == 'diff') %>%
+    filter(method != 'diff') %>%
+    mutate(cur_qoi = {{diff_var}},
+           cur_se = {{diff_se}},
+           cur_ci_high = cur_qoi + (1.96 * cur_se),
+           cur_ci_low = cur_qoi - (1.96 * cur_se))
+  
+  # calculate symmetric limits for y axis (so 0 is in the middle)
+  max_abs_diff <- max(abs(c(diff_data$cur_ci_low, diff_data$cur_ci_high)), na.rm = TRUE)
+  
+  annrelsize <- 3 
+  annheight <- max_abs_diff * 0.5 # Dynamic height based on data range
+  
+fig_diff <- diff_data %>%
+  mutate(method = dplyr::recode(method, !!!method_facet_names)) %>%
+  ggplot(aes(x = agegp10, y = cur_qoi, ymin = cur_ci_low, ymax = cur_ci_high, 
+             color = sex, shape = method)) +
+  geom_hline(yintercept = 0, color = 'grey') +
+  geom_pointrange(position = position_dodge(width = 0.4)) +
+  scale_y_continuous(limits = c(0, max_abs_diff)) +
+  #annotate(geom = 'text', 
+  #         label = "Sibling is better ->", 
+  #         y = annheight, x = 0.25, 
+  #         size = annrelsize, color = 'black', angle = 90) +
+  #annotate(geom = 'text', 
+  #         label = "<- Network is better", 
+  #         y = -annheight, x = 0.25, 
+  #         size = annrelsize, color = 'black', angle = 90) +
+  #coord_cartesian(clip = "off", xlim = c(0.5, 5.5)) +
+  xlab("") + ylab("| Average Estimated Bias |") +
+  theme_minimal()
+  
+  fig_all <- fig_netsib + fig_diff +
+    plot_layout(widths = c(2, 1), guides = 'collect') +
+    plot_annotation(tag_levels = 'A', tag_suffix = ')') &
+    theme(legend.position = 'bottom',
+          legend.direction = 'horizontal',
+          legend.justification = 'center',
+          plot.tag = element_text(face = 'bold', size = 12))
+  
+  return(lst(fig=fig_all, plot_df=plot_df, diff_df=diff_data))
+}
+
 # 'combined' b/c the left panel is bias and the right is diff in absolute bias
-fig_combinedbias <- loss_plot(point_est_bias, 
+fig_combinedbias <- bias_plot(point_est_bias, 
                               se_jab_bias_asdr_lopo, 
                               'Average Estimated Bias',
-                              '|Network estimate| - |Sibling estimate|', 
-                              is_bias =TRUE,
                               diff_var = point_est_absbias,
                               diff_se = se_jab_absbias_asdr_lopo)
 
@@ -2578,6 +2634,40 @@ ggsave(filename=file.path(comp_out_dir, "fig_combinedbias.pdf"),
 
 fig_combinedbias$fig
 ```
+
+```{r}
+fig_combinedbias$diff_df %>% select(matches('cur_'), everything())
+
+```
+
+plot point estimates of bias for all 270 age/sex groups
+
+```{r}
+
+```
+
+
+TODO EXPLORE FOR SUMMARY OF BIAS BY METHOD
+
+Get the average absolute bias across all 270 estimates
+
+```{r}
+## this is the absolute value of the average bias w/in each age-sex group
+## in other words, we first average signed bias w/in age sex group, then take average value
+asdr_agesex_properties_long %>%
+  group_by(method) %>%
+  summarize(avg_of_abs_bias = mean(abs(point_est_bias)))
+```
+
+```{r}
+fig_combinedbias$plot_df %>%
+  group_by(method) %>%
+  summarize(mean_abs_bias = mean(point_est_absbias))
+```
+
+
+TODO END OF EXPLORE OF SUMMARY OF BIAS BY METHOD
+
 
 This will go in the appendix, we think...
 

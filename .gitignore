@@ -3,6 +3,8 @@ old-*
 *.log
 brazil-directories/
 
+.claude/
+
 olddata
 olddata.zip
 .RData

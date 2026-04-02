@@ -102,6 +102,14 @@ cat(vr.table.rendered,
 cat(vr.table.rendered)
 ```
 
+Calculate median level of completeness for the text
+
+```{r}
+median_completeness <- quantile(cr_res_tbl$mean_sim_cov_pct, 0.5)
+glue::glue("Median level of completeness: {median_completeness}")
+```
+
+
 NB: this is the same conclusion we'd reach by just looking at the 2015 data
 
 ```{r}
