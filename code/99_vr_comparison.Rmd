@@ -1216,6 +1216,7 @@ asdr_properties_point_estimates <- comp_asdrs_boot %>%
          # the absolute bias is based on taking the absolute value of each
          # bias estimate, and then aggregating those
          est_absbias = abs(est_bias), 
+         est_bias2 = est_bias*est_bias,
          ) %>%
   mutate(qty = 'asdr')
 
@@ -1228,7 +1229,8 @@ prob_properties_point_estimates <- comp_probs_boot %>%
              est_mean = mean(post_mean_q)) %>%
   mutate(est_rmse = sqrt(est_mse),
          est_se = sqrt(est_var),
-         est_absbias = abs(est_bias)) %>%
+         est_absbias = abs(est_bias),
+         est_bias2 = est_bias*est_bias) %>%
   mutate(qty = 'prob')
 ```
 
@@ -1342,6 +1344,7 @@ lopo_ests <- jab_df %>%
                                     mare_asdr_lopo = mean( abs(post_mean_asdr - gs_asdr) / gs_asdr),
                                     .groups = "drop") %>%
                           mutate(absbias_asdr_lopo = abs(bias_asdr_lopo),
+                                 bias2_asdr_lopo = bias_asdr_lopo*bias_asdr_lopo,
                                  rmse_asdr_lopo = sqrt(mse_asdr_lopo),
                                  se_asdr_lopo = sqrt(var_asdr_lopo))
                         
@@ -1440,7 +1443,7 @@ Use jackknife after bootstrap to estimate the properties of estimated death rate
 
 ```{r jab-estimates}
 
-all_metrics_re <- "^absbias_|^se_|^mare_|^mse_|^rmse_|^bias_|^var_"
+all_metrics_re <- "^absbias_|^se_|^mare_|^mse_|^rmse_|^bias_|^bias2_|^var_"
 
 jab_asdr_ests <- lopo_ests_wide %>%
   #select(-jab_indexes) %>%
@@ -1655,12 +1658,6 @@ prob_geo_properties <- prob_properties_point_estimates %>%
 
 #### ASDRs
 
-TODO - THINK ABOUT THIS
-when aggregating up to an age across cities, need the (1/27)^2
-when just calculating a mean, we do not need that
-
-I think for each LOPO
-
 ```{r}
 if (geo_name == 'city') {
   NUM_GEO_UNITS <- 27
@@ -1673,16 +1670,16 @@ if (geo_name == 'city') {
 
 
 ```{r}
-  #summarize(across(starts_with('var'), 
-  #                 ~ ((1/NUM_GEO_UNITS)^2)*sum(.x) ,
-  #                 .names = "{.col}")) %>%
 jab_agesex_asdr_ests <- jab_asdr_ests %>%
   group_by(agegp10, sex) %>%
   # sum variances across geo to get aggregate variance estimate
   # (and note we need to multiply by 1/C^2)
-  summarize(across(matches("^mean_"),
+  summarize(# quantities that are means get aggregated by simply
+            # taking the mean
+            across(matches("^mean_"),
                            mean,
                            .names = "{.col}"),
+            # variances aggregate w/ (1/K)^2 * \sum x_i
             across(matches("^var_"),
                    ~ ((1/NUM_GEO_UNITS)^2)*sum(.x) ,
                    .names = "{.col}")) %>%
@@ -1690,9 +1687,19 @@ jab_agesex_asdr_ests <- jab_asdr_ests %>%
     matches("^var_jab"),
     sqrt,
     .names = "{str_replace(.col, 'var_jab', 'se_jab')}")) %>%
-  mutate(qty = 'asdr')
+  mutate(qty = 'asdr') %>%
+  ## TEMP NEW - conservative variance ests for systematic bias
+  ## (conservative because we're just using the variance estimate for the non-absolute value,
+  ##  which should generally be >= the abs value variance)
+  mutate(across(
+    .cols = contains("_bias_asdr_lopo_"), 
+    .fns = identity, 
+    .names = "{str_replace(.col, 'bias', 'sysbias')}" 
+  ))
 ```
 
+
+### HERE IS AGE SEX AGG
 
 ```{r}
 ## here, we roll the 270 city/sex/age estimates up into
@@ -1709,6 +1716,9 @@ asdr_agesex_properties <- asdr_properties_point_estimates %>%
                    .names='{.col}')) %>%
   pivot_wider(names_from='method',
               values_from=starts_with('point_')) %>%
+  # NEW
+  mutate(point_est_sysbias_Network = abs(point_est_bias_Network),
+         point_est_sysbias_Sibling = abs(point_est_bias_Sibling)) %>%
   pivot_longer(cols = contains('point_est'),
                names_to = c('metric', 'method'),
                names_pattern = "(.*)_(Network|Sibling)") %>%
@@ -1963,12 +1973,25 @@ Get the total estimated difference in RMSE (averaged across all cities)
 rmse_tot_diff <- asdr_tot_properties %>%
   rename(est_rmse_diff = point_est_rmse_diff,
          est_mare_diff = point_est_mare_diff,
+         est_se_diff = point_est_se_diff,
          se_rmse_diff = se_jab_rmse_asdr_lopo_diff,
-         se_mare_diff = se_jab_mare_asdr_lopo_diff) %>%
+         se_mare_diff = se_jab_mare_asdr_lopo_diff,
+         se_se_diff = se_jab_se_asdr_lopo_diff) %>%
   mutate(est_rmse_diff_ci_low = est_rmse_diff - 1.96*se_rmse_diff,
-         est_rmse_diff_ci_high = est_rmse_diff + 1.96*se_rmse_diff)
+         est_rmse_diff_ci_high = est_rmse_diff + 1.96*se_rmse_diff) %>%
+  mutate(est_se_diff_ci_low = est_se_diff - 1.96*se_se_diff,
+         est_se_diff_ci_high = est_se_diff + 1.96*se_se_diff)
 
 write_csv(rmse_tot_diff, file.path(comp_out_dir, "rmse_tot_diff.csv"))
+
+glue::glue_data(rmse_tot_diff,
+"
+           se diff: {round(est_se_diff,2)} ({round(est_se_diff_ci_low,2)}, {round(est_se_diff_ci_high,2)})
+           ")
+glue::glue_data(rmse_tot_diff,
+"
+           est rmse diff: {round(est_rmse_diff,2)} ({round(est_rmse_diff_ci_low,2)}, {round(est_rmse_diff_ci_high,2)}) 
+           ")
 ```
 
 ```{r}
@@ -2055,7 +2078,7 @@ asdr_tot_properties_tosave <-
       TRUE ~ NA_character_
     ),
     # Extract the loss function (the common property)
-    loss = str_extract(full_name, "(se|rmse|mare|mse|absbias|bias|var|mean)(?=_asdr|_Network|_Sibling|_diff|$)")
+    loss = str_extract(full_name, "(se|rmse|mare|mse|absbias|bias|bias2|var|mean)(?=_asdr|_Network|_Sibling|_diff|$)")
   ) %>%
   # 3. Clean up: remove rows that didn't match (like the '1' column)
   filter(!is.na(metric), !is.na(loss)) %>%
@@ -2247,8 +2270,8 @@ max_abs_diff <- max(abs(c(fig_diff_asdr$data$cur_ci_low,
                           fig_diff_asdr$data$cur_ci_high)), 
                     na.rm = TRUE)
 
-annrelsize <- 3 
-annheight <- 3 
+annrelsize <- 2.5 
+annheight <- 3.25 
 
 # 2. Update the difference plot with centered y-axis
 fig_diff_asdr_centered <- fig_diff_asdr + 
@@ -2339,8 +2362,8 @@ loss_plot <- function(cur_qoi_var,
   # calculate symmetric limits for y axis (so 0 is in the middle)
   max_abs_diff <- max(abs(c(diff_data$cur_ci_low, diff_data$cur_ci_high)), na.rm = TRUE)
   
-  annrelsize <- 3 
-  annheight <- max_abs_diff * 0.5 # Dynamic height based on data range
+  annrelsize <- 2.5 
+  annheight <- max_abs_diff * 0.6 # Dynamic height based on data range
   
   fig_diff <- diff_data %>%
     mutate(method = dplyr::recode(method, !!!method_facet_names)) %>%
@@ -2544,11 +2567,132 @@ ggsave(filename=file.path(comp_out_dir, "fig_se.pdf"),
 fig_se$fig
 ```
 
+TODO - I think we are moving towards having panel B
+be the version that is readable off of panel A
+ie, |average bias in cell network| - |average bias in cell sibling|
+
+
 ```{r}
 
 ## Another function to plot bias, with barplot
 ## in the 'comparison' panel
 bias_plot <- function(cur_qoi_var, 
+                      cur_se_var, 
+                      ylab_text,
+                      df = asdr_agesex_properties_long,
+                      #bias_type = 'typical',
+                      # these only get used if is_bias = TRUE
+                      diff_var = NULL,
+                      diff_se = NULL) {
+  
+  plot_df <- df %>%
+    mutate(cur_qoi = {{cur_qoi_var}},
+           cur_se = {{cur_se_var}},
+           cur_ci_high = cur_qoi + (1.96 * cur_se),
+           cur_ci_low = cur_qoi - (1.96 * cur_se))
+  
+  xaxistext <- theme(
+    axis.text.x = element_text(size = 6),
+    legend.title = element_blank()
+  ) 
+  
+  fig_netsib <- plot_df %>%
+    filter(method %in% c('Network', 'Sibling')) %>%
+    mutate(method = dplyr::recode(method, !!!method_facet_names)) %>%
+    ggplot(aes(x = agegp10, y = cur_qoi, ymin = cur_ci_low, ymax = cur_ci_high, color = sex)) +
+    geom_pointrange(position = position_dodge(width = 0.4)) +
+    facet_grid(~ method) +
+    xlab("") + ylab(ylab_text) +
+    theme_minimal() +
+    xaxistext
+  
+  fig_netsib <- fig_netsib + geom_hline(yintercept = 0, color = 'grey')
+  
+  #############################
+  # right panel: diff in typical bias magnitude 
+  #if(bias_type == 'typical') {
+    
+    diff_data <- df %>%
+      filter(method == 'diff') %>%
+      #filter(method != 'diff') %>%
+      mutate(cur_qoi = {{diff_var}},
+             cur_se = {{diff_se}},
+             cur_ci_high = cur_qoi + (1.96 * cur_se),
+             cur_ci_low = cur_qoi - (1.96 * cur_se))
+    
+    # calculate symmetric limits for y axis (so 0 is in the middle)
+    max_abs_diff <- max(abs(c(diff_data$cur_ci_low, diff_data$cur_ci_high)), na.rm = TRUE)
+    
+    annrelsize <- 2.5
+    annheight <- max_abs_diff * 0.6 # Dynamic height based on data range
+    
+    fig_diff <- diff_data %>%
+      mutate(method = dplyr::recode(method, !!!method_facet_names)) %>%
+      ggplot(aes(x = agegp10, 
+                 y = cur_qoi, 
+                 ymin = cur_ci_low, 
+                 ymax = cur_ci_high, 
+                 color = sex)) +
+      geom_hline(yintercept = 0, color = 'grey') +
+      geom_pointrange(position = position_dodge(width = 0.4)) +
+      scale_y_continuous(limits = c(-max_abs_diff, max_abs_diff)) +
+      annotate(geom = 'text', 
+               label = "Sibling is better ->", 
+               y = annheight, x = 0.25, 
+               size = annrelsize, color = 'black', angle = 90) +
+      annotate(geom = 'text', 
+               label = "<- Network is better", 
+               y = -annheight, x = 0.25, 
+               size = annrelsize, color = 'black', angle = 90) +
+      coord_cartesian(clip = "off", xlim = c(0.5, 5.5)) +
+      xlab("") + 
+      ylab("|Network Typical Bias| -\n|Sibling Typical Bias|") +
+      theme_minimal() +
+      xaxistext
+  
+  #} else if (bias_type == 'systematic') {
+    
+    ## TODO NEED TO FIX CALCULATION - THIS IS STILL TYPICAL BIAS MAGNITUDE
+    ## Q IS: HOW TO GET CI AROUND DIFF IN |SYSTEMATIC BIAS|? DO WE NEED TO
+    ## GO BACK TO JAB, ETC?
+
+  #}
+  
+  fig_all <- fig_netsib + fig_diff +
+    plot_layout(widths = c(2, 1), guides = 'collect') +
+    plot_annotation(tag_levels = 'A', tag_suffix = ')') &
+    theme(legend.position = 'bottom',
+          legend.direction = 'horizontal',
+          legend.justification = 'center',
+          plot.tag = element_text(face = 'bold', size = 12))
+  
+  return(lst(fig=fig_all, plot_df=plot_df, diff_df=diff_data))
+}
+
+# 'combined' b/c the left panel is bias and the right is diff in absolute bias
+fig_combinedbias <- bias_plot(point_est_bias, 
+                              se_jab_bias_asdr_lopo, 
+                              'Estimated Bias',
+                              #bias_type='systematic',
+                              diff_var = point_est_sysbias,
+                              diff_se = se_jab_sysbias_asdr_lopo)
+
+# NB: this is used in paper
+#saveRDS(fig_combinedbias, file.path(comp_out_dir, "fig_combinedbias.rds"))
+#ggsave(filename=file.path(comp_out_dir, "fig_combinedbias.pdf"),
+#       plot=fig_combinedbias$fig,
+#       height=3.5,
+#       width=8)
+
+fig_combinedbias$fig
+```
+
+
+```{r}
+
+## Another function to plot bias, with barplot
+## in the 'comparison' panel
+bias2_plot <- function(cur_qoi_var, 
                       cur_se_var, 
                       ylab_text,
                       df = asdr_agesex_properties_long,
@@ -2579,42 +2723,97 @@ bias_plot <- function(cur_qoi_var,
   
   fig_netsib <- fig_netsib + geom_hline(yintercept = 0, color = 'grey')
   
-  # right panel: absolute value of bias 
-  diff_data <- df %>%
-    #filter(method == 'diff') %>%
-    filter(method != 'diff') %>%
-    mutate(cur_qoi = {{diff_var}},
-           cur_se = {{diff_se}},
-           cur_ci_high = cur_qoi + (1.96 * cur_se),
-           cur_ci_low = cur_qoi - (1.96 * cur_se))
-  
-  # calculate symmetric limits for y axis (so 0 is in the middle)
-  max_abs_diff <- max(abs(c(diff_data$cur_ci_low, diff_data$cur_ci_high)), na.rm = TRUE)
-  
-  annrelsize <- 3 
-  annheight <- max_abs_diff * 0.5 # Dynamic height based on data range
-  
-fig_diff <- diff_data %>%
-  mutate(method = dplyr::recode(method, !!!method_facet_names)) %>%
-  ggplot(aes(x = agegp10, y = cur_qoi, ymin = cur_ci_low, ymax = cur_ci_high, 
-             color = sex, shape = method)) +
-  geom_hline(yintercept = 0, color = 'grey') +
-  geom_pointrange(position = position_dodge(width = 0.4)) +
-  scale_y_continuous(limits = c(0, max_abs_diff)) +
-  #annotate(geom = 'text', 
-  #         label = "Sibling is better ->", 
-  #         y = annheight, x = 0.25, 
-  #         size = annrelsize, color = 'black', angle = 90) +
-  #annotate(geom = 'text', 
-  #         label = "<- Network is better", 
-  #         y = -annheight, x = 0.25, 
-  #         size = annrelsize, color = 'black', angle = 90) +
-  #coord_cartesian(clip = "off", xlim = c(0.5, 5.5)) +
-  xlab("") + ylab("| Average Estimated Bias |") +
-  theme_minimal()
+    diff_data <- df %>%
+      filter(method == 'diff') %>%
+      #filter(method != 'diff') %>%
+      mutate(cur_qoi = {{diff_var}},
+             cur_se = {{diff_se}},
+             cur_ci_high = cur_qoi + (1.96 * cur_se),
+             cur_ci_low = cur_qoi - (1.96 * cur_se))
+        # Original values
+      #mutate(
+      #  orig_qoi = {{diff_var}},
+      #  orig_ci_high = orig_qoi + (1.96 * {{diff_se}}),
+      #  orig_ci_low = orig_qoi - (1.96 * {{diff_se}}) ) %>%
+      #mutate(
+      #  # Signed square root transformation
+      #  cur_qoi = sign(orig_qoi) * sqrt(abs(orig_qoi)),
+      #  cur_ci_high = sign(orig_ci_high) * sqrt(abs(orig_ci_high)),
+      #  cur_ci_low = sign(orig_ci_low) * sqrt(abs(orig_ci_low))
+      #)      
+    
+    # calculate symmetric limits for y axis (so 0 is in the middle)
+    max_abs_diff <- max(abs(c(diff_data$cur_ci_low, diff_data$cur_ci_high)), na.rm = TRUE)
+    
+    annrelsize <- 2.5
+    annheight <- max_abs_diff * 0.6 # Dynamic height based on data range
+    
+    
+    ## TODO - CHANGE TO SCATTER PLOT w/ PLUSES
+    
+ # Pivot wide so network and sibling are x and y
+scatter_data <- df %>%
+  filter(method %in% c('Network', 'Sibling')) %>%
+  mutate(cur_qoi = {{cur_qoi_var}},
+         cur_se  = {{cur_se_var}},
+         cur_ci_high = cur_qoi + 1.96 * cur_se,
+         cur_ci_low  = cur_qoi - 1.96 * cur_se) %>%
+  select(agegp10, sex, method, cur_qoi, cur_ci_low, cur_ci_high) %>%
+  pivot_wider(
+    names_from  = method,
+    values_from = c(cur_qoi, cur_ci_low, cur_ci_high)
+  ) %>%
+  mutate(age_label = stringr::str_extract(agegp10, "[0-9]+"))
+
+# Symmetric axis limits
+axis_lim <- range(c(scatter_data$cur_qoi_Network, 
+                    scatter_data$cur_qoi_Sibling,
+                    scatter_data$cur_ci_low_Network,
+                    scatter_data$cur_ci_low_Sibling,
+                    scatter_data$cur_ci_high_Network,
+                    scatter_data$cur_ci_high_Sibling), na.rm = TRUE)
+lim <- max(abs(axis_lim))
+
+labeltunesib <- .6 # was .55 for sib and .6 for net
+labeltunenet <- .8 # was .55 for sib and .6 for net
+
+fig_diff <- scatter_data %>%
+  ggplot(aes(x = cur_qoi_Network, y = cur_qoi_Sibling, color = sex)) +
+  # Region shading: need polygons for the diagonal bands
+  geom_polygon(data = data.frame(
+                 x = c(-lim, 0, lim,  lim,  0, -lim),
+                 y = c(-lim, 0, lim, -lim,  0,  lim)),
+               aes(x = x, y = y), 
+               inherit.aes = FALSE,
+               fill = "steelblue", alpha = 0.08) +   # network better: |net| < |sib|
+  geom_abline(intercept = 0, slope =  1, color = 'grey40', linetype = 'dashed') +
+  geom_abline(intercept = 0, slope = -1, color = 'grey40', linetype = 'dashed') +
+  annotate("text", x =  lim * labeltunesib, y = 0, angle = 0,
+           label = "Sibling\nbetter", size = 2.5, color = "grey40") +
+  annotate("text", x = -lim * labeltunesib, y = 0, angle = 0,
+           label = "Sibling\nbetter", size = 2.5, color = "grey40") +
+  annotate("text", x = 0, y =  lim * labeltunenet, angle = 0,
+           label = "Network\nbetter", size = 2.5, color = "grey40") +
+  annotate("text", x = 0, y = -lim * labeltunenet, angle = 0,
+           label = "Network\nbetter", size = 2.5, color = "grey40") +
+  geom_errorbar(aes(ymin = cur_ci_low_Sibling, ymax = cur_ci_high_Sibling),
+                width = 0, alpha = 0.4, show.legend = FALSE) +
+  geom_errorbarh(aes(xmin = cur_ci_low_Network, xmax = cur_ci_high_Network),
+                 height = 0, alpha = 0.4, show.legend = FALSE) +
+  #geom_point(aes(shape = agegp10), size = 2) +
+  geom_text(aes(label = age_label), size = 2.5, fontface = "bold", show.legend = FALSE) +
+  scale_x_continuous(limits = axis_lim) +
+  scale_y_continuous(limits = axis_lim) +
+  xlab("Estimated Network Bias") +
+  ylab("Estimated Sibling Bias") +
+  coord_obs_pred() +
+  theme_minimal() +
+  xaxistext
   
   fig_all <- fig_netsib + fig_diff +
-    plot_layout(widths = c(2, 1), guides = 'collect') +
+    #plot_layout(widths = c(2, 1), 
+    plot_layout(widths = c(2, 2), 
+                guides = 'collect') +
     plot_annotation(tag_levels = 'A', tag_suffix = ')') &
     theme(legend.position = 'bottom',
           legend.direction = 'horizontal',
@@ -2624,22 +2823,35 @@ fig_diff <- diff_data %>%
   return(lst(fig=fig_all, plot_df=plot_df, diff_df=diff_data))
 }
 
-# 'combined' b/c the left panel is bias and the right is diff in absolute bias
-fig_combinedbias <- bias_plot(point_est_bias, 
-                              se_jab_bias_asdr_lopo, 
-                              'Average Estimated Bias',
-                              diff_var = point_est_absbias,
-                              diff_se = se_jab_absbias_asdr_lopo)
+fig_bias2 <- bias2_plot(point_est_bias, 
+                       se_jab_bias_asdr_lopo, 
+                       'Estimated Bias',
+                       #bias_type='systematic',
+                       diff_var = point_est_bias2,
+                       diff_se = se_jab_bias2_asdr_lopo)
 
 # NB: this is used in paper
 saveRDS(fig_combinedbias, file.path(comp_out_dir, "fig_combinedbias.rds"))
 ggsave(filename=file.path(comp_out_dir, "fig_combinedbias.pdf"),
-       plot=fig_combinedbias$fig,
+       plot=fig_bias2$fig,
        height=3.5,
        width=8)
 
-fig_combinedbias$fig
+fig_bias2$fig
 ```
+
+TODO LEFT OFF HERE, FRI EVENING
+
+- I think the point ests in the plot above are correct
+- I don't think we can calculate the 'correct' uncertainty. but i think what we have now is conservative
+- ... by conservative, I mean that we use the variance of the difference in bias instead of the difference in absolute bias
+      I think this is conservative because I think that var(|X|) <= var(X). so var(|X| - |Y|) = var(|X|) + var(|Y|) + cov(|X|,|Y|) < var(X) + var(Y) + cov(X,Y)
+      NOTE: I'm not 100% sure about the last statement, because of the covariance term. I'm fairly sure that var(|X|) <= var(X)
+- the problem w/ directly calculating the variance of |X| - |Y| is that we have a way to calculate variance of city-specific estimates, and a way to
+  aggregate city-specific variances up to age/sex level -- but no way to calculate variances at age/sex level of nonlinear transformations of city-level
+  quantities (and absolute value is a nonlinear transformation)
+
+Look at the actual data for the difference plolt
 
 ```{r}
 fig_combinedbias$diff_df %>% select(matches('cur_'), everything())
@@ -2658,6 +2870,7 @@ TODO EXPLORE FOR SUMMARY OF BIAS BY METHOD
 Get the average absolute bias across all 270 estimates
 
 ```{r}
+## NB: we're calling this 'systematic bias'
 ## this is the absolute value of the average bias w/in each age-sex group
 ## in other words, we first average signed bias w/in age sex group, then take average value
 asdr_agesex_properties_long %>%
@@ -2666,9 +2879,11 @@ asdr_agesex_properties_long %>%
 ```
 
 ```{r}
-fig_combinedbias$plot_df %>%
-  group_by(method) %>%
-  summarize(mean_abs_bias = mean(point_est_absbias))
+comp_asdrs_boot %>% 
+  group_by(method) %>% 
+  summarize(avg_bias = mean(post_mean_asdr - gs_asdr),
+            ## This is what we're calling 'typical bias magnitude'
+            avg_abs_bias = mean(abs(post_mean_asdr - gs_asdr)))
 ```
 
 

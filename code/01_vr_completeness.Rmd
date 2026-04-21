@@ -20,6 +20,7 @@ library(readxl)
 out_dir <- here("out") 
 data_dir <- here("data") 
 cap_recap_dir <- file.path(data_dir, "ibge-capture-recapture")
+survey_data_dir <- file.path(data_dir, 'survey')
 ```
 
 ```{r}
@@ -126,3 +127,77 @@ cr_res_2015 %>% arrange(desc(sim_underest_pct))
 ```
 
 
+
+## Table with sample size, response rate, and VR completeness 
+
+These are the response rates (pasted in from code that works on the identifiable data, which
+we can't release; I just copied that data frame)
+
+```{r}
+rr_dat <- structure(
+  list(
+    state = c("AC","AL","AM","AP","BA","CE","DF","ES","GO","MA",
+              "MG","MS","MT","PA","PB","PE","PI","PR","RJ","RN",
+              "RO","RR","RS","SC","SE","SP","TO"),
+    RR_I = c(0.99,0.94,1.00,0.96,0.94,0.93,0.94,1.00,0.99,1.00,
+             1.00,1.00,0.99,0.98,0.99,0.95,0.99,1.00,0.85,0.97,
+             0.98,0.96,0.94,1.00,1.00,1.00,0.99),
+    RR_II_III = c(0.55,0.63,0.80,0.75,0.50,0.52,0.54,0.40,0.72,0.70,
+                  0.54,0.82,0.67,0.73,0.66,0.60,0.42,0.46,0.26,0.60,
+                  0.64,0.73,0.32,0.71,0.67,0.51,0.80)
+  ),
+  class = "data.frame",
+  row.names = c(NA, -27L)
+)
+```
+
+Open up the individual survey datafile
+
+```{r}
+# load individual data
+ind.dat <- read_csv(file.path(survey_data_dir, "individual.csv"))
+```
+
+
+Make a table with the sample size for each city
+
+```{r}
+sampsize.table <- ind.dat %>%
+  group_by(state_abbrev) %>%
+  summarize(num_interviews = n()) %>%
+  left_join(capital.coords %>%
+              select(state_abbrev, state_name, region, city_name=municipio),
+            by='state_abbrev') %>%
+  left_join(rr_dat %>%
+              # have the response rates print nicely
+              mutate(
+                RR_I      = sprintf("%.2f", RR_I),
+                RR_II_III = sprintf("%.2f", RR_II_III)
+              ), 
+    by=c('state_abbrev'='state')) %>%
+  left_join(
+    cr_res_tbl %>% 
+      mutate(vr_completeness = sprintf('%.2f', round(mean_sim_cov_pct,2))) %>%
+      select(state_abbrev, vr_completeness),
+    by='state_abbrev',
+  ) %>%
+  #select(region, state_abbrev, state_name, city_name, num_interviews)
+  select(region, state_abbrev, city_name, num_interviews, RR_I, RR_II_III, vr_completeness)
+
+sampsize.table
+```
+
+```{r}
+sampsize.table.rendered <- pander::pandoc.table.return(sampsize.table,
+               #col.names = c('Region', 'State\ncode', 'State\nname', 'City', 'Number of\nInterviews'),
+               col.names = c('Region', 'State\ncode', 'City', 'Number of\nInterviews', 'RR I', 'RR II/III', 'Estimated VR\nCompleteness (%)'),
+               big.mark=',',
+               split.cells=c(1, 1, 20, 10, 10, 10, 10),
+               split.table=Inf,
+               justify=c('center', 'center', 'left', 'right', 'right', 'right', 'right'),
+               caption="(\\#tab:sampsize) Number of interviews conducted, response rates, and estimated vital registration completeness for each of the 27 cities in our sample.")
+
+cat(sampsize.table.rendered,
+    file=file.path(out_dir, 'sample_size_table.md'))
+cat(sampsize.table.rendered)
+```

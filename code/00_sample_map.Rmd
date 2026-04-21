@@ -22,6 +22,7 @@ library(here)
 ```{r}
 out_dir <- here("out") 
 data_dir <- here("data") 
+survey_data_dir <- file.path(data_dir, 'survey')
 ```
 
 ```{r}
@@ -233,10 +234,6 @@ ggsave(filename=file.path(out_dir, "sample_region_hexmap.png"),
   
 sample_region_hexmap
 ```
-
-
-
-
 
 ```{r}
 saveRDS(list(map=brne, 
