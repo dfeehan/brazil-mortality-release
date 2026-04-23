@@ -2414,6 +2414,24 @@ ggsave(filename=file.path(comp_out_dir, "fig_rmse.pdf"),
 fig_rmse$fig
 ```
 
+
+Robustness plot with MARE
+
+```{r}
+fig_mare <- loss_plot(point_est_mare, se_jab_mare_asdr_lopo, 
+                      'Average Estimated MARE',
+                      'Network Estimate - Sibling Estimate')
+
+# NB: this is used in paper
+saveRDS(fig_mare, file.path(comp_out_dir, "fig_mare.rds"))
+ggsave(filename=file.path(comp_out_dir, "fig_mare.pdf"),
+       plot=fig_mare$fig,
+       height=3.5,
+       width=8)
+
+fig_mare$fig
+```
+
 TODO DIGGING INTO RMSE AND ABS BIAS
 
 The plots showing differences in RMSE and differences in |bias| look very similar
