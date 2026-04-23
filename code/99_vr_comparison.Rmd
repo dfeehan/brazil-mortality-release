@@ -2957,13 +2957,15 @@ if(geo_name == 'city') {
 #comp_df <- comp_asdrs_bygeo_wide %>%
 #  select(geo, point_est_mse_diff = n.minus.s)
 comp_df <- asdr_geo_properties %>%
-  select(geo, point_est_mse_diff)
+  #select(geo, point_est_mse_diff)
+  select(geo, point_est_rmse_diff)
 
 comp_df_withvr <- comp_df %>%
   left_join(ibge_vr_completeness %>%
               select(geo, ibge_est_vrcov = mean_sim_cov_pct))
 
-biggestdiff <- max(abs(comp_df_withvr$point_est_mse_diff))
+#biggestdiff <- max(abs(comp_df_withvr$point_est_mse_diff))
+biggestdiff <- max(abs(comp_df_withvr$point_est_rmse_diff))
 xrange <- c(-biggestdiff, biggestdiff)
 
 ## controls how far out annotations go
@@ -2971,15 +2973,17 @@ annscale <- .6
 
 geo_err_mse_vr_comp <-
   comp_df_withvr %>%
-        mutate(geo = fct_reorder(geo, point_est_mse_diff)) %>%
+        #mutate(geo = fct_reorder(geo, point_est_mse_diff)) %>%
+        mutate(geo = fct_reorder(geo, point_est_rmse_diff)) %>%
   ggplot(.) +
-  geom_text(aes(y=point_est_mse_diff,
+  #geom_text(aes(y=point_est_mse_diff,
+  geom_text(aes(y=point_est_rmse_diff,
                 x=ibge_est_vrcov,
                 label=geo)) +
   #geom_vline(xintercept=0, color='dark grey') +
   #geom_point(aes(y=state_abbrev, x=n.minus.s)) +
   theme_minimal() +
-  ylab("Network estimate MSE - Sibling estimate MSE") +
+  ylab("Network estimate RMSE - Sibling estimate RMSE") +
   xlab("Estimated VR completeness") +
   expand_limits(y=xrange) +
   annotate(geom='text',
