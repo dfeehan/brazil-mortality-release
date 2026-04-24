@@ -2037,6 +2037,78 @@ ggsave(filename=file.path(comp_out_dir, "diff_rmse_tot.pdf"),
 diff_rmse_tot_plot
 ```
 
+
+Get the total estimated difference in prob of death (averaged across all cities)
+
+```{r}
+# point estimate (not based on JAB)
+prob_tot_diff <- prob_tot_properties %>%
+  rename(est_rmse_diff = point_est_rmse_diff,
+         est_mare_diff = point_est_mare_diff,
+         est_se_diff = point_est_se_diff,
+         se_rmse_diff = se_jab_rmse_asdr_lopo_diff,
+         se_mare_diff = se_jab_mare_asdr_lopo_diff,
+         se_se_diff = se_jab_se_asdr_lopo_diff) %>%
+  mutate(est_rmse_diff_ci_low = est_rmse_diff - 1.96*se_rmse_diff,
+         est_rmse_diff_ci_high = est_rmse_diff + 1.96*se_rmse_diff) %>%
+  mutate(est_se_diff_ci_low = est_se_diff - 1.96*se_se_diff,
+         est_se_diff_ci_high = est_se_diff + 1.96*se_se_diff)
+
+write_csv(rmse_tot_diff, file.path(comp_out_dir, "rmse_tot_diff.csv"))
+
+glue::glue_data(rmse_tot_diff,
+"
+           se diff: {round(est_se_diff,2)} ({round(est_se_diff_ci_low,2)}, {round(est_se_diff_ci_high,2)})
+           ")
+glue::glue_data(rmse_tot_diff,
+"
+           est rmse diff: {round(est_rmse_diff,2)} ({round(est_rmse_diff_ci_low,2)}, {round(est_rmse_diff_ci_high,2)}) 
+           ")
+```
+
+```{r}
+biggestdiff <- max(abs(c(rmse_tot_diff$est_rmse_diff_ci_low, 
+                     rmse_tot_diff$est_rmse_diff_ci_high)))
+
+annscale <- .5
+
+diff_rmse_tot_plot <- rmse_tot_diff %>%
+  ggplot(.) +
+  geom_pointrange(aes(x = 'Average Overall RMSE Difference',
+                      y = est_rmse_diff,
+                      ymin = est_rmse_diff_ci_low,
+                      ymax = est_rmse_diff_ci_high)) +
+  geom_hline(yintercept=0) +
+  xlab("") +
+  ylab("Estimated RMSE Difference (x 1,000)\nNetwork RMSE - Sibling RMSE") +
+  expand_limits(y = c(biggestdiff,-biggestdiff)) +
+  annotate(geom='text',
+           label="<- Network is better ",
+           #x='SE',
+           x=0.5,
+           y=-biggestdiff*annscale,
+           size=rel(3),
+           color='red',
+           angle=90) +
+  annotate(geom='text',
+           label="Sibling is better ->",
+           #x='SE',
+           x=0.5,
+           y=biggestdiff*annscale,
+           size=rel(3),
+           color='red',
+           angle=90) +
+  theme_minimal()
+
+
+ggsave(filename=file.path(comp_out_dir, "diff_rmse_tot.pdf"),
+       plot=diff_rmse_tot_plot,
+       height=3.5,
+       width=3.5)
+
+diff_rmse_tot_plot
+```
+
 ## Save results for plots
 
 TODO - LEFT OFF HERE
