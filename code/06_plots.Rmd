@@ -166,12 +166,76 @@ err_diffs_summ <- bind_rows(errs_cv,
   filter(loss %in% c('mare', 'rmse')) %>%
   filter(metric == 'diff') %>%
   # make RMSE values x 1,000 (like death rates typically are)
-  mutate(point_est = ifelse(qty == 'asdr' & loss == 'rmse', scale_1000x(point_est), point_est)) %>%
-  mutate(se_jab = ifelse(qty == 'asdr' & loss == 'rmse', scale_1000x(se_jab), se_jab)) %>%
+  #mutate(point_est = ifelse(qty == 'asdr' & loss == 'rmse', scale_1000x(point_est), point_est)) %>%
+  #mutate(se_jab = ifelse(qty == 'asdr' & loss == 'rmse', scale_1000x(se_jab), se_jab)) %>%
   mutate(ci_low = point_est - (se_jab * 1.96),
          ci_high = point_est + (se_jab * 1.96))
 
 err_diffs_summ
+```
+
+Plot w/ pooling for RMSE / ASDR
+
+```{r}
+annrelsize <- 4
+
+pr_asdr_rmse <- 
+  err_diffs_summ %>%
+  mutate(loss = dplyr::recode(loss, !!!recode_loss)) %>%
+  mutate(qty= dplyr::recode(qty, !!!recode_qty)) %>%
+  mutate(geo_name= dplyr::recode_factor(geo_name, !!!recode_geo)) %>%
+  filter(comparison_name == 'vr_comparison') %>%
+  filter(loss == 'RMSE', qty==recode_qty['asdr']) %>%
+  ggplot(.) +
+  geom_hline(aes(yintercept = 0), color='darkgrey') +
+  geom_pointrange(aes(x=geo_name,
+                      y=point_est,
+                      ymin=ci_low,
+                      ymax=ci_high,
+                      shape = geo_name,
+                      linetype=geo_name)) +
+  theme_bw() +
+  geom_rect(aes(xmin=1.5,
+                xmax=Inf,
+                ymin=-Inf,
+                ymax=Inf),
+            color=shade_rect_color,
+            alpha=shade_rect_alpha) +
+  #theme_minimal() +
+  ylab("Network RMSE - Sibling RMSE") +
+  xlab("") +
+  annotate(geom='text', 
+           label="Sibling is better ->", 
+           y=rmse_asdr_annheight, 
+           x=0.5, 
+           size=rel(annrelsize),
+           color='red', 
+           angle=90) +
+  annotate(geom='text', 
+           label="<- Network is better ", 
+           y=-rmse_asdr_annheight, 
+           x=0.5, 
+           size=rel(annrelsize),
+           color='red', 
+           angle=90) +
+  scale_y_continuous(limits=c(-2, 2)) +
+  scale_shape_manual(values=scale_shape_values, guide = "none") +
+  scale_linetype_manual(values=scale_linetype_values, guide = "none") +
+  theme_bw(base_size = 16) +
+  theme(
+    axis.text  = element_text(size = 14),
+    axis.title = element_text(size = 16),
+    plot.title = element_text(size = 18)
+  )
+  NULL
+  
+pr_asdr_rmse
+
+fec.size <- 6 
+ggsave(filename=file.path(out_dir, "pooling_rmse.pdf"),
+       plot=pr_asdr_rmse,
+       height=fec.size,
+       width=fec.size)
 ```
 
 
