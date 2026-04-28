@@ -2046,41 +2046,41 @@ prob_tot_diff <- prob_tot_properties %>%
   rename(est_rmse_diff = point_est_rmse_diff,
          est_mare_diff = point_est_mare_diff,
          est_se_diff = point_est_se_diff,
-         se_rmse_diff = se_jab_rmse_asdr_lopo_diff,
-         se_mare_diff = se_jab_mare_asdr_lopo_diff,
-         se_se_diff = se_jab_se_asdr_lopo_diff) %>%
+         se_rmse_diff = se_jab_rmse_prob_lopo_diff,
+         se_mare_diff = se_jab_mare_prob_lopo_diff,
+         se_se_diff = se_jab_se_prob_lopo_diff) %>%
   mutate(est_rmse_diff_ci_low = est_rmse_diff - 1.96*se_rmse_diff,
          est_rmse_diff_ci_high = est_rmse_diff + 1.96*se_rmse_diff) %>%
   mutate(est_se_diff_ci_low = est_se_diff - 1.96*se_se_diff,
          est_se_diff_ci_high = est_se_diff + 1.96*se_se_diff)
 
-write_csv(rmse_tot_diff, file.path(comp_out_dir, "rmse_tot_diff.csv"))
+write_csv(prob_tot_diff, file.path(comp_out_dir, "prob_tot_diff.csv"))
 
-glue::glue_data(rmse_tot_diff,
+glue::glue_data(prob_tot_diff,
 "
            se diff: {round(est_se_diff,2)} ({round(est_se_diff_ci_low,2)}, {round(est_se_diff_ci_high,2)})
            ")
-glue::glue_data(rmse_tot_diff,
+glue::glue_data(prob_tot_diff,
 "
            est rmse diff: {round(est_rmse_diff,2)} ({round(est_rmse_diff_ci_low,2)}, {round(est_rmse_diff_ci_high,2)}) 
            ")
 ```
 
 ```{r}
-biggestdiff <- max(abs(c(rmse_tot_diff$est_rmse_diff_ci_low, 
-                     rmse_tot_diff$est_rmse_diff_ci_high)))
+biggestdiff <- max(abs(c(prob_tot_diff$est_rmse_diff_ci_low, 
+                     prob_tot_diff$est_rmse_diff_ci_high)))
 
 annscale <- .5
 
-diff_rmse_tot_plot <- rmse_tot_diff %>%
+diff_prob_rmse_tot_plot <- prob_tot_diff %>%
   ggplot(.) +
-  geom_pointrange(aes(x = 'Average Overall RMSE Difference',
+  geom_pointrange(aes(x = 'Average Overall RMSE Difference\nin 47q18',
                       y = est_rmse_diff,
                       ymin = est_rmse_diff_ci_low,
                       ymax = est_rmse_diff_ci_high)) +
   geom_hline(yintercept=0) +
   xlab("") +
-  ylab("Estimated RMSE Difference (x 1,000)\nNetwork RMSE - Sibling RMSE") +
+  ylab("Estimated RMSE Difference \nNetwork RMSE - Sibling RMSE") +
   expand_limits(y = c(biggestdiff,-biggestdiff)) +
   annotate(geom='text',
            label="<- Network is better ",
@@ -2101,12 +2101,15 @@ diff_rmse_tot_plot <- rmse_tot_diff %>%
   theme_minimal()
 
 
-ggsave(filename=file.path(comp_out_dir, "diff_rmse_tot.pdf"),
-       plot=diff_rmse_tot_plot,
+ggsave(filename=file.path(comp_out_dir, "diff_prob_rmse_tot.pdf"),
+       plot=diff_prob_rmse_tot_plot,
        height=3.5,
        width=3.5)
 
-diff_rmse_tot_plot
+cat(glue::glue("
+               probability of death: RMSE network - RMSE sibling  = {round(prob_tot_diff$est_rmse_diff[1],2)} [ {round(prob_tot_diff$est_rmse_diff_ci_low[1],2)}, {round(prob_tot_diff$est_rmse_diff_ci_high[1],2)}  ]
+               "))
+prob_tot_diff
 ```
 
 ## Save results for plots
@@ -3638,16 +3641,16 @@ tmp %>%
 ### END DEBUG
 
 
-### Moran's I for MSE values
+### Moran's I for RMSE values
 
-Calculate Moran's I for MSE values
+Calculate Moran's I for RMSE values
 
 ```{r}
-mse_moran_I <- 
+rmse_moran_I <- 
   # NEW
   asdr_geo_properties_long %>%
   #mutate(value = 1000*point_est_mse) %>% 
-  mutate(value = point_est_mse) %>% 
+  mutate(value = point_est_rmse) %>% 
   # END NEW
   # OLD
   #comp_asdrs_bygeoas_wide %>%
@@ -3674,15 +3677,15 @@ mse_moran_I <-
     
   })
 
-spatial_res_mse <- map_dfr(mse_moran_I,
+spatial_res_rmse <- map_dfr(rmse_moran_I,
                            ~ moran_I_to_tibble(.x,
-                                               qty = 'MSE'))
+                                               qty = 'RMSE'))
 ```
 
-Calculate Moran's I for MSE values by age/sex group
+Calculate Moran's I for RMSE values by age/sex group
 
 ```{r}
-mse_as_moran_I <- 
+rmse_as_moran_I <- 
   asdr_properties_long %>%
   mutate(value = point_est_rmse) %>%
   ## OLD
@@ -3710,14 +3713,14 @@ mse_as_moran_I <-
     
   })
 
-spatial_res_mse_as <- map_dfr(mse_as_moran_I,
+spatial_res_rmse_as <- map_dfr(rmse_as_moran_I,
                               ~ moran_I_to_tibble(.x,
-                                                  qty = 'MSE'))
+                                                  qty = 'RMSE'))
 ```
 
 ```{r}
-moran_I_df <- bind_rows(spatial_res_mse,
-                        spatial_res_mse_as) 
+moran_I_df <- bind_rows(spatial_res_rmse,
+                        spatial_res_rmse_as) 
   #%>%
   #mutate(p_adj = p.adjust(p_value, method = 'bonferroni'))
 
@@ -3729,7 +3732,7 @@ write_csv(moran_I_df %>% unnest_wider(estimate) %>% arrange(p_value),
 Moran's I values that are significant at $p=0.05$ level
 
 ```{r}
-moran_I_df %>% filter(p_value < 0.05)
+moran_I_df %>% filter(p_value < 0.05) %>% select(sex, agegp10, method, qty, everything()) %>% View()
 ```
 
 # Heatmaps showing error
