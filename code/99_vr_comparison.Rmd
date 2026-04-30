@@ -1199,6 +1199,34 @@ saveRDS(all_ci_widths,
 all_ci_widths
 ```
 
+CI coverage
+
+```{r}
+ci_coverage_df <- comp_asdrs %>%
+  group_by(method) %>%
+  summarize(ci_covered = mean(ci_covered))
+
+ci_coverage_df
+
+#ci_coverage_plot <- ci_coverage_df %>%
+#  ggplot(.) +
+#  geom_point(aes(x=method, y=ci_covered)) +
+#  geom_hline(yintercept = 0.95, lty=2) +
+#  theme_minimal() +
+#  expand_limits(y=c(0,1)) +
+#  xlab("") +
+#  ylab("Empirical 95% CI Coverage")
+#
+#ggsave(filename=file.path(comp_out_dir, "ci_coverage_plot.pdf"),
+#       plot=ci_coverage_plot,
+#       height=3.5,
+#       width=6)
+#
+#ci_coverage_plot
+```
+
+
+
 # Point estimates of Bias/MSE/Var
 
 These get calculated for each method/city/age/sex
@@ -1875,7 +1903,7 @@ diff_rmse_geo_plot <- rmse_geo_diff %>%
          x=annxoff,
          y=-biggestdiff*annscale,
          size=rel(3),
-         color='red',
+         color='black',
          angle=90) +
   annotate(geom='text',
            label="Sibling is better ->",
@@ -1883,7 +1911,7 @@ diff_rmse_geo_plot <- rmse_geo_diff %>%
            x=annxoff,
            y=biggestdiff*annscale,
            size=rel(3),
-           color='red',
+           color='black',
            angle=90) +
   theme_minimal() +
   coord_cartesian(clip = "off")
@@ -1943,7 +1971,7 @@ diff_rmse_age_plot <- rmse_age_diff %>%
          x=annxoff,
          y=-biggestdiff*annscale,
          size=rel(3),
-         color='red',
+         color='black',
          angle=90) +
   annotate(geom='text',
            label="Sibling is better ->",
@@ -1951,7 +1979,7 @@ diff_rmse_age_plot <- rmse_age_diff %>%
            x=annxoff,
            y=biggestdiff*annscale,
            size=rel(3),
-           color='red',
+           color='black',
            angle=90) +
   theme_minimal() +
   coord_cartesian(clip = "off")
@@ -2016,7 +2044,7 @@ diff_rmse_tot_plot <- rmse_tot_diff %>%
            x=0.5,
            y=-biggestdiff*annscale,
            size=rel(3),
-           color='red',
+           color='black',
            angle=90) +
   annotate(geom='text',
            label="Sibling is better ->",
@@ -2024,7 +2052,7 @@ diff_rmse_tot_plot <- rmse_tot_diff %>%
            x=0.5,
            y=biggestdiff*annscale,
            size=rel(3),
-           color='red',
+           color='black',
            angle=90) +
   theme_minimal()
 
@@ -2088,7 +2116,7 @@ diff_prob_rmse_tot_plot <- prob_tot_diff %>%
            x=0.5,
            y=-biggestdiff*annscale,
            size=rel(3),
-           color='red',
+           color='black',
            angle=90) +
   annotate(geom='text',
            label="Sibling is better ->",
@@ -2096,7 +2124,7 @@ diff_prob_rmse_tot_plot <- prob_tot_diff %>%
            x=0.5,
            y=biggestdiff*annscale,
            size=rel(3),
-           color='red',
+           color='black',
            angle=90) +
   theme_minimal()
 
@@ -3067,7 +3095,7 @@ geo_err_mse_vr_comp <-
            x=100,
            y=-biggestdiff*annscale,
            size=rel(3),
-           color='red',
+           color='black',
            angle=90) +
   annotate(geom='text',
            label="Sibling is better ->",
@@ -3075,7 +3103,7 @@ geo_err_mse_vr_comp <-
            x=100,
            y=biggestdiff*annscale,
            size=rel(3),
-           color='red',
+           color='black',
            angle=90) +
   theme(axis.title.x=element_text(size=rel(.8))) +
   ## see
@@ -3087,9 +3115,9 @@ geo_err_mse_vr_comp <-
 
 ggsave(filename=file.path(comp_out_dir, "geo_err_summ_mse_vrsens.pdf"),
        plot=geo_err_mse_vr_comp,
-       height=3.5,
-       width=3.5)
-knitr::plot_crop(file.path(comp_out_dir, "geo_err_summ_mse_vrsens.pdf"))
+       height=4,
+       width=4)
+#knitr::plot_crop(file.path(comp_out_dir, "geo_err_summ_mse_vrsens.pdf"))
 
 geo_err_mse_vr_comp
 
@@ -3127,8 +3155,10 @@ anncolor <- 'black'
 ann_data <- data.frame(
   region = 'CW', 
   # \u2192 is <- arrow
-  label_net = "\u2190 Network is better",
-  label_sib = "Sibling is better \u2192",
+  #label_net = "\u2190 Network is better",
+  #label_sib = "Sibling is better \u2192",
+  label_net = "<- Network is better",
+  label_sib = "Sibling is better ->",
   #label_net = "Network is better",
   #label_sib = "Sibling is better ->",
   x = annxoff,
@@ -3184,7 +3214,7 @@ diff_rmse_geo_region_plot <- rmse_geo_diff %>%
 ggsave(filename=file.path(comp_out_dir, "geo_region_rmse_diff.pdf"),
        plot=diff_rmse_geo_region_plot,
        height=3.5,
-       width=6)
+       width=8)
 
 diff_rmse_geo_region_plot
 ```
@@ -3720,8 +3750,7 @@ spatial_res_rmse_as <- map_dfr(rmse_as_moran_I,
 
 ```{r}
 moran_I_df <- bind_rows(spatial_res_rmse,
-                        spatial_res_rmse_as) 
-  #%>%
+                        spatial_res_rmse_as)  #%>%
   #mutate(p_adj = p.adjust(p_value, method = 'bonferroni'))
 
 

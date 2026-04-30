@@ -177,7 +177,32 @@ err_diffs_summ
 Plot w/ pooling for RMSE / ASDR
 
 ```{r}
-annrelsize <- 4
+recode_loss <- c('mare'='MARE', 'mse'='MSE', 'rmse'='RMSE')
+recode_qty <- c('asdr'='Age-specifc\ndeath rates', 'prob'='Probability of\ndying at\nadult ages')
+recode_geo <- c('city'='City-level\nestimates', 
+                'region'='Pooled\nregion-level\nestimates', 
+                'national'='Pooled\nnational-level\nestimates')
+
+scale_linetype_values <- setNames(c("solid", "dashed", "dashed"),
+                                  paste(recode_geo))
+
+scale_shape_values <- setNames(c(19, 1, 1),
+                               paste(recode_geo))
+
+annrelsize <- 4 
+
+mare_prob_annheight <- 0.15
+mare_asdr_annheight <- .22
+
+mse_prob_annheight <- 0.0035
+mse_asdr_annheight <- 8 
+
+rmse_prob_annheight <- .025 
+rmse_asdr_annheight <- 1 
+
+#shade_rect_color <- 'lightgrey'
+shade_rect_color <- '#EEEEEE'
+shade_rect_alpha <- .05
 
 pr_asdr_rmse <- 
   err_diffs_summ %>%
@@ -209,14 +234,14 @@ pr_asdr_rmse <-
            y=rmse_asdr_annheight, 
            x=0.5, 
            size=rel(annrelsize),
-           color='red', 
+           color='black', 
            angle=90) +
   annotate(geom='text', 
            label="<- Network is better ", 
            y=-rmse_asdr_annheight, 
            x=0.5, 
            size=rel(annrelsize),
-           color='red', 
+           color='black', 
            angle=90) +
   scale_y_continuous(limits=c(-2, 2)) +
   scale_shape_manual(values=scale_shape_values, guide = "none") +
@@ -231,7 +256,7 @@ pr_asdr_rmse <-
   
 pr_asdr_rmse
 
-fec.size <- 6 
+fec.size <- 5 
 ggsave(filename=file.path(out_dir, "pooling_rmse.pdf"),
        plot=pr_asdr_rmse,
        height=fec.size,
