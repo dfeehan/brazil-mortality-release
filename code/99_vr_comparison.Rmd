@@ -2961,6 +2961,13 @@ ggsave(filename=file.path(comp_out_dir, "fig_combinedbias.pdf"),
 fig_bias2$fig
 ```
 
+This is helpful for reading off the number of groups w/ CI including 0 bias...
+
+```{r}
+tmp %>% select(starts_with('cur_'), everything()) %>% filter(method != 'diff') %>% arrange(method) 
+```
+
+
 TODO LEFT OFF HERE, FRI EVENING
 
 - I think the point ests in the plot above are correct

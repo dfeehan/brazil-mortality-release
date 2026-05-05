@@ -168,6 +168,10 @@ sampsize.table <- ind.dat %>%
   left_join(capital.coords %>%
               select(state_abbrev, state_name, region, city_name=municipio),
             by='state_abbrev') %>%
+  mutate(state_match = janitor::make_clean_names(state_name)) %>%
+  left_join(cr_res_2015 %>% 
+              mutate(state_match = janitor::make_clean_names(state_name)) %>%
+              select(state_match, city_name_withd = city_name)) %>%
   left_join(rr_dat %>%
               # have the response rates print nicely
               mutate(
@@ -181,8 +185,13 @@ sampsize.table <- ind.dat %>%
       select(state_abbrev, vr_completeness),
     by='state_abbrev',
   ) %>%
-  #select(region, state_abbrev, state_name, city_name, num_interviews)
-  select(region, state_abbrev, city_name, num_interviews, RR_I, RR_II_III, vr_completeness)
+  select(region, 
+         state_abbrev, 
+         city_name_withd, #city_name, 
+         num_interviews, 
+         RR_I, 
+         RR_II_III, 
+         vr_completeness)
 
 sampsize.table
 ```
