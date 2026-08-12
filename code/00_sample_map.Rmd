@@ -137,6 +137,112 @@ ggsave(filename=file.path(out_dir, "sample_map.pdf"),
 sample_map
 ```
 
+```{r}
+brne_outline <- brne %>% st_make_valid %>% st_union()
+
+sample_map_clean <- 
+  #ggplot(data = brne) + 
+  #  theme_bw(base_size = 5) +
+  #  # Keep borders black and dotted
+  #  geom_sf(fill = NA, 
+  #          color = "black", 
+  #          linetype = 'dotted', 
+  #          linewidth = 0.3) +
+  #  remove_background +
+  ggplot() + 
+    theme_bw(base_size = 5) +
+    # 2. Draw ONLY the outline (the dissolved shape)
+    geom_sf(data = brne_outline,
+            fill = NA, 
+            color = "darkgrey", 
+            linetype = 'solid', # Changed to solid for a cleaner outline, but 'dotted' works too
+            linewidth = 0.5) +
+    remove_background +
+  geom_sf(data = capitals, size = 1.2, color='red') + # The city points
+  geom_text_repel(data = capitals,
+                  aes(x = lon, y = lat, 
+                      #label = glue::glue("{municipio} ({state_abbrev})")),
+                      label = glue::glue("{municipio}")),
+                  size = 6,
+                  color = "black",          # Light grey text
+                  segment.color = "black",  # Grey connecting lines
+                  #color = "grey60",          # Light grey text
+                  #segment.color = "grey60",  # Grey connecting lines
+                  segment.alpha = 0.6,       # Make lines slightly transparent
+                  box.padding = 0.6,
+                  point.padding = 0.4,
+                  min.segment.length = 0,
+                  force = 3) +              # Increased force to handle larger text
+  xlab('') + ylab('') +
+  theme(legend.position = "none") +
+  NULL
+
+ggsave(filename=file.path(out_dir, "sample_map_clean.pdf"),
+       plot=sample_map_clean,
+       height=6,
+       width=6)
+
+sample_map_clean
+```
+```{r}
+library(ggplot2)
+library(ggrepel)
+library(patchwork)
+library(dplyr)
+library(gridExtra)
+
+# 1. Prepare the data: Add a numeric ID
+capitals <- capitals %>%
+  mutate(id = row_number())
+
+# 2. Create the Map
+map_plot <- 
+  ggplot(data = brne) + 
+    theme_bw(base_size = 5) +
+    geom_sf(fill = NA, 
+            color = "black", 
+            linetype = 'dotted', 
+            linewidth = 0.3) +
+    remove_background +
+    # Use geom_text_repel to put the NUMBER on the map
+    geom_text_repel(data = capitals,
+                    aes(x = lon, y = lat, label = id),
+                    size = 5,
+                    fontface = "bold",
+                    color = "black", # Numbers kept black for readability
+                    box.padding = 0.3,
+                    point.padding = 0.5,
+                    segment.color = "grey70") +
+  xlab('') + ylab('') +
+  theme(legend.position = "none")
+
+# 3. Create the Table Plot
+# We format the text for the legend/table
+table_data <- capitals %>%
+  mutate(label = glue::glue("{id}. {municipio}")) %>%
+  select(label)
+
+table_plot <- ggplot() +
+  annotate("text", 
+           x = 0, 
+           y = rev(seq_along(table_data$label)), 
+           label = table_data$label, 
+           hjust = 0, 
+           size = 3.5,     # Adjust size of table text here
+           color = "grey40") + # Light grey as requested
+  theme_void() +
+  coord_cartesian(xlim = c(0, 1)) +
+  NULL
+
+# 4. Combine Map and Table using patchwork
+# widths = c(3, 1) means the map takes 3/4 and the table 1/4 of the space
+final_layout <- map_plot + table_plot + 
+  plot_layout(widths = c(3, 1))
+
+final_layout
+```
+
+
 # Make a hexgrid showing states/cities
 
 See the geogrid package:

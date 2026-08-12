@@ -204,7 +204,7 @@ sampsize.table.rendered <- pander::pandoc.table.return(sampsize.table,
                split.cells=c(1, 1, 17, 12, 8, 6, 22),
                split.table=Inf,
                justify=c('center', 'center', 'left', 'right', 'right', 'right', 'right'),
-               caption="(\\#tab:sampsize) Number of interviews conducted, response rates, and estimated vital registration completeness (IBGE 2018) for each of the 27 cities in our sample.")
+               caption="(\\#tab:sampsize) Number of interviews conducted, response rates, and estimated vital registration completeness (IBGE 2018).")
 
 cat(sampsize.table.rendered,
     file=file.path(out_dir, 'sample_size_table.md'))

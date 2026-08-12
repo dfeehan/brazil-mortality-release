@@ -2658,6 +2658,41 @@ city_bias %>%
 ```
 
 ```{r}
+sib_bias_plot <- city_bias %>%
+  filter(method == 'Sibling') %>%
+  ggplot(aes(x = agegp10, y = avg_bias)) +
+  # Update stat_summary to also use dodging
+  stat_summary(fun = "mean", 
+               geom = "point", 
+               size = 3, 
+               pch = 24,
+               stroke=1.5,
+               position = position_dodge(width = 0.75), 
+               show.legend = FALSE) +
+  # Use position_jitterdodge instead of geom_jitter
+  geom_point(position = position_jitter(width=0.2),
+             alpha = 0.3) +
+#  geom_point(position = position_jitterdodge(jitter.width = 0.2, 
+#                                             jitter.height = 0, 
+#                                             dodge.width = 0.75),
+#             alpha = 0.5) +
+  facet_grid(. ~ sex) + # Remove 'method' from the grid rows
+  geom_hline(yintercept = 0) +
+  #scale_color_manual(values = c("Network" = "#E69F00", "Sibling" = "#56B4E9")) + # Optional: clean colors
+  ylab("Age-sex-city point estimate of bias") +
+  xlab("") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(size=7))
+
+ggsave(filename=file.path(comp_out_dir, "sib_bias_plot.pdf"),
+       plot=sib_bias_plot,
+       height=3,
+       width=4)
+
+sib_bias_plot
+```
+
+```{r}
 city_bias %>%
   pivot_wider(names_from='method', values_from=c('avg_bias', 'avg_abs_bias')) %>%
   ggplot(., aes(x=avg_bias_Network, y=avg_bias_Sibling)) +
