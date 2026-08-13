@@ -1125,22 +1125,6 @@ ci_coverage_df <- comp_asdrs %>%
   summarize(ci_covered = mean(ci_covered))
 
 ci_coverage_df
-
-#ci_coverage_plot <- ci_coverage_df %>%
-#  ggplot(.) +
-#  geom_point(aes(x=method, y=ci_covered)) +
-#  geom_hline(yintercept = 0.95, lty=2) +
-#  theme_minimal() +
-#  expand_limits(y=c(0,1)) +
-#  xlab("") +
-#  ylab("Empirical 95% CI Coverage")
-#
-#ggsave(filename=file.path(comp_out_dir, "ci_coverage_plot.pdf"),
-#       plot=ci_coverage_plot,
-#       height=3.5,
-#       width=6)
-#
-#ci_coverage_plot
 ```
 
 
