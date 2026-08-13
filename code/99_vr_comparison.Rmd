@@ -1021,40 +1021,6 @@ direct_plot_probs_logged
 
 # Summaries of estimated sampling variation
 
-## Minimum detectable effects
-
-```{r}
-##
-## se - standard error for difference in two means
-mde_onesided <- function(se, alpha=.05, beta=.2) {
-  return(se * (qnorm(1-(alpha/2)) - qnorm(beta)))  
-}
-
-mde_asdrs <- est_asdrs %>% 
-  group_by(method, agegp10, sex, time.period) %>% 
-  summarize(mean_se = mean(post_sd_asdr), 
-            mean_asdr=mean(post_mean_asdr)) %>% 
-  mutate(cv_asdr = mean_se/mean_asdr, 
-         ## NB: if two estimates both have std err sigma and are independent
-         ##     then their difference will have std err sqrt(2)*sigma
-         mde = mde_onesided((sqrt(2)*mean_se))) %>%
-  mutate(rel_mde = mde / mean_asdr)
-
-mde_probs <- est_probs %>% 
-  group_by(method, sex, time.period) %>% 
-  summarize(mean_se = mean(post_sd_q), 
-            mean_prob = mean(post_mean_q)) %>% 
-  mutate(cv_prob = mean_se/mean_prob, 
-         ## NB: if two estimates both have std err sigma and are independent
-         ##     then their difference will have std err sqrt(2)*sigma
-         mde = mde_onesided(sqrt(2)*(mean_se))) %>%
-  mutate(rel_mde = mde / mean_prob)
-
-mde_asdrs
-mde_probs
-```
-
-
 ## CI width 
 
 CI width for asdrs
