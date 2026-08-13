@@ -511,7 +511,6 @@ MSE on natural scale
 calc_errors <- function(df, ci = TRUE) {
   res <- df %>%
     # now we're doing the scaling above...
-    #mutate(delta = 1000*(post_mean_asdr - gs_asdr),
     mutate(delta = (post_mean_asdr - gs_asdr),
            delta2 = delta*delta,
            ## NB: delta_rel is the absolute relative error
