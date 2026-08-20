@@ -1584,7 +1584,7 @@ jab_agesex_asdr_ests <- jab_asdr_ests %>%
     sqrt,
     .names = "{str_replace(.col, 'var_jab', 'se_jab')}")) %>%
   mutate(qty = 'asdr') %>%
-  ## TEMP NEW - conservative variance ests for systematic bias
+  ## conservative variance ests for systematic bias
   ## (conservative because we're just using the variance estimate for the non-absolute value,
   ##  which should generally be >= the abs value variance)
   mutate(across(
@@ -1594,15 +1594,13 @@ jab_agesex_asdr_ests <- jab_asdr_ests %>%
   ))
 ```
 
-
-### HERE IS AGE SEX AGG
-
 ```{r}
 ## here, we roll the 270 city/sex/age estimates up into
 ## averages by age/sex group
 ## (note that this means that abs_bias will not be |bias|, since
 ##  we have now aggregated...)
 asdr_agesex_properties <- asdr_properties_point_estimates %>%
+#tmp <- asdr_properties_point_estimates %>%
   rename_with(~ paste0('point_', .x),
               starts_with('est_')) %>%
   # aggregate up to age/sex level (by averaging across cities)
@@ -1612,18 +1610,27 @@ asdr_agesex_properties <- asdr_properties_point_estimates %>%
                    .names='{.col}')) %>%
   pivot_wider(names_from='method',
               values_from=starts_with('point_')) %>%
-  # NEW
+  # for convenience (to make it easier to distinguish here in the code),
+  # we call the bias in the averaged value the 'systematic bias', sysbias
   mutate(point_est_sysbias_Network = abs(point_est_bias_Network),
          point_est_sysbias_Sibling = abs(point_est_bias_Sibling)) %>%
+  ## AT this point, we have 10 rows (one for each age/sex group), and then
+  ## a column with the point estimate for each qoi / method
   pivot_longer(cols = contains('point_est'),
                names_to = c('metric', 'method'),
                names_pattern = "(.*)_(Network|Sibling)") %>%
   pivot_wider(names_from = method,
               values_from = value) %>%
+  ## AT this point we have 100 rows (10 qois X 10 age/sex groups); each row
+  ## has an age/sex group and a qoi, with a column for Network and a column for Sibling
   mutate(diff = Network - Sibling) %>%
+  ## calculate the difference in the metric between network and sib
   pivot_wider(names_from = metric,
               values_from = c(Network, Sibling, diff),
               names_glue = "{metric}_{.value}") %>%
+  ## AT this point, there are 10 rows, one for each age/sex group,
+  ## and each row has a column w/ the point estimate for each qoi for net, sib, and diff
+  # join in standard errors derived from jackknife after bootstrap
   left_join(jab_agesex_asdr_ests) 
 ```
 
