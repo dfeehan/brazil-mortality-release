@@ -1879,11 +1879,31 @@ rmse_tot_diff <- asdr_tot_properties %>%
          est_se_diff = point_est_se_diff,
          se_rmse_diff = se_jab_rmse_asdr_lopo_diff,
          se_mare_diff = se_jab_mare_asdr_lopo_diff,
-         se_se_diff = se_jab_se_asdr_lopo_diff) %>%
+         se_se_diff = se_jab_se_asdr_lopo_diff,
+         # per-method overall mean RMSE point estimates and JAB standard errors
+         est_rmse_network = point_est_rmse_Network,
+         est_rmse_sibling = point_est_rmse_Sibling,
+         se_rmse_network = se_jab_rmse_asdr_lopo_Network,
+         se_rmse_sibling = se_jab_rmse_asdr_lopo_Sibling,
+         # per-method overall mean SE point estimates and JAB standard errors
+         est_se_network = point_est_se_Network,
+         est_se_sibling = point_est_se_Sibling,
+         se_se_network = se_jab_se_asdr_lopo_Network,
+         se_se_sibling = se_jab_se_asdr_lopo_Sibling) %>%
   mutate(est_rmse_diff_ci_low = est_rmse_diff - 1.96*se_rmse_diff,
          est_rmse_diff_ci_high = est_rmse_diff + 1.96*se_rmse_diff) %>%
   mutate(est_se_diff_ci_low = est_se_diff - 1.96*se_se_diff,
-         est_se_diff_ci_high = est_se_diff + 1.96*se_se_diff)
+         est_se_diff_ci_high = est_se_diff + 1.96*se_se_diff) %>%
+  # CIs for the overall mean RMSE, separately for network and sibling
+  mutate(est_rmse_network_ci_low = est_rmse_network - 1.96*se_rmse_network,
+         est_rmse_network_ci_high = est_rmse_network + 1.96*se_rmse_network,
+         est_rmse_sibling_ci_low = est_rmse_sibling - 1.96*se_rmse_sibling,
+         est_rmse_sibling_ci_high = est_rmse_sibling + 1.96*se_rmse_sibling) %>%
+  # CIs for the overall mean SE, separately for network and sibling
+  mutate(est_se_network_ci_low = est_se_network - 1.96*se_se_network,
+         est_se_network_ci_high = est_se_network + 1.96*se_se_network,
+         est_se_sibling_ci_low = est_se_sibling - 1.96*se_se_sibling,
+         est_se_sibling_ci_high = est_se_sibling + 1.96*se_se_sibling)
 
 write_csv(rmse_tot_diff, file.path(comp_out_dir, "rmse_tot_diff.csv"))
 
@@ -1893,7 +1913,17 @@ glue::glue_data(rmse_tot_diff,
            ")
 glue::glue_data(rmse_tot_diff,
 "
-           est rmse diff: {round(est_rmse_diff,2)} ({round(est_rmse_diff_ci_low,2)}, {round(est_rmse_diff_ci_high,2)}) 
+           est rmse diff: {round(est_rmse_diff,2)} ({round(est_rmse_diff_ci_low,2)}, {round(est_rmse_diff_ci_high,2)})
+           ")
+glue::glue_data(rmse_tot_diff,
+"
+           network rmse: {round(est_rmse_network,2)} ({round(est_rmse_network_ci_low,2)}, {round(est_rmse_network_ci_high,2)})
+           sibling rmse: {round(est_rmse_sibling,2)} ({round(est_rmse_sibling_ci_low,2)}, {round(est_rmse_sibling_ci_high,2)})
+           ")
+glue::glue_data(rmse_tot_diff,
+"
+           network se: {round(est_se_network,2)} ({round(est_se_network_ci_low,2)}, {round(est_se_network_ci_high,2)})
+           sibling se: {round(est_se_sibling,2)} ({round(est_se_sibling_ci_low,2)}, {round(est_se_sibling_ci_high,2)})
            ")
 ```
 
@@ -2219,7 +2249,8 @@ fig_netsib_asdr <-
                     ) +
     facet_grid(~ method) +
     xlab("") +
-    ylab("Average Estimated Death Rate per 1,000") +
+    #ylab("Average Estimated Death Rate") +
+    ylab("Estimated Mean Death Rate") +
     theme_minimal() +
     xaxistext
 
@@ -2379,7 +2410,7 @@ loss_plot <- function(cur_qoi_var,
 
 ```{r}
 fig_rmse <- loss_plot(point_est_rmse, se_jab_rmse_asdr_lopo, 
-                      'Average Estimated RMSE',
+                      'Estimated Mean RMSE',
                       'Network Estimate - Sibling Estimate')
 
 # NB: this is used in paper
@@ -2393,11 +2424,133 @@ fig_rmse$fig
 ```
 
 
+### Decomposition of one aggregate point-and-interval
+
+This plot unpacks a single point + interval from the RMSE-style plots above:
+for one method / sex / age group, it shows the point estimate + CI for each of the
+27 city estimates (left panel) alongside the aggregate ('Average') estimate (right panel).
+This illustrates how one point in `fig_rmse` is calculated.
+
+The metric column pair is swappable, exactly like `loss_plot()`:
+RMSE = `point_est_rmse` / `se_jab_rmse_asdr_lopo`, MARE = `point_est_mare` / `se_jab_mare_asdr_lopo`, etc.
+
+```{r decomp-plot}
+## map state_abbrev -> label for the x axis (just the state code)
+decomp_city_labels <- function() {
+  city.dat %>%
+    transmute(geo = state_abbrev,
+              city_label = state_abbrev)
+}
+
+## decomp_plot(): two-panel figure
+##   Panel A (wide, left)   : the 27 city point estimates + CIs, sorted by value
+##   Panel B (narrow, right): the single aggregate ('Average') estimate + CI
+## Both panels share a y scale, so the aggregate sits at the mean of the cities.
+decomp_plot <- function(cur_qoi_var,
+                        cur_se_var,
+                        ylab_text,
+                        sel_method  = "Network",
+                        sel_sex     = "Male",
+                        sel_agegp10 = "[18,25)",
+                        city_df   = asdr_properties_long,
+                        agg_df    = asdr_agesex_properties_long) {
+
+  ## ---- city-level data (the 27 inputs) ----
+  city_plot_df <- city_df %>%
+    filter(method == sel_method,
+           sex == sel_sex,
+           agegp10 == sel_agegp10) %>%
+    mutate(cur_qoi = {{ cur_qoi_var }},
+           cur_se  = {{ cur_se_var }},
+           # truncate the lower CI bound at 0
+           cur_ci_low  = pmax(0, cur_qoi - 1.96 * cur_se),
+           cur_ci_high = cur_qoi + 1.96 * cur_se) %>%
+    left_join(decomp_city_labels(), by = "geo") %>%
+    # sort cities by point estimate so the plot reads as a caterpillar
+    mutate(city_label = fct_reorder(city_label, cur_qoi))
+
+  ## ---- aggregate data (the single output point) ----
+  agg_plot_df <- agg_df %>%
+    filter(method == sel_method,
+           sex == sel_sex,
+           agegp10 == sel_agegp10) %>%
+    mutate(cur_qoi = {{ cur_qoi_var }},
+           cur_se  = {{ cur_se_var }},
+           # truncate the lower CI bound at 0
+           cur_ci_low  = pmax(0, cur_qoi - 1.96 * cur_se),
+           cur_ci_high = cur_qoi + 1.96 * cur_se,
+           agg_label = "Average")
+
+  ## shared y range across both panels (include CIs from both)
+  y_range <- range(c(city_plot_df$cur_ci_low, city_plot_df$cur_ci_high,
+                     agg_plot_df$cur_ci_low, agg_plot_df$cur_ci_high),
+                   na.rm = TRUE)
+
+  xaxistext <- theme(axis.text.x = element_text(size = 6, angle = 90,
+                                                hjust = 1, vjust = 0.5),
+                     legend.title = element_blank())
+
+  ## ---- Panel A: cities ----
+  panel_cities <- city_plot_df %>%
+    ggplot(aes(x = city_label, y = cur_qoi, ymin = cur_ci_low, ymax = cur_ci_high)) +
+    geom_pointrange(fatten = 1.5) +
+    ylim(y_range) +
+    xlab("") + ylab(ylab_text) +
+    ggtitle("City estimates") +
+    theme_minimal() +
+    xaxistext
+
+  ## ---- Panel B: aggregate ----
+  panel_agg <- agg_plot_df %>%
+    ggplot(aes(x = agg_label, y = cur_qoi, ymin = cur_ci_low, ymax = cur_ci_high)) +
+    geom_pointrange(color = "black", fatten = 1.5) +
+    ylim(y_range) +
+    xlab("") + 
+    #ylab("") +
+    ylab("Estimated Mean RMSE") +
+    ggtitle("Average") +
+    theme_minimal() +
+    theme(axis.text.x = element_text(size = 7)) +
+    xaxistext
+
+  ## ---- assemble ----
+  fig_all <- panel_cities + panel_agg +
+    plot_layout(widths = c(6, 1), guides = "collect") +
+    plot_annotation(
+      #title = glue::glue("{sel_method} method - {sel_sex}, age {sel_agegp10}"),
+      tag_levels = "A", tag_suffix = ")"
+    ) &
+    theme(legend.position = "bottom",
+          plot.tag = element_text(face = "bold", size = 12))
+
+  return(lst(fig = fig_all, city_df = city_plot_df, agg_df = agg_plot_df))
+}
+
+## unpack the RMSE aggregate point for Network / Male / youngest age group
+fig_decomp_rmse <- decomp_plot(
+  cur_qoi_var = point_est_rmse,
+  cur_se_var  = se_jab_rmse_asdr_lopo,
+  ylab_text   = "Estimated RMSE",
+  sel_method  = "Network",
+  sel_sex     = "Male",
+  sel_agegp10 = "[18,25)"
+)
+
+saveRDS(fig_decomp_rmse, file.path(comp_out_dir, "fig_decomp_rmse.rds"))
+ggsave(filename=file.path(comp_out_dir, "fig_decomp_rmse.pdf"),
+       plot=fig_decomp_rmse$fig,
+       height=3.5,
+       width=8)
+
+fig_decomp_rmse$fig
+```
+
+
 Robustness plot with MARE
 
 ```{r}
 fig_mare <- loss_plot(point_est_mare, se_jab_mare_asdr_lopo, 
-                      'Average Estimated MARE',
+                      'Estimated Mean MARE',
                       'Network Estimate - Sibling Estimate')
 
 # NB: this is used in paper
@@ -2585,7 +2738,7 @@ END DIGGING INTO RMSE AND ABS BIAS
 
 ```{r}
 fig_se <- loss_plot(point_est_se, se_jab_se_asdr_lopo, 
-                    'Average Estimated Std. Error',
+                    'Estimated Mean Std. Error',
                     'Network Estimate - Sibling Estimate' )
 
 # NB: this is used in paper
@@ -2835,8 +2988,8 @@ fig_diff <- scatter_data %>%
   geom_text(aes(label = age_label), size = 2.5, fontface = "bold", show.legend = FALSE) +
   scale_x_continuous(limits = axis_lim) +
   scale_y_continuous(limits = axis_lim) +
-  xlab("Estimated Network Bias") +
-  ylab("Estimated Sibling Bias") +
+  xlab("Estimated Mean Network Bias") +
+  ylab("Estimated Mean Sibling Bias") +
   coord_obs_pred() +
   theme_minimal() +
   xaxistext
@@ -2856,7 +3009,8 @@ fig_diff <- scatter_data %>%
 
 fig_bias2 <- bias2_plot(point_est_bias, 
                        se_jab_bias_asdr_lopo, 
-                       'Estimated Bias',
+                       #'Estimated Bias',
+                       'Estimated Mean Bias',
                        #bias_type='systematic',
                        diff_var = point_est_bias2,
                        diff_se = se_jab_bias2_asdr_lopo)
