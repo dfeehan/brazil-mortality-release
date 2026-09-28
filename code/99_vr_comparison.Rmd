@@ -82,6 +82,10 @@ library(here)
 comparison_name <- params$comparison_name 
 
 geo_name <- params$geo_name 
+
+## the 12-month sibling estimates are only produced at the city level,
+## so the 12-month comparison can only be made when geo_name is 'city'.
+do_12mo <- params$do_12mo && geo_name == 'city'
 ```
 
 ```{r}
@@ -236,7 +240,7 @@ if(geo_name == 'city') {
                                        'sib_design_probs_boot.csv')) %>%
     rename(geo = state_abbrev)
   
-  if(params$do_12mo) {
+  if(do_12mo) {
     
     sib_asdrs_12mo <- read_csv(file.path(out_dir, 
                                          'sib_12mo_design_asdrs.csv')) %>%
@@ -298,6 +302,15 @@ sib_asdrs <-
   sib_asdrs %>% scale_asdrs()
 sib_asdrs_boot <-
   sib_asdrs_boot %>% scale_asdrs()
+
+## the 12-month estimates have to be scaled in exactly the same way as
+## the 7-year ones before they can be compared to the vital registration rates
+if(do_12mo) {
+  sib_asdrs_12mo <-
+    sib_asdrs_12mo %>% scale_asdrs()
+  sib_asdrs_boot_12mo <-
+    sib_asdrs_boot_12mo %>% scale_asdrs()
+}
 ```
 
 Load network estimates
@@ -438,7 +451,7 @@ est_probs_boot <- bind_rows(sib_probs_boot,
 Assemble 12 mo sib results too
 
 ```{r}
-if(params$do_12mo) {
+if(do_12mo) {
   est_asdrs_with12mo <- bind_rows(sib_asdrs,
                          sib_asdrs_12mo %>% mutate(method = 'Sibling12mo'),
                          net_asdrs) %>%
@@ -574,17 +587,33 @@ comp_probs_wide_boot <- comp_probs_boot %>%
 Errors for 12mo sib ests
 
 ```{r}
-if(params$do_12mo) {
+if(do_12mo) {
   
-  comp_asdrs_with12mo <- est_asdrs_with12mo %>%
+  comp_asdrs_boot_with12mo <- est_asdrs_boot_with12mo %>%
     left_join(gs_asdrs %>% dplyr::rename(gs_asdr=asdr)) %>%
-    calc_errors()
+    calc_errors(ci=FALSE)
   
-  # quick table comparing squared error for net / sib / sib 12mo
-  errs_with_12mo <- comp_asdrs_with12mo %>%
+  ## RMSE and MARE are calculated in exactly the same way as they are for the
+  ## main results: first, the bootstrap resamples are used to estimate the
+  ## RMSE and the MARE of each city/age/sex estimate (see the
+  ## bvm-estimates chunk, below) and then those estimates are averaged across
+  ## all of the city/age/sex groups to get the overall mean RMSE and MARE
+  ## (see the chunk that makes asdr_tot_properties, below).
+  ## NB: na.rm=TRUE is needed here because the 12-month estimates are missing
+  ##     for one city/age/sex group (there is no exposure reported in the
+  ##     12 months before the interview)
+  props_with_12mo <- comp_asdrs_boot_with12mo %>%
+    group_by(geo, sex, agegp10, method) %>%
+    summarize(est_mse  = mean( (post_mean_asdr - gs_asdr[1])^2, na.rm=TRUE),
+              est_mare = mean( abs(post_mean_asdr - gs_asdr[1])/gs_asdr[1], 
+                               na.rm=TRUE)) %>%
+    mutate(est_rmse = sqrt(est_mse))
+  
+  # table comparing RMSE and MARE for net / sib / sib 12mo
+  errs_with_12mo <- props_with_12mo %>%
     group_by(method) %>%
-    summarize(mean_delta2 = mean(delta2, na.rm=TRUE),
-              mean_delta_rel = mean(delta_rel, na.rm=TRUE))
+    summarize(mean_rmse = mean(est_rmse, na.rm=TRUE),
+              mean_mare = mean(est_mare, na.rm=TRUE))
   
   write_csv(errs_with_12mo,
             file.path(comp_out_dir, "avg_errs_with_sib12mo.csv"))
