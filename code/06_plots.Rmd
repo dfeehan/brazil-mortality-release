@@ -177,7 +177,7 @@ err_diffs_summ
 Plot w/ pooling for RMSE / ASDR
 
 ```{r}
-recode_loss <- c('mare'='MARE', 'mse'='MSE', 'rmse'='RMSE')
+recode_loss <- c('mare'='MARE', 'rmse'='RMSE')
 recode_qty <- c('asdr'='Age-specifc\ndeath rates', 'prob'='Probability of\ndying at\nadult ages')
 recode_geo <- c('city'='City-level\nestimates', 
                 'region'='Pooled\nregion-level\nestimates', 
@@ -193,9 +193,6 @@ annrelsize <- 4
 
 mare_prob_annheight <- 0.15
 mare_asdr_annheight <- .22
-
-mse_prob_annheight <- 0.0035
-mse_asdr_annheight <- 8 
 
 rmse_prob_annheight <- .025 
 rmse_asdr_annheight <- 1 
@@ -266,7 +263,7 @@ ggsave(filename=file.path(out_dir, "pooling_rmse.pdf"),
 
 
 ```{r}
-recode_loss <- c('mare'='MARE', 'mse'='MSE', 'rmse'='RMSE')
+recode_loss <- c('mare'='MARE', 'rmse'='RMSE')
 recode_qty <- c('asdr'='Age-specifc\ndeath rates', 'prob'='Probability of\ndying at\nadult ages')
 recode_geo <- c('city'='City-level\nestimates', 
                 'region'='Pooled\nregion-level\nestimates', 
@@ -282,9 +279,6 @@ annrelsize <- 3
 
 mare_prob_annheight <- 0.15
 mare_asdr_annheight <- .22
-
-mse_prob_annheight <- 0.0035
-mse_asdr_annheight <- 8 
 
 rmse_prob_annheight <- .025 
 rmse_asdr_annheight <- 1 
@@ -388,86 +382,6 @@ make_pr_plot <- function(for_pr_df) {
     scale_linetype_manual(values=scale_linetype_values, guide = "none") +
     NULL
     
-  pr_prob_mse <- 
-    for_pr_df %>%
-    filter(loss == 'MSE', qty==recode_qty['prob']) %>%
-    ggplot(.) +
-    geom_hline(aes(yintercept = 0), color='darkgrey') +
-    geom_pointrange(aes(x=geo_name,
-                        y=point_est,
-                        ymin=ci_low,
-                        ymax=ci_high,
-                        shape = geo_name,
-                        linetype=geo_name)) +
-    theme_bw() +
-    geom_rect(aes(xmin=1.5,
-                  xmax=Inf,
-                  ymin=-Inf,
-                  ymax=Inf),
-              color=shade_rect_color,
-              alpha=shade_rect_alpha) +
-    #theme_minimal() +
-    ylab("Network MSE - Sibling MSE") +
-    xlab("") +
-    annotate(geom='text', 
-             label="Sibling is better ->", 
-             y=mse_prob_annheight, 
-             x=0.5, 
-             size=rel(annrelsize),
-             color='red', 
-             angle=90) +
-    annotate(geom='text', 
-             label="<- Network is better ", 
-             y=-mse_prob_annheight, 
-             x=0.5, 
-             size=rel(annrelsize),
-             color='red', 
-             angle=90) +
-    scale_y_continuous(limits=c(-.008, .008)) +
-    scale_shape_manual(values=scale_shape_values, guide = "none") +
-    scale_linetype_manual(values=scale_linetype_values, guide = "none") +
-    NULL
-    
-  pr_asdr_mse <- 
-    for_pr_df %>%
-    filter(loss == 'MSE', qty==recode_qty['asdr']) %>%
-    ggplot(.) +
-    geom_hline(aes(yintercept = 0), color='darkgrey') +
-    geom_pointrange(aes(x=geo_name,
-                        y=point_est,
-                        ymin=ci_low,
-                        ymax=ci_high,
-                        shape = geo_name,
-                        linetype=geo_name)) +
-    theme_bw() +
-    geom_rect(aes(xmin=1.5,
-                  xmax=Inf,
-                  ymin=-Inf,
-                  ymax=Inf),
-              color=shade_rect_color,
-              alpha=shade_rect_alpha) +
-    #theme_minimal() +
-    ylab("Network MSE - Sibling MSE") +
-    xlab("") +
-    annotate(geom='text', 
-             label="Sibling is better ->", 
-             y=mse_asdr_annheight, 
-             x=0.5, 
-             size=rel(annrelsize),
-             color='red', 
-             angle=90) +
-    annotate(geom='text', 
-             label="<- Network is better ", 
-             y=-mse_asdr_annheight, 
-             x=0.5, 
-             size=rel(annrelsize),
-             color='red', 
-             angle=90) +
-    scale_y_continuous(limits=c(-15, 15)) +
-    scale_shape_manual(values=scale_shape_values, guide = "none") +
-    scale_linetype_manual(values=scale_linetype_values, guide = "none") +
-    NULL
-  
   pr_prob_rmse <- 
     for_pr_df %>%
     filter(loss == 'RMSE', qty==recode_qty['prob']) %>%
@@ -550,8 +464,6 @@ make_pr_plot <- function(for_pr_df) {
     
   #pr_asdr_mare
   #pr_prob_mare
-  #pr_prob_mse
-  #pr_asdr_mse
   #pr_prob_rmse
   #pr_asdr_rmse
   
@@ -577,7 +489,6 @@ make_pr_plot <- function(for_pr_df) {
                                     parse=TRUE) + theme_void()
   col2_title <- ggplot() + annotate(geom='text', 
                                     x=1,y=1, 
-                                    #label='bold(underline(MSE))',
                                     label='bold(underline(RMSE))',
                                     parse=TRUE) + theme_void()
   
@@ -586,11 +497,9 @@ make_pr_plot <- function(for_pr_df) {
                    c=col1_title,
                    d=col2_title,
                    e=pr_asdr_mare,
-                   #f=pr_asdr_mse,
                    f=pr_asdr_rmse,
                    g=pr_prob_mare,
                    h=pr_prob_rmse)
-                   #h=pr_prob_mse)
     
   final_plot <- wrap_plots(
        plotlist,
