@@ -3054,63 +3054,6 @@ ggsave(filename=file.path(comp_out_dir, "fig_combinedbias.pdf"),
 fig_bias2$fig
 ```
 
-This is helpful for reading off the number of groups w/ CI including 0 bias...
-
-```{r}
-tmp %>% select(starts_with('cur_'), everything()) %>% filter(method != 'diff') %>% arrange(method) 
-```
-
-
-TODO LEFT OFF HERE, FRI EVENING
-
-- I think the point ests in the plot above are correct
-- I don't think we can calculate the 'correct' uncertainty. but i think what we have now is conservative
-- ... by conservative, I mean that we use the variance of the difference in bias instead of the difference in absolute bias
-      I think this is conservative because I think that var(|X|) <= var(X). so var(|X| - |Y|) = var(|X|) + var(|Y|) + cov(|X|,|Y|) < var(X) + var(Y) + cov(X,Y)
-      NOTE: I'm not 100% sure about the last statement, because of the covariance term. I'm fairly sure that var(|X|) <= var(X)
-- the problem w/ directly calculating the variance of |X| - |Y| is that we have a way to calculate variance of city-specific estimates, and a way to
-  aggregate city-specific variances up to age/sex level -- but no way to calculate variances at age/sex level of nonlinear transformations of city-level
-  quantities (and absolute value is a nonlinear transformation)
-
-Look at the actual data for the difference plolt
-
-```{r}
-fig_combinedbias$diff_df %>% select(matches('cur_'), everything())
-
-```
-
-plot point estimates of bias for all 270 age/sex groups
-
-```{r}
-
-```
-
-
-TODO EXPLORE FOR SUMMARY OF BIAS BY METHOD
-
-Get the average absolute bias across all 270 estimates
-
-```{r}
-## NB: we're calling this 'systematic bias'
-## this is the absolute value of the average bias w/in each age-sex group
-## in other words, we first average signed bias w/in age sex group, then take average value
-asdr_agesex_properties_long %>%
-  group_by(method) %>%
-  summarize(avg_of_abs_bias = mean(abs(point_est_bias)))
-```
-
-```{r}
-comp_asdrs_boot %>% 
-  group_by(method) %>% 
-  summarize(avg_bias = mean(post_mean_asdr - gs_asdr),
-            ## This is what we're calling 'typical bias magnitude'
-            avg_abs_bias = mean(abs(post_mean_asdr - gs_asdr)))
-```
-
-
-TODO END OF EXPLORE OF SUMMARY OF BIAS BY METHOD
-
-
 This will go in the appendix, we think...
 
 ```{r, eval=FALSE}
