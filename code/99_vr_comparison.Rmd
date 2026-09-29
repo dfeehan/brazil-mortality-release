@@ -2752,7 +2752,7 @@ fig_se$fig
 
 ## Another function to plot bias, with barplot
 ## in the 'comparison' panel
-bias2_plot <- function(cur_qoi_var, 
+bias_plot <- function(cur_qoi_var, 
                       cur_se_var, 
                       ylab_text,
                       df = asdr_agesex_properties_long) {
@@ -2853,21 +2853,20 @@ fig_diff <- scatter_data %>%
   return(lst(fig=fig_all, plot_df=plot_df))
 }
 
-fig_bias2 <- bias2_plot(point_est_bias, 
-                       se_jab_bias_asdr_lopo, 
-                       'Estimated Mean Bias')
+fig_combinedbias <- bias_plot(point_est_bias,
+                              se_jab_bias_asdr_lopo,
+                              'Estimated Mean Bias')
 
 # NB: this is used in paper.
-##    The file keeps the name 'fig_combinedbias' because that is what the
-##    manuscript refers to. Both panels plot point_est_bias (panel A by age/sex,
-##    panel B network vs sibling), and the .rds and .pdf hold the same figure.
-saveRDS(fig_bias2, file.path(comp_out_dir, "fig_combinedbias.rds"))
+##    'combined' because panel A shows mean bias by age/sex for each method and
+##    panel B compares the two methods directly; both plot point_est_bias.
+saveRDS(fig_combinedbias, file.path(comp_out_dir, "fig_combinedbias.rds"))
 ggsave(filename=file.path(comp_out_dir, "fig_combinedbias.pdf"),
-       plot=fig_bias2$fig,
+       plot=fig_combinedbias$fig,
        height=3.5,
        width=8)
 
-fig_bias2$fig
+fig_combinedbias$fig
 ```
 
 This will go in the appendix, we think...
@@ -3612,7 +3611,7 @@ write_csv(moran_I_df %>% unnest_wider(estimate) %>% arrange(p_value),
 Moran's I values that are significant at $p=0.05$ level
 
 ```{r}
-moran_I_df %>% filter(p_value < 0.05) %>% select(sex, agegp10, method, qty, everything()) %>% View()
+moran_I_df %>% filter(p_value < 0.05) %>% select(sex, agegp10, method, qty, everything())
 ```
 
 # Heatmaps showing error
