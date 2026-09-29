@@ -599,9 +599,11 @@ if(do_12mo) {
   ## bvm-estimates chunk, below) and then those estimates are averaged across
   ## all of the city/age/sex groups to get the overall mean RMSE and MARE
   ## (see the chunk that makes asdr_tot_properties, below).
-  ## NB: na.rm=TRUE is needed here because the 12-month estimates are missing
-  ##     for one city/age/sex group (there is no exposure reported in the
-  ##     12 months before the interview)
+  ## NB: na.rm=TRUE is needed here because a single bootstrap resample (1 out of
+  ##     10,000) in one city/age/sex group (Tocantins, female, [55,65)) has no
+  ##     reported exposure in the 12 months before the interview, and so yields a
+  ##     missing rate. All 270 city/age/sex groups are still included for every
+  ##     method, so the three rows of the resulting table are directly comparable.
   props_with_12mo <- comp_asdrs_boot_with12mo %>%
     group_by(geo, sex, agegp10, method) %>%
     summarize(est_mse  = mean( (post_mean_asdr - gs_asdr[1])^2, na.rm=TRUE),
@@ -1137,12 +1139,7 @@ asdr_properties_point_estimates <- comp_asdrs_boot %>%
              est_var = fp.var(post_mean_asdr),
              est_mean = mean(post_mean_asdr)) %>%
   mutate(est_rmse = sqrt(est_mse),
-         est_se = sqrt(est_var),
-         # the absolute bias is based on taking the absolute value of each
-         # bias estimate, and then aggregating those
-         est_absbias = abs(est_bias), 
-         est_bias2 = est_bias*est_bias,
-         ) %>%
+         est_se = sqrt(est_var)) %>%
   mutate(qty = 'asdr')
 
 prob_properties_point_estimates <- comp_probs_boot %>%
@@ -1153,9 +1150,7 @@ prob_properties_point_estimates <- comp_probs_boot %>%
              est_var = fp.var(post_mean_q),
              est_mean = mean(post_mean_q)) %>%
   mutate(est_rmse = sqrt(est_mse),
-         est_se = sqrt(est_var),
-         est_absbias = abs(est_bias),
-         est_bias2 = est_bias*est_bias) %>%
+         est_se = sqrt(est_var)) %>%
   mutate(qty = 'prob')
 ```
 
@@ -1268,9 +1263,7 @@ lopo_ests <- jab_df %>%
                                     mse_asdr_lopo = mean((post_mean_asdr - gs_asdr)^2),
                                     mare_asdr_lopo = mean( abs(post_mean_asdr - gs_asdr) / gs_asdr),
                                     .groups = "drop") %>%
-                          mutate(absbias_asdr_lopo = abs(bias_asdr_lopo),
-                                 bias2_asdr_lopo = bias_asdr_lopo*bias_asdr_lopo,
-                                 rmse_asdr_lopo = sqrt(mse_asdr_lopo),
+                          mutate(rmse_asdr_lopo = sqrt(mse_asdr_lopo),
                                  se_asdr_lopo = sqrt(var_asdr_lopo))
                         
                         return(cur_res)
@@ -1302,8 +1295,7 @@ lopo_prob_ests <- jab_df %>%
                                     mse_prob_lopo = mean((post_mean_q - gs_prob)^2),
                                     mare_prob_lopo = mean( abs(post_mean_q - gs_prob) / gs_prob),
                                     .groups = "drop") %>%
-                          mutate(absbias_prob_lopo = abs(bias_prob_lopo),
-                                 rmse_prob_lopo = sqrt(mse_prob_lopo),
+                          mutate(rmse_prob_lopo = sqrt(mse_prob_lopo),
                                  se_prob_lopo = sqrt(var_prob_lopo))
                           
                         return(cur_res)
@@ -1368,7 +1360,7 @@ Use jackknife after bootstrap to estimate the properties of estimated death rate
 
 ```{r jab-estimates}
 
-all_metrics_re <- "^absbias_|^se_|^mare_|^mse_|^rmse_|^bias_|^bias2_|^var_"
+all_metrics_re <- "^se_|^mare_|^mse_|^rmse_|^bias_|^var_"
 
 jab_asdr_ests <- lopo_ests_wide %>%
   #select(-jab_indexes) %>%
@@ -1612,22 +1604,12 @@ jab_agesex_asdr_ests <- jab_asdr_ests %>%
     matches("^var_jab"),
     sqrt,
     .names = "{str_replace(.col, 'var_jab', 'se_jab')}")) %>%
-  mutate(qty = 'asdr') %>%
-  ## conservative variance ests for systematic bias
-  ## (conservative because we're just using the variance estimate for the non-absolute value,
-  ##  which should generally be >= the abs value variance)
-  mutate(across(
-    .cols = contains("_bias_asdr_lopo_"), 
-    .fns = identity, 
-    .names = "{str_replace(.col, 'bias', 'sysbias')}" 
-  ))
+  mutate(qty = 'asdr')
 ```
 
 ```{r}
 ## here, we roll the 270 city/sex/age estimates up into
 ## averages by age/sex group
-## (note that this means that abs_bias will not be |bias|, since
-##  we have now aggregated...)
 asdr_agesex_properties <- asdr_properties_point_estimates %>%
 #tmp <- asdr_properties_point_estimates %>%
   rename_with(~ paste0('point_', .x),
@@ -1639,10 +1621,6 @@ asdr_agesex_properties <- asdr_properties_point_estimates %>%
                    .names='{.col}')) %>%
   pivot_wider(names_from='method',
               values_from=starts_with('point_')) %>%
-  # for convenience (to make it easier to distinguish here in the code),
-  # we call the bias in the averaged value the 'systematic bias', sysbias
-  mutate(point_est_sysbias_Network = abs(point_est_bias_Network),
-         point_est_sysbias_Sibling = abs(point_est_bias_Sibling)) %>%
   ## AT this point, we have 10 rows (one for each age/sex group), and then
   ## a column with the point estimate for each qoi / method
   pivot_longer(cols = contains('point_est'),
@@ -2115,7 +2093,7 @@ asdr_tot_properties_tosave <-
       TRUE ~ NA_character_
     ),
     # Extract the loss function (the common property)
-    loss = str_extract(full_name, "(se|rmse|mare|mse|absbias|bias|bias2|var|mean)(?=_asdr|_Network|_Sibling|_diff|$)")
+    loss = str_extract(full_name, "(se|rmse|mare|mse|bias|var|mean)(?=_asdr|_Network|_Sibling|_diff|$)")
   ) %>%
   # 3. Clean up: remove rows that didn't match (like the '1' column)
   filter(!is.na(metric), !is.na(loss)) %>%
@@ -2162,7 +2140,7 @@ prob_tot_properties_tosave <-
       TRUE ~ NA_character_
     ),
     # Extract the loss function (the common property)
-    loss = str_extract(full_name, "(se|rmse|mare|mse|absbias|bias|var|mean)(?=_prob|_Network|_Sibling|_diff|$)")
+    loss = str_extract(full_name, "(se|rmse|mare|mse|bias|var|mean)(?=_prob|_Network|_Sibling|_diff|$)")
   ) %>%
   # 3. Clean up: remove rows that didn't match (like the '1' column)
   filter(!is.na(metric), !is.na(loss)) %>%
@@ -2592,25 +2570,13 @@ ggsave(filename=file.path(comp_out_dir, "fig_mare.pdf"),
 fig_mare$fig
 ```
 
-TODO DIGGING INTO RMSE AND ABS BIAS
+EXPLORING BIAS BY AGE, SEX, AND CITY
 
-The plots showing differences in RMSE and differences in |bias| look very similar
-is this just a coincidence? or a bug?
-
-... it looks like RMSE and |bias| are very similar at the level of each estimate...
-
-```{r}
-plot(asdr_agesex_properties_long$point_est_rmse, asdr_agesex_properties_long$point_est_absbias)
-```
-
-To make this a bit more concrete, here's where we really calculate RMSE and |bias|:
-
-NB: THIS IS WHAT I AM GOING TO CHANGE -- abs bias calculation here...
+For reference, this is where the performance estimands are calculated:
 
 > asdr_properties_point_estimates <- comp_asdrs_boot %>%
 >   group_by(geo, sex, agegp10, method) %>%
 >   summarize( est_bias = mean(post_mean_asdr) - gs_asdr[1],
->              est_absbias = mean(abs(post_mean_asdr - gs_asdr[1])),
 >              est_mse = mean( (post_mean_asdr - gs_asdr[1])^2 ),
 >              est_mare = mean( abs(post_mean_asdr - gs_asdr[1])/gs_asdr[1]),
 >              est_var = fp.var(post_mean_asdr),
@@ -2762,7 +2728,7 @@ city_bias %>%
 
 ```
 
-END DIGGING INTO RMSE AND ABS BIAS
+END EXPLORING BIAS BY AGE, SEX, AND CITY
 
 
 ```{r}
@@ -2780,125 +2746,6 @@ ggsave(filename=file.path(comp_out_dir, "fig_se.pdf"),
 fig_se$fig
 ```
 
-TODO - I think we are moving towards having panel B
-be the version that is readable off of panel A
-ie, |average bias in cell network| - |average bias in cell sibling|
-
-
-```{r}
-
-## Another function to plot bias, with barplot
-## in the 'comparison' panel
-bias_plot <- function(cur_qoi_var, 
-                      cur_se_var, 
-                      ylab_text,
-                      df = asdr_agesex_properties_long,
-                      #bias_type = 'typical',
-                      # these only get used if is_bias = TRUE
-                      diff_var = NULL,
-                      diff_se = NULL) {
-  
-  plot_df <- df %>%
-    mutate(cur_qoi = {{cur_qoi_var}},
-           cur_se = {{cur_se_var}},
-           cur_ci_high = cur_qoi + (1.96 * cur_se),
-           cur_ci_low = cur_qoi - (1.96 * cur_se))
-  
-  xaxistext <- theme(
-    axis.text.x = element_text(size = 6),
-    legend.title = element_blank()
-  ) 
-  
-  fig_netsib <- plot_df %>%
-    filter(method %in% c('Network', 'Sibling')) %>%
-    mutate(method = dplyr::recode(method, !!!method_facet_names)) %>%
-    ggplot(aes(x = agegp10, y = cur_qoi, ymin = cur_ci_low, ymax = cur_ci_high, color = sex)) +
-    geom_pointrange(position = position_dodge(width = 0.4)) +
-    facet_grid(~ method) +
-    xlab("") + ylab(ylab_text) +
-    theme_minimal() +
-    xaxistext
-  
-  fig_netsib <- fig_netsib + geom_hline(yintercept = 0, color = 'grey')
-  
-  #############################
-  # right panel: diff in typical bias magnitude 
-  #if(bias_type == 'typical') {
-    
-    diff_data <- df %>%
-      filter(method == 'diff') %>%
-      #filter(method != 'diff') %>%
-      mutate(cur_qoi = {{diff_var}},
-             cur_se = {{diff_se}},
-             cur_ci_high = cur_qoi + (1.96 * cur_se),
-             cur_ci_low = cur_qoi - (1.96 * cur_se))
-    
-    # calculate symmetric limits for y axis (so 0 is in the middle)
-    max_abs_diff <- max(abs(c(diff_data$cur_ci_low, diff_data$cur_ci_high)), na.rm = TRUE)
-    
-    annrelsize <- 2.5
-    annheight <- max_abs_diff * 0.6 # Dynamic height based on data range
-    
-    fig_diff <- diff_data %>%
-      mutate(method = dplyr::recode(method, !!!method_facet_names)) %>%
-      ggplot(aes(x = agegp10, 
-                 y = cur_qoi, 
-                 ymin = cur_ci_low, 
-                 ymax = cur_ci_high, 
-                 color = sex)) +
-      geom_hline(yintercept = 0, color = 'grey') +
-      geom_pointrange(position = position_dodge(width = 0.4)) +
-      scale_y_continuous(limits = c(-max_abs_diff, max_abs_diff)) +
-      annotate(geom = 'text', 
-               label = "Sibling is better ->", 
-               y = annheight, x = 0.25, 
-               size = annrelsize, color = 'black', angle = 90) +
-      annotate(geom = 'text', 
-               label = "<- Network is better", 
-               y = -annheight, x = 0.25, 
-               size = annrelsize, color = 'black', angle = 90) +
-      coord_cartesian(clip = "off", xlim = c(0.5, 5.5)) +
-      xlab("") + 
-      ylab("|Network Typical Bias| -\n|Sibling Typical Bias|") +
-      theme_minimal() +
-      xaxistext
-  
-  #} else if (bias_type == 'systematic') {
-    
-    ## TODO NEED TO FIX CALCULATION - THIS IS STILL TYPICAL BIAS MAGNITUDE
-    ## Q IS: HOW TO GET CI AROUND DIFF IN |SYSTEMATIC BIAS|? DO WE NEED TO
-    ## GO BACK TO JAB, ETC?
-
-  #}
-  
-  fig_all <- fig_netsib + fig_diff +
-    plot_layout(widths = c(2, 1), guides = 'collect') +
-    plot_annotation(tag_levels = 'A', tag_suffix = ')') &
-    theme(legend.position = 'bottom',
-          legend.direction = 'horizontal',
-          legend.justification = 'center',
-          plot.tag = element_text(face = 'bold', size = 12))
-  
-  return(lst(fig=fig_all, plot_df=plot_df, diff_df=diff_data))
-}
-
-# 'combined' b/c the left panel is bias and the right is diff in absolute bias
-fig_combinedbias <- bias_plot(point_est_bias, 
-                              se_jab_bias_asdr_lopo, 
-                              'Estimated Bias',
-                              #bias_type='systematic',
-                              diff_var = point_est_sysbias,
-                              diff_se = se_jab_sysbias_asdr_lopo)
-
-# NB: this is used in paper
-#saveRDS(fig_combinedbias, file.path(comp_out_dir, "fig_combinedbias.rds"))
-#ggsave(filename=file.path(comp_out_dir, "fig_combinedbias.pdf"),
-#       plot=fig_combinedbias$fig,
-#       height=3.5,
-#       width=8)
-
-fig_combinedbias$fig
-```
 
 
 ```{r}
@@ -2908,10 +2755,7 @@ fig_combinedbias$fig
 bias2_plot <- function(cur_qoi_var, 
                       cur_se_var, 
                       ylab_text,
-                      df = asdr_agesex_properties_long,
-                      # these only get used if is_bias = TRUE
-                      diff_var = NULL,
-                      diff_se = NULL) {
+                      df = asdr_agesex_properties_long) {
   
   plot_df <- df %>%
     mutate(cur_qoi = {{cur_qoi_var}},
@@ -2936,33 +2780,6 @@ bias2_plot <- function(cur_qoi_var,
   
   fig_netsib <- fig_netsib + geom_hline(yintercept = 0, color = 'grey')
   
-    diff_data <- df %>%
-      filter(method == 'diff') %>%
-      #filter(method != 'diff') %>%
-      mutate(cur_qoi = {{diff_var}},
-             cur_se = {{diff_se}},
-             cur_ci_high = cur_qoi + (1.96 * cur_se),
-             cur_ci_low = cur_qoi - (1.96 * cur_se))
-        # Original values
-      #mutate(
-      #  orig_qoi = {{diff_var}},
-      #  orig_ci_high = orig_qoi + (1.96 * {{diff_se}}),
-      #  orig_ci_low = orig_qoi - (1.96 * {{diff_se}}) ) %>%
-      #mutate(
-      #  # Signed square root transformation
-      #  cur_qoi = sign(orig_qoi) * sqrt(abs(orig_qoi)),
-      #  cur_ci_high = sign(orig_ci_high) * sqrt(abs(orig_ci_high)),
-      #  cur_ci_low = sign(orig_ci_low) * sqrt(abs(orig_ci_low))
-      #)      
-    
-    # calculate symmetric limits for y axis (so 0 is in the middle)
-    max_abs_diff <- max(abs(c(diff_data$cur_ci_low, diff_data$cur_ci_high)), na.rm = TRUE)
-    
-    annrelsize <- 2.5
-    annheight <- max_abs_diff * 0.6 # Dynamic height based on data range
-    
-    
-    ## TODO - CHANGE TO SCATTER PLOT w/ PLUSES
     
  # Pivot wide so network and sibling are x and y
 scatter_data <- df %>%
@@ -3033,19 +2850,18 @@ fig_diff <- scatter_data %>%
           legend.justification = 'center',
           plot.tag = element_text(face = 'bold', size = 12))
   
-  return(lst(fig=fig_all, plot_df=plot_df, diff_df=diff_data))
+  return(lst(fig=fig_all, plot_df=plot_df))
 }
 
 fig_bias2 <- bias2_plot(point_est_bias, 
                        se_jab_bias_asdr_lopo, 
-                       #'Estimated Bias',
-                       'Estimated Mean Bias',
-                       #bias_type='systematic',
-                       diff_var = point_est_bias2,
-                       diff_se = se_jab_bias2_asdr_lopo)
+                       'Estimated Mean Bias')
 
-# NB: this is used in paper
-saveRDS(fig_combinedbias, file.path(comp_out_dir, "fig_combinedbias.rds"))
+# NB: this is used in paper.
+##    The file keeps the name 'fig_combinedbias' because that is what the
+##    manuscript refers to. Both panels plot point_est_bias (panel A by age/sex,
+##    panel B network vs sibling), and the .rds and .pdf hold the same figure.
+saveRDS(fig_bias2, file.path(comp_out_dir, "fig_combinedbias.rds"))
 ggsave(filename=file.path(comp_out_dir, "fig_combinedbias.pdf"),
        plot=fig_bias2$fig,
        height=3.5,
@@ -3093,36 +2909,30 @@ All ests, by geography
 
 ## Plot the difference between the two methods against the estimated VR completeness
 
-Plot the difference between the two methods (MSE) against the estimated completeness
+Plot the difference between the two methods (RMSE) against the estimated completeness
 
-```{r comp-errs-mse-vrcompleteness, fig.height=3.5, fig.width=3.5}
+```{r comp-errs-rmse-vrcompleteness, fig.height=3.5, fig.width=3.5}
 ## NB: only have completeness at the state level...
 if(geo_name == 'city') {
 
-# difference in MSE by geography
-#comp_df <- comp_asdrs_bygeo_wide %>%
-#  select(geo, point_est_mse_diff = n.minus.s)
+# difference in RMSE by geography
 comp_df <- asdr_geo_properties %>%
-  #select(geo, point_est_mse_diff)
   select(geo, point_est_rmse_diff)
 
 comp_df_withvr <- comp_df %>%
   left_join(ibge_vr_completeness %>%
               select(geo, ibge_est_vrcov = mean_sim_cov_pct))
 
-#biggestdiff <- max(abs(comp_df_withvr$point_est_mse_diff))
 biggestdiff <- max(abs(comp_df_withvr$point_est_rmse_diff))
 xrange <- c(-biggestdiff, biggestdiff)
 
 ## controls how far out annotations go
 annscale <- .6
 
-geo_err_mse_vr_comp <-
+geo_err_rmse_vr_comp <-
   comp_df_withvr %>%
-        #mutate(geo = fct_reorder(geo, point_est_mse_diff)) %>%
         mutate(geo = fct_reorder(geo, point_est_rmse_diff)) %>%
   ggplot(.) +
-  #geom_text(aes(y=point_est_mse_diff,
   geom_text(aes(y=point_est_rmse_diff,
                 x=ibge_est_vrcov,
                 label=geo)) +
@@ -3156,13 +2966,12 @@ geo_err_mse_vr_comp <-
   NULL
 
 
-ggsave(filename=file.path(comp_out_dir, "geo_err_summ_mse_vrsens.pdf"),
-       plot=geo_err_mse_vr_comp,
+ggsave(filename=file.path(comp_out_dir, "geo_err_summ_rmse_vrsens.pdf"),
+       plot=geo_err_rmse_vr_comp,
        height=4,
        width=4)
-#knitr::plot_crop(file.path(comp_out_dir, "geo_err_summ_mse_vrsens.pdf"))
 
-geo_err_mse_vr_comp
+geo_err_rmse_vr_comp
 
 }
 ```
@@ -3662,7 +3471,6 @@ moran_I_to_tibble <- function(res, ...) {
 TODO LEFT OFF HERE
 
 - why are moran's I results different? 
-- should standardize RMSE on 1000 x MSE 
 - check that heatmaps seem right, etc
 
 ```{r, eval=FALSE}
