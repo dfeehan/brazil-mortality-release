@@ -301,7 +301,9 @@ sibling_summ <- function(sib.dat,
    dplyr::mutate(.ego.id     = !!sym(ego.id),
                  .sib.id     = !!sym(sib.id))
   
-  esc_dat <- siblingsurvival:::get_esc_reports(sib.dat = sib.dat,
+  ## get_esc_reports() moved to networkreporting, where it is now exported
+  ## (it was an unexported internal of siblingsurvival before)
+  esc_dat <- networkreporting::get_esc_reports(sib.dat = sib.dat,
                              ego.id='.ego.id',
                              sib.id='.sib.id',
                              cell.config=cc)
