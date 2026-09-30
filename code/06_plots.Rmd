@@ -4,7 +4,12 @@ output: html_notebook
 ---
 
 ```{r}
-knitr::opts_chunk$set(message=FALSE)
+## NB: error=FALSE matters here. This renders as an html_notebook, and
+##     html_notebook sets error=TRUE by default -- so without this, a chunk that
+##     fails is silently embedded in the .nb.html, every later chunk that depends
+##     on it also fails, and the render still exits 0 while quietly producing no
+##     figures. Halt loudly instead.
+knitr::opts_chunk$set(message=FALSE, error=FALSE)
 library(here)
 library(rmarkdown)
 library(tidyverse)
@@ -545,7 +550,21 @@ final_err_compare
 
 
 
-```{r}
+```{r, message=TRUE}
+## Everything below this point is parked work-in-progress and is NOT run:
+## knit_exit() ends the render here (added in 75c6bbb, "exit before some unused
+## stuff"). Say so out loud -- otherwise a render that stops a third of the way
+## through the file exits 0 and looks like a complete one.
+skipped <- c("rmse_barplot.{rds,pdf,png}", "err_compare_all_vrsens.{rds,pdf,png}")
+cat("\n06_plots.Rmd: stopping early at knit_exit().\n",
+    "  The sections below are parked work-in-progress and were NOT run.\n",
+    "  Outputs deliberately not produced: ", paste(skipped, collapse=", "), "\n",
+    "  Remove the knit_exit() chunk to run them.\n", sep="")
+## NB: knitr captures stdout and message() into the rendered document, so
+##     neither reaches the terminal. Only a direct write to stderr escapes the
+##     capture -- needed so a batch render (e.g. from 00_run_all.R) shows it too.
+cat("06_plots.Rmd: stopped early at knit_exit(); these were NOT produced: ",
+    paste(skipped, collapse=", "), "\n", sep="", file = stderr())
 knitr::knit_exit()
 ```
 
@@ -653,93 +672,6 @@ vrsens_err_compare
 
 
 
-### Bias-variance decomposition (BVD) plot
-
-```{r}
-p_bvd_as_bias <- readRDS(file.path(vr_city_dir, 'bvd_as_bias_plot.rds'))
-
-p_bvd_as_se <- readRDS(file.path(vr_city_dir, 'bvd_as_se_plot.rds'))
-
-p_bvd_as_rmse <- readRDS(file.path(vr_city_dir, 'bvd_as_rmse_plot.rds'))
-```
-
-
-```{r}
-#bvd_as_city <- p_bvd_as_rmse / p_bvd_as_bias / p_bvd_as_se + 
-bvd_as_city <- 
-  (p_bvd_as_se + ggtitle("A")) +
-  (p_bvd_as_bias + ggtitle("B")) +
-  (p_bvd_as_rmse + ggtitle("C")) +
-  plot_layout(guides='collect') &
-  #theme(text = element_text(size=7)) &
-  theme(text = element_text(size=7),
-        legend.position='bottom',
-        legend.box='vertical',
-        legend.spacing.y=unit(-.3, 'cm')) & 
-  #guides(color=guide_legend(nrow=2, title="Age"))
-  guides(color=guide_legend(title="Age"))
-
-ggsave(filename=file.path(out_dir, "bvd_as_city.pdf"),
-       bvd_as_city)
-
-bvd_as_city
-```
-
-```{r}
-#bvd_as_city <- p_bvd_as_rmse / p_bvd_as_bias / p_bvd_as_se + 
-vd_as_city <- 
-  (p_bvd_as_se + ggtitle("A")) +
-  (p_bvd_as_bias + ggtitle("B")) +
-  plot_layout(guides='collect') &
-  #theme(text = element_text(size=7)) &
-  theme(text = element_text(size=7),
-        legend.position='bottom',
-        legend.box='vertical',
-        legend.spacing.y=unit(-.3, 'cm')) & 
-  #guides(color=guide_legend(nrow=2, title="Age"))
-  guides(color=guide_legend(title="Age"))
-
-ggsave(filename=file.path(out_dir, "vd_as_city.pdf"),
-       height=6,
-       vd_as_city)
-
-vd_as_city
-```
-
-### Bias-variance decomposition (BVD) plot from VR sensitivity check
-
-
-```{r}
-p_bvd_as_bias_vrsens <- readRDS(file.path(vradj_city_dir, 'bvd_as_bias_plot.rds'))
-
-p_bvd_as_se_vrsens <- readRDS(file.path(vradj_city_dir, 'bvd_as_se_plot.rds'))
-
-p_bvd_as_rmse_vrsens <- readRDS(file.path(vradj_city_dir, 'bvd_as_rmse_plot.rds'))
-```
-
-
-```{r}
-bvd_as_city_vrsens <- 
-  p_bvd_as_se_vrsens +
-  p_bvd_as_bias_vrsens +
-  p_bvd_as_rmse_vrsens +
-  #p_bvd_as_se /
-  #p_bvd_as_bias /     
-  #p_bvd_as_rmse +
-  plot_layout(guides='collect') &
-  #theme(text = element_text(size=7)) &
-  theme(text = element_text(size=7),
-        legend.position='bottom',
-        legend.box='vertical',
-        legend.spacing.y=unit(-.3, 'cm')) & 
-  #guides(color=guide_legend(nrow=2, title="Age"))
-  guides(color=guide_legend(title="Age"))
-
-ggsave(filename=file.path(out_dir, "bvd_as_city_vrsens.pdf"),
-       bvd_as_city_vrsens)
-
-bvd_as_city_vrsens
-```
 
 
 
